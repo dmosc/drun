@@ -1,0 +1,12 @@
+[build-system]
+requires = ["maturin=1.13.1"]
+build-backend = "maturin"
+
+[project]
+name = "drun"
+requires-python = ">=3.10"
+dependencies = []
+
+[tool.maturin]
+manifest-path = "crates/drun-py/Cargo.toml"
+module-name = "drun"
