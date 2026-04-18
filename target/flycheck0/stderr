@@ -1,0 +1,8 @@
+warning: /Users/oscar/Desktop/Projects/drun/crates/drun-py/Cargo.toml: unused manifest key: build-system
+    Updating crates.io index
+error: failed to select a version for the requirement `pyo3 = "^1.83.0"`
+candidate versions found which didn't match: 0.28.3, 0.28.2, 0.27.2, ...
+location searched: crates.io index
+required by package `drun-py v0.1.0 (/Users/oscar/Desktop/Projects/drun/crates/drun-py)`
+if you are looking for the prerelease package it needs to be specified explicitly
+    pyo3 = { version = "0.21.0-beta.0" }

@@ -1,0 +1,13 @@
+[workspace]
+members = [
+    "crates/drun-core",
+    "crates/drun-py",
+    "crates/drun-mcp",
+]
+resolver = "2"
+
+[workspace.dependencies]
+wasmtime = "43.0.1"
+tokio = "1.52.1"
+serde = "1.0.228"
+anyhow = "1.0.102"

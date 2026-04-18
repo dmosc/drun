@@ -1,0 +1,16 @@
+[package]
+name = "drun-py"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "drun"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = "1.83.0"
+drun-core = { path = "../drun-core" }
+
+[build-system]
+requires = ["maturin=1.13.1"]
+build-backend = "maturin"
