@@ -8,9 +8,9 @@ name = "drun"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = "1.83.0"
+pyo3 = "0.28.3"
 drun-core = { path = "../drun-core" }
 
 [build-system]
-requires = ["maturin=1.13.1"]
+requires = ["maturin==1.13.1"]
 build-backend = "maturin"

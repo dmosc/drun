@@ -1,9 +1,10 @@
 [build-system]
-requires = ["maturin=1.13.1"]
+requires = ["maturin==1.13.1"]
 build-backend = "maturin"
 
 [project]
 name = "drun"
+dynamic = ["version"]
 requires-python = ">=3.10"
 dependencies = []
 
