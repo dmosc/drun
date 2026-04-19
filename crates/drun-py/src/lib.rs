@@ -5,12 +5,13 @@ use std::sync::OnceLock;
 static ENGINE: OnceLock<DrunEngine> = OnceLock::new();
 
 #[pyfunction]
-fn execute(code: String) -> PyResult<String> {
+#[pyo3(signature = (code, mounts=None))]
+fn execute(code: String, mounts: Option<Vec<String>>) -> PyResult<String> {
     let engine =
         ENGINE.get_or_init(|| DrunEngine::new().expect("Failed to initialize DrunEngine."));
 
     engine
-        .run_python(&code)
+        .run_python(&code, mounts.unwrap_or_default())
         .map_err(|e| PyRuntimeError::new_err(e.to_string()))
 }
 

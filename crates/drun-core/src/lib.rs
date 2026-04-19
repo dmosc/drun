@@ -1,4 +1,6 @@
+use fs_extra::dir::CopyOptions;
 use std::io::{Read, Seek, SeekFrom};
+use std::path::Path;
 use wasmtime::{Config, Engine, Linker, Module, Store};
 use wasmtime_wasi::{DirPerms, FilePerms, WasiCtxBuilder, cli::OutputFile, p1::WasiP1Ctx};
 
@@ -25,11 +27,12 @@ impl DrunEngine {
         })
     }
 
-    pub fn run_python(&self, code: &str) -> anyhow::Result<String> {
+    pub fn run_python(&self, code: &str, mounts: Vec<String>) -> anyhow::Result<String> {
         // Setup host resources
         let stdout = tempfile::tempfile()?;
         let stderr = tempfile::tempfile()?;
         let workspace = tempfile::tempdir()?;
+        self.mount_assets(&workspace, mounts)?;
         // Initialize WASI context.
         let wasi_ctx = self.prepare_wasi_ctx(code, &workspace, &stdout, &stderr)?;
         // Initialize store and instance.
@@ -97,5 +100,29 @@ impl DrunEngine {
         stdout.read_to_string(&mut result)?;
 
         Ok(result)
+    }
+
+    fn mount_assets(
+        &self,
+        workspace: &tempfile::TempDir,
+        mounts: Vec<String>,
+    ) -> anyhow::Result<()> {
+        let options = CopyOptions::new().overwrite(true).copy_inside(true);
+        let target_path = workspace.path();
+        for source in mounts {
+            let source_path = Path::new(&source);
+            if !source_path.exists() {
+                anyhow::bail!("Mount source does not exist: {}", source);
+            } else if source_path.is_dir() {
+                fs_extra::dir::copy(source_path, target_path, &options)?;
+            } else {
+                let file_name = source_path
+                    .file_name()
+                    .ok_or_else(|| anyhow::anyhow!("Invalid file name"))?;
+                std::fs::copy(source_path, target_path.join(file_name))?;
+            }
+        }
+
+        Ok(())
     }
 }

@@ -8,3 +8,4 @@ anyhow.workspace = true
 wasmtime.workspace = true
 wasmtime-wasi.workspace = true
 tempfile.workspace = true
+fs_extra.workspace = true
