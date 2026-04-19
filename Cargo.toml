@@ -8,6 +8,8 @@ resolver = "2"
 
 [workspace.dependencies]
 wasmtime = "43.0.1"
+wasmtime-wasi = "43.0.1"
+tempfile = "3.27.0"
 tokio = "1.52.1"
 serde = "1.0.228"
 anyhow = "1.0.102"
