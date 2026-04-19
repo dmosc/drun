@@ -96,14 +96,16 @@ impl DrunEngine {
         mut stdout: std::fs::File,
     ) -> anyhow::Result<DrunOutput> {
         let mut files = std::collections::HashMap::new();
-        for entry in std::fs::read_dir(workspace.path())? {
-            let entry = entry?;
+        let base_path = workspace.path();
+        for entry in walkdir::WalkDir::new(base_path)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_type().is_file())
+        {
             let path = entry.path();
-            if path.is_file() {
-                let name = entry.file_name().to_string_lossy().into_owned();
-                let content = std::fs::read(path)?;
-                files.insert(name, content);
-            }
+            let relative_path = path.strip_prefix(base_path)?.to_string_lossy().into_owned();
+            let content = std::fs::read(path)?;
+            files.insert(relative_path, content);
         }
 
         let mut stdout_str = String::new();
@@ -121,19 +123,23 @@ impl DrunEngine {
         workspace: &tempfile::TempDir,
         mounts: Vec<String>,
     ) -> anyhow::Result<()> {
-        let options = CopyOptions::new().overwrite(true).copy_inside(true);
-        let target_path = workspace.path();
+        let target_base = workspace.path();
         for source in mounts {
             let source_path = Path::new(&source);
             if !source_path.exists() {
                 anyhow::bail!("Mount source does not exist: {}", source);
-            } else if source_path.is_dir() {
-                fs_extra::dir::copy(source_path, target_path, &options)?;
+            }
+
+            let destination = target_base.join(&source);
+            if source_path.is_dir() {
+                std::fs::create_dir_all(&destination)?;
+                let options = CopyOptions::new().overwrite(true).content_only(true);
+                fs_extra::dir::copy(source_path, &destination, &options)?;
             } else {
-                let file_name = source_path
-                    .file_name()
-                    .ok_or_else(|| anyhow::anyhow!("Invalid file name"))?;
-                std::fs::copy(source_path, target_path.join(file_name))?;
+                if let Some(parent) = destination.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+                std::fs::copy(source_path, &destination)?;
             }
         }
 

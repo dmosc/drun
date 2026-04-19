@@ -9,6 +9,7 @@ resolver = "2"
 [workspace.dependencies]
 wasmtime = "43.0.1"
 wasmtime-wasi = "43.0.1"
+walkdir = "2.5.0"
 tempfile = "3.27.0"
 tokio = "1.52.1"
 serde = "1.0.228"

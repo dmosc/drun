@@ -5,7 +5,7 @@ import textwrap
 def main():
     code_to_run = textwrap.dedent("""
     import os
-    with open('/workspace/hello.txt', 'a') as file:
+    with open('/workspace/examples/hello.txt', 'a') as file:
         file.write('\\nHello from WASM!')
     """)
     print(code_to_run)
