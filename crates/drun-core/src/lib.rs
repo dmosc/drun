@@ -10,6 +10,11 @@ pub struct DrunEngine {
     module: Module,
 }
 
+pub struct DrunOutput {
+    pub stdout: String,
+    pub files: std::collections::HashMap<String, Vec<u8>>,
+}
+
 impl DrunEngine {
     pub fn new() -> anyhow::Result<Self> {
         let mut config = Config::new();
@@ -27,7 +32,7 @@ impl DrunEngine {
         })
     }
 
-    pub fn run_python(&self, code: &str, mounts: Vec<String>) -> anyhow::Result<String> {
+    pub fn run_python(&self, code: &str, mounts: Vec<String>) -> anyhow::Result<DrunOutput> {
         // Setup host resources
         let stdout = tempfile::tempfile()?;
         let stderr = tempfile::tempfile()?;
@@ -89,17 +94,26 @@ impl DrunEngine {
         &self,
         workspace: tempfile::TempDir,
         mut stdout: std::fs::File,
-    ) -> anyhow::Result<String> {
+    ) -> anyhow::Result<DrunOutput> {
+        let mut files = std::collections::HashMap::new();
         for entry in std::fs::read_dir(workspace.path())? {
             let entry = entry?;
-            println!("File created/modified: {:?}", entry.file_name());
+            let path = entry.path();
+            if path.is_file() {
+                let name = entry.file_name().to_string_lossy().into_owned();
+                let content = std::fs::read(path)?;
+                files.insert(name, content);
+            }
         }
 
-        let mut result = String::new();
+        let mut stdout_str = String::new();
         stdout.seek(SeekFrom::Start(0))?;
-        stdout.read_to_string(&mut result)?;
+        stdout.read_to_string(&mut stdout_str)?;
 
-        Ok(result)
+        Ok(DrunOutput {
+            stdout: stdout_str,
+            files,
+        })
     }
 
     fn mount_assets(
