@@ -1,8 +1,14 @@
 import drun
+import textwrap
 
 
 def main():
-    output = drun.execute('print(1 + 1)')
+    code_to_run = textwrap.dedent("""
+    with open('/workspace/hello.txt', 'w') as file:
+        file.write('Hello from WASM!')
+    """)
+    print(code_to_run)
+    output = drun.execute(code_to_run)
     print(output)
 
 
