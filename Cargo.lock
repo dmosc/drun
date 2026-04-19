@@ -647,6 +647,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "drun"
+version = "0.1.0"
+dependencies = [
+ "drun-core",
+ "pyo3",
+]
+
+[[package]]
 name = "drun-core"
 version = "0.1.0"
 dependencies = [
@@ -666,14 +674,6 @@ dependencies = [
  "drun-core",
  "rust-mcp-sdk",
  "tokio",
-]
-
-[[package]]
-name = "drun-py"
-version = "0.1.0"
-dependencies = [
- "drun-core",
- "pyo3",
 ]
 
 [[package]]

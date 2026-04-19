@@ -9,5 +9,6 @@ requires-python = ">=3.10"
 dependencies = []
 
 [tool.maturin]
+module-name = "drun.drun_internal"
 manifest-path = "crates/drun-py/Cargo.toml"
-module-name = "drun"
+python-source = "crates/drun-py/python"

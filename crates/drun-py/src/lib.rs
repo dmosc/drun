@@ -29,7 +29,8 @@ fn execute(code: String, mounts: Option<Vec<String>>) -> PyResult<DrunOutput> {
 }
 
 #[pymodule]
-fn drun(m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn drun_internal(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_class::<DrunOutput>()?;
     m.add_function(wrap_pyfunction!(execute, m)?)?;
 
     Ok(())
