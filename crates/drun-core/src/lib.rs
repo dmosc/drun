@@ -10,7 +10,8 @@ pub struct DrunEngine {
 
 impl DrunEngine {
     pub fn new() -> anyhow::Result<Self> {
-        let config = Config::new();
+        let mut config = Config::new();
+        config.consume_fuel(true);
         let engine = Engine::new(&config)?;
         let mut linker = Linker::new(&engine);
         wasmtime_wasi::p1::add_to_linker_sync(&mut linker, |t| t)?;
@@ -35,13 +36,17 @@ impl DrunEngine {
             .stderr(OutputFile::new(stderr_temp.try_clone()?))
             .args(&["python", "-c", code]);
         let mut store = Store::new(&self.engine, wasi_builder.build_p1());
+        store.set_fuel(500_000_000)?;
         let instance = self.linker.instantiate(&mut store, &self.module)?;
         let start = instance.get_typed_func::<(), ()>(&mut store, "_start")?;
         // Execute code in WASM runtime.
-        if let Err(e) = start.call(&mut store, ()) {
-            if !e.to_string().contains("exit status 0") {
-                anyhow::bail!("Python error: {}", e);
+        if let Err(error) = start.call(&mut store, ()) {
+            if let Some(trap) = error.downcast_ref::<wasmtime::Trap>() {
+                if *trap == wasmtime::Trap::OutOfFuel {
+                    anyhow::bail!("Ran out of fuel. Aborting execution.");
+                }
             }
+            anyhow::bail!("Runtime error: {}", error);
         }
         // Store outputs in tempfiles.
         let mut result = String::new();
