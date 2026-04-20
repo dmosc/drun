@@ -8,9 +8,7 @@ def main():
     with open('/workspace/examples/hello.txt', 'a') as file:
         file.write('\\nHello from WASM!')
     """)
-    print(code_to_run)
-    output = drun.execute(code_to_run, mounts=['examples/hello.txt'])
-    print(output.stdout, output.files)
+    drun.execute(code_to_run, mounts=['examples/hello.txt'], interactive=True)
 
 
 if __name__ == '__main__':
