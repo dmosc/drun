@@ -2,6 +2,11 @@
 name = "drun-core"
 version = "0.1.0"
 edition = "2024"
+description = "Sandboxed execution core for drun"
+license = "MIT"
+repository = "https://github.com/dmosc/drun"
+keywords = ["sandbox", "python", "execution", "wasm", "agent"]
+categories = ["development-tools"]
 
 [dependencies]
 anyhow.workspace = true
