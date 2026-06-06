@@ -8,5 +8,5 @@ name = "drun_internal"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = "0.28.3"
-drun-core = { path = "../drun-core" }
+pyo3 = { version = "0.28.3", features = ["abi3-py39"] }
+drun-core = { version = "0.1.0", path = "../drun-core" }
