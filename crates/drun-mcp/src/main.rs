@@ -62,6 +62,21 @@ struct SessionRollbackTool {
 }
 
 #[mcp_tool(
+    name = "session_install_package",
+    description = "Install a Python package into the session. The package will be available in all subsequent session_execute calls.",
+    idempotent_hint = false,
+    destructive_hint = false,
+    read_only_hint = false
+)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+struct SessionInstallPackageTool {
+    /// Session ID from create_session
+    session_id: String,
+    /// Package name as it appears on PyPI (e.g. "pandas" or "faker==1.0.0")
+    package: String,
+}
+
+#[mcp_tool(
     name = "session_read_file",
     description = "Read the UTF-8 content of a file from the current session checkpoint.",
     idempotent_hint = true,
@@ -80,6 +95,7 @@ tool_box!(
     DrunTools,
     [
         CreateSessionTool,
+        SessionInstallPackageTool,
         SessionExecuteTool,
         SessionRollbackTool,
         SessionReadFileTool,
@@ -126,6 +142,19 @@ impl ServerHandler for DrunHandler {
                 let session = Session::new(&engine).map_err(err)?;
                 self.sessions.lock().unwrap().insert(id.clone(), session);
                 Ok(text(id))
+            }
+            DrunTools::SessionInstallPackageTool(t) => {
+                let mut sessions = self.sessions.lock().unwrap();
+                let session = sessions
+                    .get_mut(&t.session_id)
+                    .ok_or_else(|| err(format!("session '{}' not found", t.session_id)))?;
+                session
+                    .execute(&format!(
+                        "import micropip\nawait micropip.install('{}')",
+                        t.package
+                    ))
+                    .map_err(err)?;
+                Ok(text(format!("installed {}", t.package)))
             }
             DrunTools::SessionExecuteTool(t) => {
                 let mut sessions = self.sessions.lock().unwrap();
