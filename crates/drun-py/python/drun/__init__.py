@@ -14,8 +14,8 @@ def execute(code: str, mounts=None, interactive=True) -> DrunOutput:
 
 
 class Session:
-    def __init__(self, files=None):
-        self._inner = DrunSession(files)
+    def __init__(self, files=None, network=None):
+        self._inner = DrunSession(files, network)
 
     def execute(self, code: str) -> DrunCheckpoint:
         return self._inner.execute(code)

@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use base64::{Engine, engine::general_purpose::STANDARD};
-use drun_core::{DrunEngine, Session};
+use drun_core::{DrunEngine, NetworkPolicy, Session};
 use rust_mcp_sdk::{
     McpServer, StdioTransport, ToMcpServerHandler, TransportOptions,
     error::SdkResult,
@@ -30,7 +30,10 @@ use uuid::Uuid;
     read_only_hint = false
 )]
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
-struct CreateSessionTool {}
+struct CreateSessionTool {
+    /// Network access policy: "packages" (default — PyPI only), "full" (unrestricted), or "none".
+    network: Option<String>,
+}
 
 #[mcp_tool(
     name = "session_execute",
@@ -137,10 +140,15 @@ impl ServerHandler for DrunHandler {
         _runtime: Arc<dyn McpServer>,
     ) -> Result<CallToolResult, CallToolError> {
         match DrunTools::try_from(params)? {
-            DrunTools::CreateSessionTool(_) => {
+            DrunTools::CreateSessionTool(t) => {
                 let id = Uuid::new_v4().to_string();
                 let engine = DrunEngine::new().map_err(err)?;
-                let session = Session::new(&engine).map_err(err)?;
+                let network = match t.network.as_deref() {
+                    Some("full") => NetworkPolicy::Full,
+                    Some("none") => NetworkPolicy::None,
+                    _ => NetworkPolicy::Packages,
+                };
+                let session = Session::new(&engine, network).map_err(err)?;
                 self.sessions.lock().unwrap().insert(id.clone(), session);
                 Ok(text(id))
             }

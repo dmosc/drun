@@ -6,6 +6,12 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::process::Stdio;
 
+pub enum NetworkPolicy {
+    Packages, // allow only package registries (default)
+    Full,     // unrestricted network access
+    None,     // no network
+}
+
 pub struct DrunEngine {
     deno_path: std::path::PathBuf,
     runner_path: std::path::PathBuf,
@@ -30,7 +36,7 @@ impl DrunEngine {
 
     pub fn run_python(&self, code: &str, mounts: Vec<String>) -> anyhow::Result<DrunOutput> {
         let files = self.read_mounts(mounts)?;
-        let mut session = Session::with_files(self, files)?;
+        let mut session = Session::with_files(self, files, NetworkPolicy::Packages)?;
         let checkpoint = session.execute(code)?;
         Ok(DrunOutput {
             stdout: checkpoint.stdout.clone(),
@@ -38,15 +44,24 @@ impl DrunEngine {
         })
     }
 
-    pub(crate) fn spawn_runner(&self) -> anyhow::Result<std::process::Child> {
+    pub(crate) fn spawn_runner(
+        &self,
+        network: NetworkPolicy,
+    ) -> anyhow::Result<std::process::Child> {
+        let mut args = vec!["run", "--allow-read", "--allow-write"];
+        let net;
+        match network {
+            NetworkPolicy::Packages => {
+                net = "--allow-net=cdn.jsdelivr.net,files.pythonhosted.org,pypi.org";
+                args.push(net);
+            }
+            NetworkPolicy::Full => args.push("--allow-net"),
+            NetworkPolicy::None => {}
+        }
+        let runner = self.runner_path.to_string_lossy().into_owned();
+        args.push(&runner);
         Ok(std::process::Command::new(&self.deno_path)
-            .args([
-                "run",
-                "--allow-read",
-                "--allow-write",
-                "--allow-net",
-                &self.runner_path.to_string_lossy(),
-            ])
+            .args(&args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())

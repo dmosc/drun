@@ -1,4 +1,4 @@
-use crate::DrunEngine;
+use crate::{DrunEngine, NetworkPolicy};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, BufWriter, Write};
@@ -36,15 +36,16 @@ enum ExecResponse {
 }
 
 impl Session {
-    pub fn new(engine: &DrunEngine) -> anyhow::Result<Self> {
-        Self::with_files(engine, HashMap::new())
+    pub fn new(engine: &DrunEngine, network: NetworkPolicy) -> anyhow::Result<Self> {
+        Self::with_files(engine, HashMap::new(), network)
     }
 
     pub fn with_files(
         engine: &DrunEngine,
         files: HashMap<String, Vec<u8>>,
+        network: NetworkPolicy,
     ) -> anyhow::Result<Self> {
-        let mut child = engine.spawn_runner()?;
+        let mut child = engine.spawn_runner(network)?;
         let stdin = BufWriter::new(child.stdin.take().unwrap());
         let stdout = BufReader::new(child.stdout.take().unwrap());
         Ok(Self {

@@ -1,4 +1,4 @@
-use drun_core::{DrunEngine, Session};
+use drun_core::{DrunEngine, NetworkPolicy, Session};
 use pyo3::{exceptions::PyRuntimeError, prelude::*};
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
@@ -35,12 +35,17 @@ pub struct DrunSession {
 #[pymethods]
 impl DrunSession {
     #[new]
-    #[pyo3(signature = (files=None))]
-    fn new(files: Option<HashMap<String, Vec<u8>>>) -> PyResult<Self> {
+    #[pyo3(signature = (files=None, network=None))]
+    fn new(files: Option<HashMap<String, Vec<u8>>>, network: Option<String>) -> PyResult<Self> {
         let engine = DrunEngine::new().map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let policy = match network.as_deref() {
+            Some("full") => NetworkPolicy::Full,
+            Some("none") => NetworkPolicy::None,
+            _ => NetworkPolicy::Packages,
+        };
         let session = match files {
-            Some(f) => Session::with_files(&engine, f),
-            None => Session::new(&engine),
+            Some(f) => Session::with_files(&engine, f, policy),
+            None => Session::new(&engine, policy),
         }
         .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
         Ok(Self {
