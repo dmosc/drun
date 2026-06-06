@@ -1,7 +1,7 @@
 //! Engine initialization: locates the Deno binary, writes the runner script,
 //! and spawns sandboxed subprocesses.
 
-use crate::{NetworkPolicy, Session};
+use crate::NetworkPolicy;
 use std::collections::HashMap;
 use std::path::Path;
 use std::process::Stdio;
@@ -11,9 +11,33 @@ pub struct DrunEngine {
     pub(crate) runner_path: std::path::PathBuf,
 }
 
-pub struct DrunOutput {
-    pub stdout: String,
-    pub files: HashMap<String, Vec<u8>>,
+pub fn read_host_path(path: &Path) -> anyhow::Result<HashMap<String, Vec<u8>>> {
+    if !path.exists() {
+        anyhow::bail!("path does not exist: {}", path.display());
+    }
+    let mut files = HashMap::new();
+    if path.is_dir() {
+        for entry in walkdir::WalkDir::new(path) {
+            let entry = entry?;
+            if entry.file_type().is_file() {
+                let key = entry
+                    .path()
+                    .strip_prefix(path)
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned();
+                files.insert(key, std::fs::read(entry.path())?);
+            }
+        }
+    } else {
+        let key = path
+            .file_name()
+            .ok_or_else(|| anyhow::anyhow!("path has no filename: {}", path.display()))?
+            .to_string_lossy()
+            .into_owned();
+        files.insert(key, std::fs::read(path)?);
+    }
+    Ok(files)
 }
 
 impl DrunEngine {
@@ -25,16 +49,6 @@ impl DrunEngine {
         Ok(Self {
             deno_path,
             runner_path,
-        })
-    }
-
-    pub fn run_python(&self, code: &str, mounts: Vec<String>) -> anyhow::Result<DrunOutput> {
-        let files = self.read_mounts(mounts)?;
-        let mut session = Session::with_files(self, files, NetworkPolicy::Packages)?;
-        let checkpoint = session.execute(code)?;
-        Ok(DrunOutput {
-            stdout: checkpoint.stdout.clone(),
-            files: checkpoint.files.clone(),
         })
     }
 
@@ -60,29 +74,5 @@ impl DrunEngine {
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
             .spawn()?)
-    }
-
-    fn read_mounts(&self, mounts: Vec<String>) -> anyhow::Result<HashMap<String, Vec<u8>>> {
-        let mut files = HashMap::new();
-        for source in mounts {
-            let source_path = Path::new(&source);
-            if !source_path.exists() {
-                anyhow::bail!("mount source does not exist: {}", source);
-            }
-            if source_path.is_dir() {
-                for entry in walkdir::WalkDir::new(source_path) {
-                    let entry = entry?;
-                    if entry.file_type().is_file() {
-                        files.insert(
-                            entry.path().to_string_lossy().into_owned(),
-                            std::fs::read(entry.path())?,
-                        );
-                    }
-                }
-            } else {
-                files.insert(source.clone(), std::fs::read(source_path)?);
-            }
-        }
-        Ok(files)
     }
 }

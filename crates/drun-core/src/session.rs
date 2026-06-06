@@ -34,14 +34,6 @@ enum ExecResponse {
 
 impl Session {
     pub fn new(engine: &DrunEngine, network: NetworkPolicy) -> anyhow::Result<Self> {
-        Self::with_files(engine, HashMap::new(), network)
-    }
-
-    pub fn with_files(
-        engine: &DrunEngine,
-        files: HashMap<String, Vec<u8>>,
-        network: NetworkPolicy,
-    ) -> anyhow::Result<Self> {
         let mut child = engine.spawn_runner(network)?;
         let stdin = BufWriter::new(child.stdin.take().unwrap());
         let stdout = BufReader::new(child.stdout.take().unwrap());
@@ -52,9 +44,13 @@ impl Session {
             checkpoints: vec![Checkpoint {
                 id: 0,
                 stdout: String::new(),
-                files,
+                files: HashMap::new(),
             }],
         })
+    }
+
+    pub fn mount(&mut self, files: HashMap<String, Vec<u8>>) {
+        self.checkpoints.last_mut().unwrap().files.extend(files);
     }
 
     pub fn execute(&mut self, code: &str) -> anyhow::Result<&Checkpoint> {

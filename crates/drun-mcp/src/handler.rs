@@ -4,7 +4,7 @@
 use crate::response::{err, file_content, text};
 use crate::tools::DrunTools;
 use async_trait::async_trait;
-use drun_core::{DrunEngine, NetworkPolicy, Session};
+use drun_core::{DrunEngine, NetworkPolicy, Session, read_host_path};
 use rust_mcp_sdk::{
     McpServer,
     mcp_server::ServerHandler,
@@ -112,6 +112,16 @@ impl ServerHandler for DrunHandler {
                     .get(&t.path)
                     .ok_or_else(|| err(format!("'{}' not in current checkpoint", t.path)))?;
                 Ok(file_content(&t.path, bytes))
+            }
+            DrunTools::SessionMountTool(t) => {
+                let files = read_host_path(std::path::Path::new(&t.path)).map_err(err)?;
+                let keys: Vec<String> = files.keys().cloned().collect();
+                let mut sessions = self.sessions.lock().unwrap();
+                let session = sessions
+                    .get_mut(&t.session_id)
+                    .ok_or_else(|| err(format!("session '{}' not found", t.session_id)))?;
+                session.mount(files);
+                Ok(text(format!("mounted: {}", keys.join(", "))))
             }
         }
     }

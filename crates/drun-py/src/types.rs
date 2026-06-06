@@ -1,16 +1,7 @@
-//! Python-facing data types exposed via PyO3: `DrunOutput`, `DrunCheckpoint`,
-//! and the conversion helper.
+//! Python-facing data types exposed via PyO3.
 
 use pyo3::prelude::*;
 use std::collections::HashMap;
-
-#[pyclass]
-pub struct DrunOutput {
-    #[pyo3(get)]
-    pub stdout: String,
-    #[pyo3(get)]
-    pub files: HashMap<String, Vec<u8>>,
-}
 
 #[pyclass]
 pub struct DrunCheckpoint {

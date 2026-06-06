@@ -80,6 +80,21 @@ pub struct SessionReadFileTool {
     pub path: String,
 }
 
+#[mcp_tool(
+    name = "session_mount",
+    description = "Copy a file or directory from the host filesystem into the session workspace. Files become available at /workspace/<filename> (or /workspace/<relative-path> for directories). Call before session_execute to make host data accessible to the sandbox.",
+    idempotent_hint = false,
+    destructive_hint = false,
+    read_only_hint = false
+)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct SessionMountTool {
+    /// Session ID from create_session
+    pub session_id: String,
+    /// Absolute path to a file or directory on the host filesystem.
+    pub path: String,
+}
+
 tool_box!(
     DrunTools,
     [
@@ -88,5 +103,6 @@ tool_box!(
         SessionExecuteTool,
         SessionRollbackTool,
         SessionReadFileTool,
+        SessionMountTool,
     ]
 );
