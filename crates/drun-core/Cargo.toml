@@ -16,3 +16,4 @@ tempfile.workspace = true
 fs_extra.workspace = true
 walkdir.workspace = true
 which = "7"
+similar = "2"

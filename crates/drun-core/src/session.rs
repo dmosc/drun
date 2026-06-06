@@ -80,6 +80,39 @@ impl Session {
         Ok(())
     }
 
+    pub fn diff(&self, from_id: usize, to_id: usize) -> anyhow::Result<String> {
+        if from_id >= self.checkpoints.len() {
+            anyhow::bail!("checkpoint {} does not exist", from_id);
+        }
+        if to_id >= self.checkpoints.len() {
+            anyhow::bail!("checkpoint {} does not exist", to_id);
+        }
+        let from = &self.checkpoints[from_id].files;
+        let to = &self.checkpoints[to_id].files;
+        let keys: std::collections::BTreeSet<&String> = from.keys().chain(to.keys()).collect();
+        let mut output = String::new();
+        for key in keys {
+            let from_bytes = from.get(key).map(Vec::as_slice).unwrap_or(&[]);
+            let to_bytes = to.get(key).map(Vec::as_slice).unwrap_or(&[]);
+            if from_bytes == to_bytes {
+                continue;
+            }
+            match (
+                std::str::from_utf8(from_bytes),
+                std::str::from_utf8(to_bytes),
+            ) {
+                (Ok(a), Ok(b)) => output.push_str(
+                    &similar::TextDiff::from_lines(a, b)
+                        .unified_diff()
+                        .header(&format!("a/{key}"), &format!("b/{key}"))
+                        .to_string(),
+                ),
+                _ => output.push_str(&format!("Binary file {key} changed.\n")),
+            }
+        }
+        Ok(output)
+    }
+
     pub fn current(&self) -> &Checkpoint {
         self.checkpoints.last().unwrap()
     }

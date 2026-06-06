@@ -81,6 +81,23 @@ pub struct SessionReadFileTool {
 }
 
 #[mcp_tool(
+    name = "session_diff",
+    description = "Compute a unified diff between two checkpoints. Defaults to comparing the initial mounted state (checkpoint 0) against the current checkpoint. Returns standard unified diff output across all changed files.",
+    idempotent_hint = true,
+    destructive_hint = false,
+    read_only_hint = true
+)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct SessionDiffTool {
+    /// Session ID from create_session
+    pub session_id: String,
+    /// Checkpoint to diff from. Defaults to 0 (the mounted state).
+    pub from_checkpoint_id: Option<u64>,
+    /// Checkpoint to diff to. Defaults to the current checkpoint.
+    pub to_checkpoint_id: Option<u64>,
+}
+
+#[mcp_tool(
     name = "session_mount",
     description = "Copy a file or directory from the host filesystem into the session workspace. Files become available at /workspace/<filename> (or /workspace/<relative-path> for directories). Call before session_execute to make host data accessible to the sandbox.",
     idempotent_hint = false,
@@ -104,5 +121,6 @@ tool_box!(
         SessionRollbackTool,
         SessionReadFileTool,
         SessionMountTool,
+        SessionDiffTool,
     ]
 );

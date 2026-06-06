@@ -36,6 +36,15 @@ impl DrunSession {
         Ok(())
     }
 
+    #[pyo3(signature = (from_id=0, to_id=None))]
+    pub fn diff(&self, from_id: usize, to_id: Option<usize>) -> PyResult<String> {
+        let inner = self.inner.lock().unwrap();
+        let to = to_id.unwrap_or_else(|| inner.current().id);
+        inner
+            .diff(from_id, to)
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+    }
+
     pub fn execute(&self, code: String) -> PyResult<DrunCheckpoint> {
         self.inner
             .lock()

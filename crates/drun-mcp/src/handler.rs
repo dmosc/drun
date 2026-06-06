@@ -113,6 +113,23 @@ impl ServerHandler for DrunHandler {
                     .ok_or_else(|| err(format!("'{}' not in current checkpoint", t.path)))?;
                 Ok(file_content(&t.path, bytes))
             }
+            DrunTools::SessionDiffTool(t) => {
+                let sessions = self.sessions.lock().unwrap();
+                let session = sessions
+                    .get(&t.session_id)
+                    .ok_or_else(|| err(format!("session '{}' not found", t.session_id)))?;
+                let from = t.from_checkpoint_id.unwrap_or(0) as usize;
+                let to = t
+                    .to_checkpoint_id
+                    .map(|id| id as usize)
+                    .unwrap_or_else(|| session.current().id);
+                let diff = session.diff(from, to).map_err(err)?;
+                Ok(text(if diff.is_empty() {
+                    "no changes".into()
+                } else {
+                    diff
+                }))
+            }
             DrunTools::SessionMountTool(t) => {
                 let files = read_host_path(std::path::Path::new(&t.path)).map_err(err)?;
                 let keys: Vec<String> = files.keys().cloned().collect();

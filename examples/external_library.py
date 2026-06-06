@@ -19,5 +19,6 @@ with open('/workspace/records.json', 'w') as f:
 print(f"Generated {len(records)} records")
 """
 
-result = drun.execute(code)
-print(result.stdout)
+session = drun.Session()
+checkpoint = session.execute(code)
+print(checkpoint.stdout)

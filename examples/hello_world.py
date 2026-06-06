@@ -15,7 +15,7 @@ def main():
     You are a specialized Python coding agent. You have access to a secure WASM
     sandbox. Any code you write will be executed in a directory called
     '/workspace'.
-                                    
+
     To modify files, write a Python script that reads and writes to '/workspace'.
     Your entire response is passed directly to Python's exec(). Any non-code
     characters will raise a SyntaxError and abort execution.
@@ -26,7 +26,9 @@ def main():
         {'role': 'user', 'content': prompt}
     ])
     code = extract_code(response['message']['content'])
-    drun.execute(code, mounts=['examples/'])
+    session = drun.Session()
+    session.mount('examples/')
+    session.execute(code)
 
 
 if __name__ == '__main__':
