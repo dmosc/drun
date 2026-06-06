@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use base64::{Engine, engine::general_purpose::STANDARD};
 use drun_core::{DrunEngine, Session};
 use rust_mcp_sdk::{
     McpServer, StdioTransport, ToMcpServerHandler, TransportOptions,
@@ -6,9 +7,9 @@ use rust_mcp_sdk::{
     macros::{JsonSchema, mcp_tool},
     mcp_server::{McpServerOptions, ServerHandler, server_runtime},
     schema::{
-        CallToolRequestParams, CallToolResult, Implementation, InitializeResult, ListToolsResult,
-        PaginatedRequestParams, ProtocolVersion, RpcError, ServerCapabilities,
-        ServerCapabilitiesTools, TextContent, schema_utils::CallToolError,
+        CallToolRequestParams, CallToolResult, ContentBlock, ImageContent, Implementation,
+        InitializeResult, ListToolsResult, PaginatedRequestParams, ProtocolVersion, RpcError,
+        ServerCapabilities, ServerCapabilitiesTools, TextContent, schema_utils::CallToolError,
     },
     tool_box,
 };
@@ -78,7 +79,7 @@ struct SessionInstallPackageTool {
 
 #[mcp_tool(
     name = "session_read_file",
-    description = "Read the UTF-8 content of a file from the current session checkpoint.",
+    description = "Read the contents of a file from the current session checkpoint. Works for any file type including text, JSON, images, and other binary formats.",
     idempotent_hint = true,
     destructive_hint = false,
     read_only_hint = true
@@ -191,7 +192,7 @@ impl ServerHandler for DrunHandler {
                     .files
                     .get(&t.path)
                     .ok_or_else(|| err(format!("'{}' not in current checkpoint", t.path)))?;
-                Ok(text(String::from_utf8_lossy(bytes).into_owned()))
+                Ok(file_content(&t.path, bytes))
             }
         }
     }
@@ -199,6 +200,31 @@ impl ServerHandler for DrunHandler {
 
 fn text(s: impl Into<String>) -> CallToolResult {
     CallToolResult::text_content(vec![TextContent::from(s.into())])
+}
+
+fn file_content(path: &str, bytes: &[u8]) -> CallToolResult {
+    let ext = path.rsplit('.').next().unwrap_or("").to_lowercase();
+    let mime = match ext.as_str() {
+        "png" => Some("image/png"),
+        "jpg" | "jpeg" => Some("image/jpeg"),
+        "gif" => Some("image/gif"),
+        "webp" => Some("image/webp"),
+        "svg" => Some("image/svg+xml"),
+        _ => None,
+    };
+    if let Some(mime_type) = mime {
+        let image = ImageContent::new(STANDARD.encode(bytes), mime_type.to_string(), None, None);
+        CallToolResult {
+            content: vec![ContentBlock::from(image)],
+            is_error: None,
+            meta: None,
+            structured_content: None,
+        }
+    } else if let Ok(s) = std::str::from_utf8(bytes) {
+        text(s)
+    } else {
+        text(format!("[Unkown format] {}", STANDARD.encode(bytes)))
+    }
 }
 
 fn err(e: impl ToString) -> CallToolError {
