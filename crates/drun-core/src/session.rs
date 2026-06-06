@@ -1,14 +1,11 @@
-use crate::{DrunEngine, NetworkPolicy};
+//! Stateful execution session backed by a long-lived Deno subprocess. Manages
+//! the checkpoint history and rollback.
+
+use crate::{Checkpoint, DrunEngine, NetworkPolicy};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::process::{Child, ChildStdin, ChildStdout};
-
-pub struct Checkpoint {
-    pub id: usize,
-    pub stdout: String,
-    pub files: HashMap<String, Vec<u8>>,
-}
 
 pub struct Session {
     stdin: BufWriter<ChildStdin>,
