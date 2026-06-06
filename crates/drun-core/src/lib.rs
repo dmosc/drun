@@ -9,6 +9,7 @@ use std::io::Write;
 use std::path::Path;
 
 pub struct DrunEngine {
+    deno_path: std::path::PathBuf,
     runner_path: std::path::PathBuf,
 }
 
@@ -25,9 +26,15 @@ struct RunnerOutput {
 
 impl DrunEngine {
     pub fn new() -> anyhow::Result<Self> {
+        let deno_path = which::which("deno")
+            .ok()
+            .ok_or_else(|| anyhow::anyhow!("deno not found; install from https://deno.land"))?;
         let runner_path = std::env::temp_dir().join("drun_runner.ts");
         std::fs::write(&runner_path, include_str!("assets/runner.ts"))?;
-        Ok(Self { runner_path })
+        Ok(Self {
+            deno_path,
+            runner_path,
+        })
     }
 
     pub fn run_python(&self, code: &str, mounts: Vec<String>) -> anyhow::Result<DrunOutput> {
@@ -56,7 +63,7 @@ impl DrunEngine {
         let mut code_file = tempfile::NamedTempFile::new()?;
         code_file.write_all(code.as_bytes())?;
 
-        let output = std::process::Command::new("deno")
+        let output = std::process::Command::new(&self.deno_path)
             .args([
                 "run",
                 "--allow-read",
