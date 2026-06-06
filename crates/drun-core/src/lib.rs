@@ -7,6 +7,6 @@ mod network;
 mod session;
 
 pub use checkpoint::Checkpoint;
-pub use engine::{DrunEngine, read_host_path};
+pub use engine::DrunEngine;
 pub use network::NetworkPolicy;
 pub use session::Session;

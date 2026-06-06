@@ -4,7 +4,7 @@
 use crate::response::{err, file_content, text};
 use crate::tools::DrunTools;
 use async_trait::async_trait;
-use drun_core::{DrunEngine, NetworkPolicy, Session, read_host_path};
+use drun_core::{DrunEngine, NetworkPolicy, Session};
 use rust_mcp_sdk::{
     McpServer,
     mcp_server::ServerHandler,
@@ -131,14 +131,30 @@ impl ServerHandler for DrunHandler {
                 }))
             }
             DrunTools::SessionMountTool(t) => {
-                let files = read_host_path(std::path::Path::new(&t.path)).map_err(err)?;
-                let keys: Vec<String> = files.keys().cloned().collect();
                 let mut sessions = self.sessions.lock().unwrap();
                 let session = sessions
                     .get_mut(&t.session_id)
                     .ok_or_else(|| err(format!("session '{}' not found", t.session_id)))?;
-                session.mount(files);
+                let keys = session.mount(std::path::Path::new(&t.path)).map_err(err)?;
                 Ok(text(format!("mounted: {}", keys.join(", "))))
+            }
+            DrunTools::SessionCommitTool(t) => {
+                let sessions: std::sync::MutexGuard<'_, HashMap<String, Session>> =
+                    self.sessions.lock().unwrap();
+                let session = sessions
+                    .get(&t.session_id)
+                    .ok_or_else(|| err(format!("session '{}' not found", t.session_id)))?;
+                let paths = session.commit(t.keys).map_err(err)?;
+                if paths.is_empty() {
+                    Ok(text("nothing to commit"))
+                } else {
+                    let list = paths
+                        .iter()
+                        .map(|p| p.to_string_lossy().into_owned())
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    Ok(text(format!("committed: {list}")))
+                }
             }
         }
     }

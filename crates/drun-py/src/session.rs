@@ -1,8 +1,8 @@
-//! `DrunSession` Python class: wraps a core `Session` behind a `Mutex` and
-//! exposes execute, rollback, and history.
+//! `DrunSession` Python class: wraps a core `Session` and exposes all session
+//! operations to Python.
 
 use crate::types::{DrunCheckpoint, checkpoint_to_py};
-use drun_core::{DrunEngine, NetworkPolicy, Session, read_host_path};
+use drun_core::{DrunEngine, NetworkPolicy, Session};
 use pyo3::{exceptions::PyRuntimeError, prelude::*};
 use std::sync::Mutex;
 
@@ -29,11 +29,26 @@ impl DrunSession {
         })
     }
 
-    pub fn mount(&self, path: String) -> PyResult<()> {
-        let files = read_host_path(std::path::Path::new(&path))
-            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
-        self.inner.lock().unwrap().mount(files);
-        Ok(())
+    pub fn mount(&self, path: String) -> PyResult<Vec<String>> {
+        self.inner
+            .lock()
+            .unwrap()
+            .mount(std::path::Path::new(&path))
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+    }
+
+    pub fn commit(&self, keys: Option<Vec<String>>) -> PyResult<Vec<String>> {
+        self.inner
+            .lock()
+            .unwrap()
+            .commit(keys)
+            .map(|paths| {
+                paths
+                    .iter()
+                    .map(|p| p.to_string_lossy().into_owned())
+                    .collect()
+            })
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))
     }
 
     #[pyo3(signature = (from_id=0, to_id=None))]

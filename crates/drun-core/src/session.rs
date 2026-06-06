@@ -1,10 +1,11 @@
 //! Stateful execution session backed by a long-lived Deno subprocess. Manages
-//! the checkpoint history and rollback.
+//! the checkpoint history, mount origins, and rollback.
 
 use crate::{Checkpoint, DrunEngine, NetworkPolicy};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, BufWriter, Write};
+use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout};
 
 pub struct Session {
@@ -12,6 +13,7 @@ pub struct Session {
     stdout: BufReader<ChildStdout>,
     _child: Child,
     checkpoints: Vec<Checkpoint>,
+    origins: HashMap<String, PathBuf>,
 }
 
 #[derive(Serialize)]
@@ -46,11 +48,75 @@ impl Session {
                 stdout: String::new(),
                 files: HashMap::new(),
             }],
+            origins: HashMap::new(),
         })
     }
 
-    pub fn mount(&mut self, files: HashMap<String, Vec<u8>>) {
-        self.checkpoints.last_mut().unwrap().files.extend(files);
+    pub fn mount(&mut self, path: &Path) -> anyhow::Result<Vec<String>> {
+        let abs = path
+            .canonicalize()
+            .map_err(|_| anyhow::anyhow!("path does not exist: {}", path.display()))?;
+
+        let mut entries: Vec<(String, Vec<u8>, PathBuf)> = Vec::new();
+        if abs.is_dir() {
+            for entry in walkdir::WalkDir::new(&abs) {
+                let entry = entry?;
+                if entry.file_type().is_file() {
+                    let key = entry
+                        .path()
+                        .strip_prefix(&abs)
+                        .unwrap()
+                        .to_string_lossy()
+                        .into_owned();
+                    entries.push((
+                        key,
+                        std::fs::read(entry.path())?,
+                        entry.path().to_path_buf(),
+                    ));
+                }
+            }
+        } else {
+            let key = abs
+                .file_name()
+                .ok_or_else(|| anyhow::anyhow!("path has no filename: {}", abs.display()))?
+                .to_string_lossy()
+                .into_owned();
+            entries.push((key, std::fs::read(&abs)?, abs.clone()));
+        }
+
+        let keys: Vec<String> = entries.iter().map(|(k, _, _)| k.clone()).collect();
+        let checkpoint = self.checkpoints.last_mut().unwrap();
+        for (key, bytes, host_path) in entries {
+            checkpoint.files.insert(key.clone(), bytes);
+            self.origins.insert(key, host_path);
+        }
+        Ok(keys)
+    }
+
+    pub fn commit(&self, keys: Option<Vec<String>>) -> anyhow::Result<Vec<PathBuf>> {
+        let mounted = &self.checkpoints[0].files;
+        let current = &self.checkpoints.last().unwrap().files;
+        let keys_to_commit: Vec<&String> = match &keys {
+            Some(ks) => ks.iter().collect(),
+            None => self.origins.keys().collect(),
+        };
+        let mut committed = Vec::new();
+        for key in keys_to_commit {
+            let host_path = self
+                .origins
+                .get(key)
+                .ok_or_else(|| anyhow::anyhow!("'{}' was not mounted from host", key))?;
+            let current_bytes = current
+                .get(key)
+                .ok_or_else(|| anyhow::anyhow!("'{}' not in current checkpoint", key))?;
+            let mounted_bytes = mounted.get(key).map(Vec::as_slice).unwrap_or(&[]);
+            if current_bytes.as_slice() == mounted_bytes {
+                continue;
+            }
+            std::fs::write(host_path, current_bytes)?;
+            committed.push(host_path.clone());
+        }
+        Ok(committed)
     }
 
     pub fn execute(&mut self, code: &str) -> anyhow::Result<&Checkpoint> {

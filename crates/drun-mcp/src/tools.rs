@@ -112,6 +112,21 @@ pub struct SessionMountTool {
     pub path: String,
 }
 
+#[mcp_tool(
+    name = "session_commit",
+    description = "Write changed files back to their original host paths. Only files that were mounted and have changed since mounting are written. Pass specific keys to commit a subset, or omit to commit all changed mounted files.",
+    idempotent_hint = false,
+    destructive_hint = true,
+    read_only_hint = false
+)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct SessionCommitTool {
+    /// Session ID from create_session
+    pub session_id: String,
+    /// Specific file keys to commit. Omit to commit all changed mounted files.
+    pub keys: Option<Vec<String>>,
+}
+
 tool_box!(
     DrunTools,
     [
@@ -122,5 +137,6 @@ tool_box!(
         SessionReadFileTool,
         SessionMountTool,
         SessionDiffTool,
+        SessionCommitTool,
     ]
 );

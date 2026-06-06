@@ -2,42 +2,11 @@
 //! and spawns sandboxed subprocesses.
 
 use crate::NetworkPolicy;
-use std::collections::HashMap;
-use std::path::Path;
 use std::process::Stdio;
 
 pub struct DrunEngine {
     pub(crate) deno_path: std::path::PathBuf,
     pub(crate) runner_path: std::path::PathBuf,
-}
-
-pub fn read_host_path(path: &Path) -> anyhow::Result<HashMap<String, Vec<u8>>> {
-    if !path.exists() {
-        anyhow::bail!("path does not exist: {}", path.display());
-    }
-    let mut files = HashMap::new();
-    if path.is_dir() {
-        for entry in walkdir::WalkDir::new(path) {
-            let entry = entry?;
-            if entry.file_type().is_file() {
-                let key = entry
-                    .path()
-                    .strip_prefix(path)
-                    .unwrap()
-                    .to_string_lossy()
-                    .into_owned();
-                files.insert(key, std::fs::read(entry.path())?);
-            }
-        }
-    } else {
-        let key = path
-            .file_name()
-            .ok_or_else(|| anyhow::anyhow!("path has no filename: {}", path.display()))?
-            .to_string_lossy()
-            .into_owned();
-        files.insert(key, std::fs::read(path)?);
-    }
-    Ok(files)
 }
 
 impl DrunEngine {
