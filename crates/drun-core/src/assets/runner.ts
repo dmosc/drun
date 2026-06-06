@@ -1,13 +1,23 @@
 import { loadPyodide } from "npm:pyodide";
 
+// Redirect all Pyodide console output to stderr to keep stdout clean for the
+// JSON parsing.
+// TODO(#1): Remove once generic implementation for output funneling is in place.
+const textEncoder = new TextEncoder();
+const toStderr = (...args: unknown[]) => Deno.stderr.writeSync(textEncoder.encode(args.join(" ") + "\n"));
+console.log = toStderr;
+console.info = toStderr;
+console.warn = toStderr;
+
 const [workspacePath, codePath] = Deno.args;
 const code = await Deno.readTextFile(codePath);
 
 const pyodide = await loadPyodide();
+await pyodide.loadPackage("micropip", { messageCallback: toStderr, errorCallback: toStderr });
 
 let stdout = "";
 pyodide.setStdout({ batched: (text: string) => { stdout += text + "\n"; } });
-pyodide.setStderr({ batched: (text: string) => { Deno.stderr.writeSync(new TextEncoder().encode(text + "\n")); } });
+pyodide.setStderr({ batched: (text: string) => { Deno.stderr.writeSync(textEncoder.encode(text + "\n")); } });
 
 async function mountDir(hostDir: string, pyDir: string): Promise<void> {
   try { pyodide.FS.mkdir(pyDir); } catch { /* already exists */ }
@@ -27,7 +37,7 @@ await mountDir(workspacePath, "/workspace");
 try {
   await pyodide.runPythonAsync(code);
 } catch (err) {
-  console.error(`${err}`);
+  Deno.stderr.writeSync(textEncoder.encode(String(err)));
   Deno.exit(1);
 }
 
@@ -45,4 +55,4 @@ function collectFiles(dir: string): Record<string, number[]> {
   return out;
 }
 
-console.log(JSON.stringify({ stdout: stdout.trimEnd(), files: collectFiles("/workspace") }));
+Deno.stdout.writeSync(textEncoder.encode(JSON.stringify({ stdout: stdout.trimEnd(), files: collectFiles("/workspace") }) + "\n"));

@@ -40,7 +40,7 @@ impl DrunEngine {
             .args([
                 "run",
                 "--allow-read",
-                &format!("--allow-write={}", workspace_str),
+                "--allow-write",
                 "--allow-net",
                 &runner_str,
                 &workspace_str,
