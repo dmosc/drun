@@ -122,7 +122,8 @@ impl ServerHandler for DrunHandler {
         match DrunTools::try_from(params)? {
             DrunTools::CreateSessionTool(_) => {
                 let id = Uuid::new_v4().to_string();
-                let session = Session::new(DrunEngine::new().map_err(err)?);
+                let engine = DrunEngine::new().map_err(err)?;
+                let session = Session::new(&engine).map_err(err)?;
                 self.sessions.lock().unwrap().insert(id.clone(), session);
                 Ok(text(id))
             }

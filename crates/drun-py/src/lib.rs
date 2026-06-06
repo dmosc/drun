@@ -39,9 +39,10 @@ impl DrunSession {
     fn new(files: Option<HashMap<String, Vec<u8>>>) -> PyResult<Self> {
         let engine = DrunEngine::new().map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
         let session = match files {
-            Some(f) => Session::with_files(engine, f),
-            None => Session::new(engine),
-        };
+            Some(f) => Session::with_files(&engine, f),
+            None => Session::new(&engine),
+        }
+        .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
         Ok(Self {
             inner: Mutex::new(session),
         })

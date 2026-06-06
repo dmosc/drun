@@ -1,44 +1,43 @@
 import { loadPyodide } from "npm:pyodide";
 
-// Redirect all Pyodide console output to stderr to keep stdout clean for the
-// JSON parsing.
-// TODO(#1): Remove once generic implementation for output funneling is in place.
-const textEncoder = new TextEncoder();
-const toStderr = (...args: unknown[]) => Deno.stderr.writeSync(textEncoder.encode(args.join(" ") + "\n"));
+const enc = new TextEncoder();
+const toStderr = (...args: unknown[]) =>
+  Deno.stderr.writeSync(enc.encode(args.join(" ") + "\n"));
 console.log = toStderr;
 console.info = toStderr;
 console.warn = toStderr;
 
-const [workspacePath, codePath] = Deno.args;
-const code = await Deno.readTextFile(codePath);
-
 const pyodide = await loadPyodide();
 await pyodide.loadPackage("micropip", { messageCallback: toStderr, errorCallback: toStderr });
 
-let stdout = "";
-pyodide.setStdout({ batched: (text: string) => { stdout += text + "\n"; } });
-pyodide.setStderr({ batched: (text: string) => { Deno.stderr.writeSync(textEncoder.encode(text + "\n")); } });
+let capturedStdout = "";
+pyodide.setStdout({ batched: (s: string) => { capturedStdout += s + "\n"; } });
+pyodide.setStderr({ batched: (s: string) => { Deno.stderr.writeSync(enc.encode(s + "\n")); } });
 
-async function mountDir(hostDir: string, pyDir: string): Promise<void> {
-  try { pyodide.FS.mkdir(pyDir); } catch { /* already exists */ }
-  for await (const entry of Deno.readDir(hostDir)) {
-    const hostPath = `${hostDir}/${entry.name}`;
-    const pyPath = `${pyDir}/${entry.name}`;
-    if (entry.isDirectory) {
-      await mountDir(hostPath, pyPath);
+function clearDir(path: string): void {
+  for (const name of (pyodide.FS.readdir(path) as string[]).filter((n: string) => n !== "." && n !== "..")) {
+    const child = `${path}/${name}`;
+    const stat = pyodide.FS.stat(child);
+    if (pyodide.FS.isDir(stat.mode)) {
+      clearDir(child);
+      pyodide.FS.rmdir(child);
     } else {
-      pyodide.FS.writeFile(pyPath, await Deno.readFile(hostPath));
+      pyodide.FS.unlink(child);
     }
   }
 }
 
-await mountDir(workspacePath, "/workspace");
-
-try {
-  await pyodide.runPythonAsync(code);
-} catch (err) {
-  Deno.stderr.writeSync(textEncoder.encode(String(err)));
-  Deno.exit(1);
+function syncWorkspace(files: Record<string, number[]>): void {
+  try { clearDir("/workspace"); } catch { /* first run */ }
+  try { pyodide.FS.mkdir("/workspace"); } catch { /* already exists */ }
+  for (const [path, bytes] of Object.entries(files)) {
+    let dir = "/workspace";
+    for (const part of path.split("/").slice(0, -1)) {
+      dir += `/${part}`;
+      try { pyodide.FS.mkdir(dir); } catch { }
+    }
+    pyodide.FS.writeFile(`/workspace/${path}`, new Uint8Array(bytes));
+  }
 }
 
 function collectFiles(dir: string): Record<string, number[]> {
@@ -55,4 +54,39 @@ function collectFiles(dir: string): Record<string, number[]> {
   return out;
 }
 
-Deno.stdout.writeSync(textEncoder.encode(JSON.stringify({ stdout: stdout.trimEnd(), files: collectFiles("/workspace") }) + "\n"));
+const dec = new TextDecoder();
+let buf = "";
+async function readLine(): Promise<string | null> {
+  const chunk = new Uint8Array(4096);
+  while (true) {
+    const nl = buf.indexOf("\n");
+    if (nl >= 0) {
+      const line = buf.slice(0, nl);
+      buf = buf.slice(nl + 1);
+      return line;
+    }
+    const n = await Deno.stdin.read(chunk);
+    if (n === null) return null;
+    buf += dec.decode(chunk.subarray(0, n));
+  }
+}
+
+while (true) {
+  const line = await readLine();
+  if (line === null) break;
+  if (!line.trim()) continue;
+
+  const { code, files } = JSON.parse(line) as { code: string; files: Record<string, number[]> };
+  syncWorkspace(files);
+  capturedStdout = "";
+
+  try {
+    await pyodide.runPythonAsync(code);
+    Deno.stdout.writeSync(enc.encode(JSON.stringify({
+      stdout: capturedStdout.trimEnd(),
+      files: collectFiles("/workspace"),
+    }) + "\n"));
+  } catch (err) {
+    Deno.stdout.writeSync(enc.encode(JSON.stringify({ error: String(err) }) + "\n"));
+  }
+}
