@@ -123,7 +123,7 @@ impl Session {
         }
 
         let keys: Vec<String> = entries.iter().map(|(k, _, _)| k.clone()).collect();
-        let checkpoint = self.checkpoints.last_mut().unwrap();
+        let checkpoint = &mut self.checkpoints[self.checkpoint_idx];
         for (key, bytes, host_path) in entries {
             checkpoint.files.insert(key.clone(), bytes);
             self.origins.insert(key, host_path);
@@ -226,7 +226,7 @@ impl Session {
         output_dir: &Path,
         keys: Option<Vec<String>>,
     ) -> anyhow::Result<Vec<PathBuf>> {
-        let current = &self.checkpoints.last().unwrap().files;
+        let current = &self.current().files;
         let keys_to_export: Vec<&String> = match &keys {
             Some(ks) => ks.iter().collect(),
             None => current
@@ -251,7 +251,7 @@ impl Session {
 
     pub fn commit(&self, keys: Option<Vec<String>>) -> anyhow::Result<Vec<PathBuf>> {
         let mounted = &self.checkpoints[0].files;
-        let current = &self.checkpoints.last().unwrap().files;
+        let current = &self.current().files;
         let keys_to_commit: Vec<&String> = match &keys {
             Some(ks) => ks.iter().collect(),
             None => self.origins.keys().collect(),

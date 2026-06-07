@@ -122,6 +122,7 @@ impl ServerHandler for DrunHandler {
                     .map(|(id, session)| {
                         let mut entry = serde_json::json!({
                             "session_id": id,
+                            "checkpoint_id": session.current().id,
                             "checkpoint_count": session.history().len(),
                             "packages": session.packages(),
                             "timeout_ms": session.timeout_ms,
