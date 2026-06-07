@@ -12,8 +12,9 @@ const pyodide = await loadPyodide();
 await pyodide.loadPackage("micropip", { messageCallback: toStderr, errorCallback: toStderr });
 
 let capturedStdout = "";
+let capturedStderr = "";
 pyodide.setStdout({ batched: (s: string) => { capturedStdout += s + "\n"; } });
-pyodide.setStderr({ batched: (s: string) => { Deno.stderr.writeSync(enc.encode(s + "\n")); } });
+pyodide.setStderr({ batched: (s: string) => { capturedStderr += s + "\n"; } });
 
 function clearDir(path: string): void {
   for (const name of (pyodide.FS.readdir(path) as string[]).filter((n: string) => n !== "." && n !== "..")) {
@@ -79,11 +80,12 @@ while (true) {
 
   const message = JSON.parse(line) as Record<string, unknown>;
   capturedStdout = "";
+  capturedStderr = "";
 
   if ("package" in message) {
     try {
       await pyodide.runPythonAsync(`import micropip\nawait micropip.install('${message.package}')`);
-      Deno.stdout.writeSync(enc.encode(JSON.stringify({ stdout: "", files: {} }) + "\n"));
+      Deno.stdout.writeSync(enc.encode(JSON.stringify({ stdout: "", stderr: "", files: {} }) + "\n"));
     } catch (e) {
       Deno.stdout.writeSync(enc.encode(JSON.stringify({ error: String(e) }) + "\n"));
     }
@@ -91,9 +93,14 @@ while (true) {
     const { code, files } = message as { code: string; files: Record<string, number[]> };
     syncWorkspace(files);
     capturedStdout = "";
+    capturedStderr = "";
     try {
       await pyodide.runPythonAsync(code);
-      Deno.stdout.writeSync(enc.encode(JSON.stringify({ stdout: capturedStdout.trimEnd(), files: collectFiles("/workspace") }) + "\n"));
+      Deno.stdout.writeSync(enc.encode(JSON.stringify({
+        stdout: capturedStdout.trimEnd(),
+        stderr: capturedStderr.trimEnd(),
+        files: collectFiles("/workspace"),
+      }) + "\n"));
     } catch (e) {
       Deno.stdout.writeSync(enc.encode(JSON.stringify({ error: String(e) }) + "\n"));
     }

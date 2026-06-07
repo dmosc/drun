@@ -16,8 +16,13 @@ use serde::{Deserialize, Serialize};
 )]
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct CreateSessionTool {
-    /// Network access policy: "packages" (default — PyPI only), "full" (unrestricted), or "none".
+    /// Network access policy: "packages" (default — PyPI only), "full"
+    /// (unrestricted), or "none".
     pub network: Option<String>,
+    /// Wall-clock timeout in milliseconds applied to every session_execute
+    /// call. Triggers a KeyboardInterrupt in the running Python code when
+    /// exceeded.
+    pub timeout_ms: Option<u64>,
 }
 
 #[mcp_tool(
@@ -110,6 +115,29 @@ pub struct SessionMountTool {
     pub session_id: String,
     /// Absolute path to a file or directory on the host filesystem.
     pub path: String,
+}
+
+#[mcp_tool(
+    name = "session_list",
+    description = "List all active sessions with their checkpoint count, installed packages, and resource limits.",
+    idempotent_hint = true,
+    destructive_hint = false,
+    read_only_hint = true
+)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct SessionListTool {}
+
+#[mcp_tool(
+    name = "session_close",
+    description = "Terminate a session and free all associated resources including the sandbox subprocess.",
+    idempotent_hint = false,
+    destructive_hint = true,
+    read_only_hint = false
+)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct SessionCloseTool {
+    /// Session ID from create_session.
+    pub session_id: String,
 }
 
 #[mcp_tool(
@@ -206,6 +234,8 @@ tool_box!(
     DrunTools,
     [
         CreateSessionTool,
+        SessionListTool,
+        SessionCloseTool,
         SessionHistoryTool,
         GetSessionStateTool,
         SessionInstallPackageTool,

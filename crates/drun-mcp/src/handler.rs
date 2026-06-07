@@ -65,8 +65,11 @@ struct SessionState {
     checkpoint_id: usize,
     #[serde(skip_serializing_if = "String::is_empty")]
     stdout: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    stderr: String,
     workspace: Vec<String>,
     packages: Vec<String>,
+    timeout_ms: u64,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     files_added: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -92,8 +95,10 @@ fn build_state(
         session_id: session_id.to_string(),
         checkpoint_id: current.id,
         stdout: current.stdout.clone(),
+        stderr: current.stderr.clone(),
         workspace,
         packages: session.packages().to_vec(),
+        timeout_ms: session.timeout_ms,
         files_added,
         files_modified,
         files_removed,
@@ -144,10 +149,32 @@ impl ServerHandler for DrunHandler {
                     Some("none") => NetworkPolicy::None,
                     _ => NetworkPolicy::Packages,
                 };
-                let session = Session::new(&engine, network).map_err(err)?;
+                let session = Session::new(&engine, network, t.timeout_ms).map_err(err)?;
                 let state = build_state(&id, &session, None, vec![]);
                 self.sessions.lock().unwrap().insert(id, session);
                 Ok(text(state))
+            }
+            DrunTools::SessionListTool(_) => {
+                let sessions = self.sessions.lock().unwrap();
+                let list: Vec<serde_json::Value> = sessions
+                    .iter()
+                    .map(|(id, s)| {
+                        serde_json::json!({
+                            "session_id": id,
+                            "checkpoint_count": s.history().len(),
+                            "packages": s.packages(),
+                            "timeout_ms": s.timeout_ms,
+                        })
+                    })
+                    .collect();
+                Ok(text(serde_json::to_string(&list).unwrap()))
+            }
+            DrunTools::SessionCloseTool(t) => {
+                let session = self.sessions.lock().unwrap().remove(&t.session_id);
+                if session.is_none() {
+                    return Err(err(format!("session '{}' not found", t.session_id)));
+                }
+                Ok(text(format!("closed {}", t.session_id)))
             }
             DrunTools::SessionHistoryTool(t) => {
                 let sessions = self.sessions.lock().unwrap();

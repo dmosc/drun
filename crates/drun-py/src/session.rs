@@ -14,16 +14,16 @@ pub struct DrunSession {
 #[pymethods]
 impl DrunSession {
     #[new]
-    #[pyo3(signature = (network=None))]
-    pub fn new(network: Option<String>) -> PyResult<Self> {
+    #[pyo3(signature = (network=None, timeout_ms=None))]
+    pub fn new(network: Option<String>, timeout_ms: Option<u64>) -> PyResult<Self> {
         let engine = DrunEngine::new().map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
         let policy = match network.as_deref() {
             Some("full") => NetworkPolicy::Full,
             Some("none") => NetworkPolicy::None,
             _ => NetworkPolicy::Packages,
         };
-        let session =
-            Session::new(&engine, policy).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let session = Session::new(&engine, policy, timeout_ms)
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
         Ok(Self {
             inner: Mutex::new(session),
         })

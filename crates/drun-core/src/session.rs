@@ -1,20 +1,20 @@
-//! Stateful execution session backed by a long-lived Deno subprocess. Manages
-//! the checkpoint history, mount origins, and rollback.
-
 use crate::{Checkpoint, DrunEngine, NetworkPolicy};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 pub struct Session {
     stdin: BufWriter<ChildStdin>,
     stdout: BufReader<ChildStdout>,
-    _child: Child,
+    child: Arc<Mutex<Child>>,
     checkpoints: Vec<Checkpoint>,
     origins: HashMap<String, PathBuf>,
     packages: Vec<String>,
+    pub timeout_ms: u64,
 }
 
 #[derive(Serialize)]
@@ -30,9 +30,10 @@ struct InstallRequest<'a> {
 
 #[derive(Deserialize)]
 #[serde(untagged)]
-enum ExecResponse {
+enum RunnerResponse {
     Ok {
         stdout: String,
+        stderr: String,
         files: HashMap<String, Vec<u8>>,
     },
     Err {
@@ -41,21 +42,22 @@ enum ExecResponse {
 }
 
 impl Session {
-    pub fn new(engine: &DrunEngine, network: NetworkPolicy) -> anyhow::Result<Self> {
+    pub fn new(
+        engine: &DrunEngine,
+        network: NetworkPolicy,
+        timeout_ms: Option<u64>,
+    ) -> anyhow::Result<Self> {
         let mut child = engine.spawn_runner(network)?;
         let stdin = BufWriter::new(child.stdin.take().unwrap());
         let stdout = BufReader::new(child.stdout.take().unwrap());
         Ok(Self {
             stdin,
             stdout,
-            _child: child,
-            checkpoints: vec![Checkpoint {
-                id: 0,
-                stdout: String::new(),
-                files: HashMap::new(),
-            }],
+            child: Arc::new(Mutex::new(child)),
+            checkpoints: vec![Self::empty_checkpoint(0, HashMap::new())],
             origins: HashMap::new(),
             packages: Vec::new(),
+            timeout_ms: timeout_ms.unwrap_or(10_000),
         })
     }
 
@@ -98,6 +100,98 @@ impl Session {
             self.origins.insert(key, host_path);
         }
         Ok(keys)
+    }
+
+    pub fn write_file(&mut self, path: &str, content: Vec<u8>) -> &Checkpoint {
+        let mut files = self.checkpoints.last().unwrap().files.clone();
+        files.insert(path.to_string(), content);
+        let id = self.checkpoints.len();
+        self.checkpoints.push(Self::empty_checkpoint(id, files));
+        self.checkpoints.last().unwrap()
+    }
+
+    pub fn delete_file(&mut self, path: &str) -> anyhow::Result<&Checkpoint> {
+        let mut files = self.checkpoints.last().unwrap().files.clone();
+        if files.remove(path).is_none() {
+            anyhow::bail!("'{}' not in current checkpoint", path);
+        }
+        let id = self.checkpoints.len();
+        self.checkpoints.push(Self::empty_checkpoint(id, files));
+        Ok(self.checkpoints.last().unwrap())
+    }
+
+    pub fn install(&mut self, package: &str) -> anyhow::Result<()> {
+        let request = serde_json::to_string(&InstallRequest { package })?;
+        writeln!(self.stdin, "{}", request)?;
+        self.stdin.flush()?;
+        let mut line = String::new();
+        self.stdout.read_line(&mut line)?;
+        match serde_json::from_str::<RunnerResponse>(&line)? {
+            RunnerResponse::Ok { .. } => {
+                self.packages.push(package.to_string());
+                Ok(())
+            }
+            RunnerResponse::Err { error } => anyhow::bail!(error),
+        }
+    }
+
+    pub fn execute(&mut self, code: &str) -> anyhow::Result<&Checkpoint> {
+        let files = &self.checkpoints.last().unwrap().files;
+        let request = serde_json::to_string(&ExecRequest { code, files })?;
+        writeln!(self.stdin, "{}", request)?;
+        self.stdin.flush()?;
+
+        let mut line = String::new();
+
+        let child = Arc::clone(&self.child);
+        let duration = Duration::from_millis(self.timeout_ms);
+        let (cancel_tx, cancel_rx) = std::sync::mpsc::channel::<()>();
+        std::thread::spawn(move || {
+            if cancel_rx.recv_timeout(duration).is_err() {
+                let _ = child.lock().unwrap().kill();
+            }
+        });
+        let read_result = self.stdout.read_line(&mut line);
+        let _ = cancel_tx.send(());
+        match read_result {
+            Ok(0) | Err(_) => anyhow::bail!("execution timed out after {}ms", self.timeout_ms),
+            Ok(_) => {}
+        }
+
+        match serde_json::from_str::<RunnerResponse>(&line)? {
+            RunnerResponse::Ok {
+                stdout,
+                stderr,
+                files,
+            } => {
+                let id = self.checkpoints.len();
+                self.checkpoints.push(Checkpoint {
+                    id,
+                    stdout,
+                    stderr,
+                    files,
+                });
+                Ok(self.checkpoints.last().unwrap())
+            }
+            RunnerResponse::Err { error } => anyhow::bail!(error),
+        }
+    }
+
+    pub fn rollback(&mut self, id: usize) -> anyhow::Result<()> {
+        if id >= self.checkpoints.len() {
+            anyhow::bail!("checkpoint {} does not exist", id);
+        }
+        self.checkpoints.truncate(id + 1);
+        Ok(())
+    }
+
+    fn empty_checkpoint(id: usize, files: HashMap<String, Vec<u8>>) -> Checkpoint {
+        Checkpoint {
+            id,
+            stdout: String::new(),
+            stderr: String::new(),
+            files,
+        }
     }
 
     pub fn export(
@@ -154,48 +248,6 @@ impl Session {
         Ok(committed)
     }
 
-    pub fn install(&mut self, package: &str) -> anyhow::Result<()> {
-        let request = serde_json::to_string(&InstallRequest { package })?;
-        writeln!(self.stdin, "{}", request)?;
-        self.stdin.flush()?;
-        let mut line = String::new();
-        self.stdout.read_line(&mut line)?;
-        match serde_json::from_str::<ExecResponse>(&line)? {
-            ExecResponse::Ok { .. } => {
-                self.packages.push(package.to_string());
-                Ok(())
-            }
-            ExecResponse::Err { error } => anyhow::bail!(error),
-        }
-    }
-
-    pub fn execute(&mut self, code: &str) -> anyhow::Result<&Checkpoint> {
-        let files = &self.checkpoints.last().unwrap().files;
-        let request = serde_json::to_string(&ExecRequest { code, files })?;
-        writeln!(self.stdin, "{}", request)?;
-        self.stdin.flush()?;
-
-        let mut line = String::new();
-        self.stdout.read_line(&mut line)?;
-
-        match serde_json::from_str::<ExecResponse>(&line)? {
-            ExecResponse::Ok { stdout, files } => {
-                let id = self.checkpoints.len();
-                self.checkpoints.push(Checkpoint { id, stdout, files });
-                Ok(self.checkpoints.last().unwrap())
-            }
-            ExecResponse::Err { error } => anyhow::bail!(error),
-        }
-    }
-
-    pub fn rollback(&mut self, id: usize) -> anyhow::Result<()> {
-        if id >= self.checkpoints.len() {
-            anyhow::bail!("checkpoint {} does not exist", id);
-        }
-        self.checkpoints.truncate(id + 1);
-        Ok(())
-    }
-
     pub fn diff(&self, from_id: usize, to_id: usize) -> anyhow::Result<String> {
         if from_id >= self.checkpoints.len() {
             anyhow::bail!("checkpoint {} does not exist", from_id);
@@ -229,32 +281,6 @@ impl Session {
         Ok(output)
     }
 
-    pub fn write_file(&mut self, path: &str, content: Vec<u8>) -> &Checkpoint {
-        let mut files = self.checkpoints.last().unwrap().files.clone();
-        files.insert(path.to_string(), content);
-        let id = self.checkpoints.len();
-        self.checkpoints.push(Checkpoint {
-            id,
-            stdout: String::new(),
-            files,
-        });
-        self.checkpoints.last().unwrap()
-    }
-
-    pub fn delete_file(&mut self, path: &str) -> anyhow::Result<&Checkpoint> {
-        let mut files = self.checkpoints.last().unwrap().files.clone();
-        if files.remove(path).is_none() {
-            anyhow::bail!("'{}' not in current checkpoint", path);
-        }
-        let id = self.checkpoints.len();
-        self.checkpoints.push(Checkpoint {
-            id,
-            stdout: String::new(),
-            files,
-        });
-        Ok(self.checkpoints.last().unwrap())
-    }
-
     pub fn packages(&self) -> &[String] {
         &self.packages
     }
@@ -265,5 +291,11 @@ impl Session {
 
     pub fn history(&self) -> &[Checkpoint] {
         &self.checkpoints
+    }
+}
+
+impl Drop for Session {
+    fn drop(&mut self) {
+        let _ = self.child.lock().unwrap().kill();
     }
 }

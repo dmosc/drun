@@ -6,5 +6,6 @@ use std::collections::HashMap;
 pub struct Checkpoint {
     pub id: usize,
     pub stdout: String,
+    pub stderr: String,
     pub files: HashMap<String, Vec<u8>>,
 }
