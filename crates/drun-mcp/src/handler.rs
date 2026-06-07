@@ -13,6 +13,7 @@ use rust_mcp_sdk::{
         schema_utils::CallToolError,
     },
 };
+use serde::Serialize;
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
@@ -29,6 +30,67 @@ impl DrunHandler {
             sessions: Mutex::new(HashMap::new()),
         }
     }
+}
+
+#[derive(Serialize)]
+struct SessionState {
+    session_id: String,
+    checkpoint_id: usize,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    stdout: String,
+    workspace: Vec<String>,
+    packages: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    files_added: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    files_modified: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    files_removed: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    committed_files: Vec<String>,
+}
+
+fn build_state(
+    session_id: &str,
+    session: &Session,
+    previous_files: Option<&HashMap<String, Vec<u8>>>,
+    committed_files: Vec<String>,
+) -> String {
+    let current = session.current();
+    let mut workspace: Vec<String> = current.files.keys().cloned().collect();
+    workspace.sort();
+    let mut files_added = Vec::new();
+    let mut files_modified = Vec::new();
+    let mut files_removed = Vec::new();
+    if let Some(previous_files) = previous_files {
+        for key in current.files.keys() {
+            if !previous_files.contains_key(key) {
+                files_added.push(key.clone());
+            } else if current.files[key] != previous_files[key] {
+                files_modified.push(key.clone());
+            }
+        }
+        for key in previous_files.keys() {
+            if !current.files.contains_key(key) {
+                files_removed.push(key.clone());
+            }
+        }
+        files_added.sort();
+        files_modified.sort();
+        files_removed.sort();
+    }
+    serde_json::to_string(&SessionState {
+        session_id: session_id.to_string(),
+        checkpoint_id: current.id,
+        stdout: current.stdout.clone(),
+        workspace,
+        packages: session.packages().to_vec(),
+        files_added,
+        files_modified,
+        files_removed,
+        committed_files,
+    })
+    .unwrap()
 }
 
 #[async_trait]
@@ -60,8 +122,16 @@ impl ServerHandler for DrunHandler {
                     _ => NetworkPolicy::Packages,
                 };
                 let session = Session::new(&engine, network).map_err(err)?;
-                self.sessions.lock().unwrap().insert(id.clone(), session);
-                Ok(text(id))
+                let state = build_state(&id, &session, None, vec![]);
+                self.sessions.lock().unwrap().insert(id, session);
+                Ok(text(state))
+            }
+            DrunTools::GetSessionStateTool(t) => {
+                let sessions = self.sessions.lock().unwrap();
+                let session = sessions
+                    .get(&t.session_id)
+                    .ok_or_else(|| err(format!("session '{}' not found", t.session_id)))?;
+                Ok(text(build_state(&t.session_id, session, None, vec![])))
             }
             DrunTools::SessionInstallPackageTool(t) => {
                 let mut sessions = self.sessions.lock().unwrap();
@@ -69,31 +139,39 @@ impl ServerHandler for DrunHandler {
                     .get_mut(&t.session_id)
                     .ok_or_else(|| err(format!("session '{}' not found", t.session_id)))?;
                 session.install(&t.package).map_err(err)?;
-                Ok(text(format!("installed {}", t.package)))
+                Ok(text(build_state(&t.session_id, session, None, vec![])))
             }
             DrunTools::SessionExecuteTool(t) => {
                 let mut sessions = self.sessions.lock().unwrap();
                 let session = sessions
                     .get_mut(&t.session_id)
                     .ok_or_else(|| err(format!("session '{}' not found", t.session_id)))?;
-                let checkpoint = session.execute(&t.code).map_err(err)?;
-                Ok(text(
-                    serde_json::json!({
-                        "checkpoint_id": checkpoint.id,
-                        "stdout": checkpoint.stdout,
-                    })
-                    .to_string(),
-                ))
+                session.execute(&t.code).map_err(err)?;
+                let current_id = session.current().id;
+                let previous_files = if current_id > 0 {
+                    Some(&session.history()[current_id - 1].files)
+                } else {
+                    None
+                };
+                Ok(text(build_state(
+                    &t.session_id,
+                    session,
+                    previous_files,
+                    vec![],
+                )))
             }
             DrunTools::SessionRollbackTool(t) => {
                 let mut sessions = self.sessions.lock().unwrap();
                 let session = sessions
                     .get_mut(&t.session_id)
                     .ok_or_else(|| err(format!("session '{}' not found", t.session_id)))?;
+                let previous_files = session.current().files.clone();
                 session.rollback(t.checkpoint_id as usize).map_err(err)?;
-                Ok(text(format!(
-                    "rolled back to checkpoint {}",
-                    t.checkpoint_id
+                Ok(text(build_state(
+                    &t.session_id,
+                    session,
+                    Some(&previous_files),
+                    vec![],
                 )))
             }
             DrunTools::SessionReadFileTool(t) => {
@@ -130,26 +208,31 @@ impl ServerHandler for DrunHandler {
                 let session = sessions
                     .get_mut(&t.session_id)
                     .ok_or_else(|| err(format!("session '{}' not found", t.session_id)))?;
-                let keys = session.mount(std::path::Path::new(&t.path)).map_err(err)?;
-                Ok(text(format!("mounted: {}", keys.join(", "))))
+                let previous_files = session.current().files.clone();
+                session.mount(std::path::Path::new(&t.path)).map_err(err)?;
+                Ok(text(build_state(
+                    &t.session_id,
+                    session,
+                    Some(&previous_files),
+                    vec![],
+                )))
             }
             DrunTools::SessionCommitTool(t) => {
-                let sessions: std::sync::MutexGuard<'_, HashMap<String, Session>> =
-                    self.sessions.lock().unwrap();
+                let sessions = self.sessions.lock().unwrap();
                 let session = sessions
                     .get(&t.session_id)
                     .ok_or_else(|| err(format!("session '{}' not found", t.session_id)))?;
                 let paths = session.commit(t.keys).map_err(err)?;
-                if paths.is_empty() {
-                    Ok(text("nothing to commit"))
-                } else {
-                    let list = paths
-                        .iter()
-                        .map(|p| p.to_string_lossy().into_owned())
-                        .collect::<Vec<_>>()
-                        .join(", ");
-                    Ok(text(format!("committed: {list}")))
-                }
+                let committed_files = paths
+                    .iter()
+                    .map(|p| p.to_string_lossy().into_owned())
+                    .collect();
+                Ok(text(build_state(
+                    &t.session_id,
+                    session,
+                    None,
+                    committed_files,
+                )))
             }
         }
     }

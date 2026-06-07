@@ -113,6 +113,19 @@ pub struct SessionMountTool {
 }
 
 #[mcp_tool(
+    name = "get_session_state",
+    description = "Get the current state of a session: workspace files, installed packages, and checkpoint info.",
+    idempotent_hint = true,
+    destructive_hint = false,
+    read_only_hint = true
+)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct GetSessionStateTool {
+    /// Session ID from create_session.
+    pub session_id: String,
+}
+
+#[mcp_tool(
     name = "session_commit",
     description = "Write changed files back to their original host paths. Only files that were mounted and have changed since mounting are written. Pass specific keys to commit a subset, or omit to commit all changed mounted files.",
     idempotent_hint = false,
@@ -131,6 +144,7 @@ tool_box!(
     DrunTools,
     [
         CreateSessionTool,
+        GetSessionStateTool,
         SessionInstallPackageTool,
         SessionExecuteTool,
         SessionRollbackTool,

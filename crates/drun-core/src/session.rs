@@ -14,6 +14,7 @@ pub struct Session {
     _child: Child,
     checkpoints: Vec<Checkpoint>,
     origins: HashMap<String, PathBuf>,
+    packages: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -54,6 +55,7 @@ impl Session {
                 files: HashMap::new(),
             }],
             origins: HashMap::new(),
+            packages: Vec::new(),
         })
     }
 
@@ -131,7 +133,10 @@ impl Session {
         let mut line = String::new();
         self.stdout.read_line(&mut line)?;
         match serde_json::from_str::<ExecResponse>(&line)? {
-            ExecResponse::Ok { .. } => Ok(()),
+            ExecResponse::Ok { .. } => {
+                self.packages.push(package.to_string());
+                Ok(())
+            }
             ExecResponse::Err { error } => anyhow::bail!(error),
         }
     }
@@ -194,6 +199,10 @@ impl Session {
             }
         }
         Ok(output)
+    }
+
+    pub fn packages(&self) -> &[String] {
+        &self.packages
     }
 
     pub fn current(&self) -> &Checkpoint {
