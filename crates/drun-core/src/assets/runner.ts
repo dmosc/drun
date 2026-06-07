@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { loadPyodide } from "npm:pyodide";
 
 const enc = new TextEncoder();
@@ -76,17 +77,25 @@ while (true) {
   if (line === null) break;
   if (!line.trim()) continue;
 
-  const { code, files } = JSON.parse(line) as { code: string; files: Record<string, number[]> };
-  syncWorkspace(files);
+  const message = JSON.parse(line) as Record<string, unknown>;
   capturedStdout = "";
 
-  try {
-    await pyodide.runPythonAsync(code);
-    Deno.stdout.writeSync(enc.encode(JSON.stringify({
-      stdout: capturedStdout.trimEnd(),
-      files: collectFiles("/workspace"),
-    }) + "\n"));
-  } catch (err) {
-    Deno.stdout.writeSync(enc.encode(JSON.stringify({ error: String(err) }) + "\n"));
+  if ("package" in message) {
+    try {
+      await pyodide.runPythonAsync(`import micropip\nawait micropip.install('${message.package}')`);
+      Deno.stdout.writeSync(enc.encode(JSON.stringify({ stdout: "", files: {} }) + "\n"));
+    } catch (e) {
+      Deno.stdout.writeSync(enc.encode(JSON.stringify({ error: String(e) }) + "\n"));
+    }
+  } else {
+    const { code, files } = message as { code: string; files: Record<string, number[]> };
+    syncWorkspace(files);
+    capturedStdout = "";
+    try {
+      await pyodide.runPythonAsync(code);
+      Deno.stdout.writeSync(enc.encode(JSON.stringify({ stdout: capturedStdout.trimEnd(), files: collectFiles("/workspace") }) + "\n"));
+    } catch (e) {
+      Deno.stdout.writeSync(enc.encode(JSON.stringify({ error: String(e) }) + "\n"));
+    }
   }
 }

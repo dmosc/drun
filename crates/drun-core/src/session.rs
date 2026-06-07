@@ -22,6 +22,11 @@ struct ExecRequest<'a> {
     files: &'a HashMap<String, Vec<u8>>,
 }
 
+#[derive(Serialize)]
+struct InstallRequest<'a> {
+    package: &'a str,
+}
+
 #[derive(Deserialize)]
 #[serde(untagged)]
 enum ExecResponse {
@@ -117,6 +122,18 @@ impl Session {
             committed.push(host_path.clone());
         }
         Ok(committed)
+    }
+
+    pub fn install(&mut self, package: &str) -> anyhow::Result<()> {
+        let request = serde_json::to_string(&InstallRequest { package })?;
+        writeln!(self.stdin, "{}", request)?;
+        self.stdin.flush()?;
+        let mut line = String::new();
+        self.stdout.read_line(&mut line)?;
+        match serde_json::from_str::<ExecResponse>(&line)? {
+            ExecResponse::Ok { .. } => Ok(()),
+            ExecResponse::Err { error } => anyhow::bail!(error),
+        }
     }
 
     pub fn execute(&mut self, code: &str) -> anyhow::Result<&Checkpoint> {

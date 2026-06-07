@@ -60,6 +60,14 @@ impl DrunSession {
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))
     }
 
+    pub fn install(&self, package: String) -> PyResult<()> {
+        self.inner
+            .lock()
+            .unwrap()
+            .install(&package)
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+    }
+
     pub fn execute(&self, code: String) -> PyResult<DrunCheckpoint> {
         self.inner
             .lock()

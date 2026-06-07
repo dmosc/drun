@@ -59,9 +59,9 @@ pub struct SessionRollbackTool {
 )]
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct SessionInstallPackageTool {
-    /// Session ID from create_session
+    /// Session ID from create_session.
     pub session_id: String,
-    /// Package name as it appears on PyPI (e.g. "pandas" or "faker==1.0.0")
+    /// Package name as it appears on PyPI.
     pub package: String,
 }
 

@@ -68,12 +68,7 @@ impl ServerHandler for DrunHandler {
                 let session = sessions
                     .get_mut(&t.session_id)
                     .ok_or_else(|| err(format!("session '{}' not found", t.session_id)))?;
-                session
-                    .execute(&format!(
-                        "import micropip\nawait micropip.install('{}')",
-                        t.package
-                    ))
-                    .map_err(err)?;
+                session.install(&t.package).map_err(err)?;
                 Ok(text(format!("installed {}", t.package)))
             }
             DrunTools::SessionExecuteTool(t) => {
