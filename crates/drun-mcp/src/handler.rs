@@ -32,6 +32,33 @@ impl DrunHandler {
     }
 }
 
+fn get_session_state_delta(
+    previous_files: Option<&HashMap<String, Vec<u8>>>,
+    current_files: &HashMap<String, Vec<u8>>,
+) -> (Vec<String>, Vec<String>, Vec<String>) {
+    let mut added = Vec::new();
+    let mut modified = Vec::new();
+    let mut removed = Vec::new();
+    if let Some(previous_files) = previous_files {
+        for key in current_files.keys() {
+            if !previous_files.contains_key(key) {
+                added.push(key.clone());
+            } else if current_files[key] != previous_files[key] {
+                modified.push(key.clone());
+            }
+        }
+        for key in previous_files.keys() {
+            if !current_files.contains_key(key) {
+                removed.push(key.clone());
+            }
+        }
+        added.sort();
+        modified.sort();
+        removed.sort();
+    }
+    (added, modified, removed)
+}
+
 #[derive(Serialize)]
 struct SessionState {
     session_id: String,
@@ -59,26 +86,8 @@ fn build_state(
     let current = session.current();
     let mut workspace: Vec<String> = current.files.keys().cloned().collect();
     workspace.sort();
-    let mut files_added = Vec::new();
-    let mut files_modified = Vec::new();
-    let mut files_removed = Vec::new();
-    if let Some(previous_files) = previous_files {
-        for key in current.files.keys() {
-            if !previous_files.contains_key(key) {
-                files_added.push(key.clone());
-            } else if current.files[key] != previous_files[key] {
-                files_modified.push(key.clone());
-            }
-        }
-        for key in previous_files.keys() {
-            if !current.files.contains_key(key) {
-                files_removed.push(key.clone());
-            }
-        }
-        files_added.sort();
-        files_modified.sort();
-        files_removed.sort();
-    }
+    let (files_added, files_modified, files_removed) =
+        get_session_state_delta(previous_files, &current.files);
     serde_json::to_string(&SessionState {
         session_id: session_id.to_string(),
         checkpoint_id: current.id,
@@ -91,6 +100,20 @@ fn build_state(
         committed_files,
     })
     .unwrap()
+}
+
+#[derive(Serialize)]
+struct CheckpointSummary {
+    checkpoint_id: usize,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    stdout: String,
+    file_count: usize,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    files_added: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    files_modified: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    files_removed: Vec<String>,
 }
 
 #[async_trait]
@@ -125,6 +148,35 @@ impl ServerHandler for DrunHandler {
                 let state = build_state(&id, &session, None, vec![]);
                 self.sessions.lock().unwrap().insert(id, session);
                 Ok(text(state))
+            }
+            DrunTools::SessionHistoryTool(t) => {
+                let sessions = self.sessions.lock().unwrap();
+                let session = sessions
+                    .get(&t.session_id)
+                    .ok_or_else(|| err(format!("session '{}' not found", t.session_id)))?;
+                let history = session.history();
+                let summaries: Vec<CheckpointSummary> = history
+                    .iter()
+                    .enumerate()
+                    .map(|(i, cp)| {
+                        let prev = if i > 0 {
+                            Some(&history[i - 1].files)
+                        } else {
+                            None
+                        };
+                        let (files_added, files_modified, files_removed) =
+                            get_session_state_delta(prev, &cp.files);
+                        CheckpointSummary {
+                            checkpoint_id: cp.id,
+                            stdout: cp.stdout.clone(),
+                            file_count: cp.files.len(),
+                            files_added,
+                            files_modified,
+                            files_removed,
+                        }
+                    })
+                    .collect();
+                Ok(text(serde_json::to_string(&summaries).unwrap()))
             }
             DrunTools::GetSessionStateTool(t) => {
                 let sessions = self.sessions.lock().unwrap();

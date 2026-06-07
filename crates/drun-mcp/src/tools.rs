@@ -113,6 +113,19 @@ pub struct SessionMountTool {
 }
 
 #[mcp_tool(
+    name = "session_history",
+    description = "List every checkpoint in a session with its stdout and the file delta relative to the previous checkpoint. Use this to decide which checkpoint to roll back to.",
+    idempotent_hint = true,
+    destructive_hint = false,
+    read_only_hint = true
+)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct SessionHistoryTool {
+    /// Session ID from create_session.
+    pub session_id: String,
+}
+
+#[mcp_tool(
     name = "get_session_state",
     description = "Get the current state of a session: workspace files, installed packages, and checkpoint info.",
     idempotent_hint = true,
@@ -176,6 +189,7 @@ tool_box!(
     DrunTools,
     [
         CreateSessionTool,
+        SessionHistoryTool,
         GetSessionStateTool,
         SessionInstallPackageTool,
         SessionExecuteTool,
