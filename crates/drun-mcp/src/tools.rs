@@ -216,6 +216,21 @@ pub struct SessionExportTool {
 }
 
 #[mcp_tool(
+    name = "session_fork",
+    description = "Create a new session branching from an existing session at a given checkpoint. The fork inherits the workspace files, installed packages, network policy, and timeout from the source. Returns a new session_id independent of the original.",
+    idempotent_hint = false,
+    destructive_hint = false,
+    read_only_hint = false
+)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct SessionForkTool {
+    /// Session ID to fork from.
+    pub session_id: String,
+    /// Checkpoint to branch from. Defaults to the current checkpoint.
+    pub checkpoint_id: Option<u64>,
+}
+
+#[mcp_tool(
     name = "session_commit",
     description = "Write changed files back to their original host paths. Only files that were mounted and have changed since mounting are written. Pass specific keys to commit a subset, or omit to commit all changed mounted files.",
     idempotent_hint = false,
@@ -234,6 +249,7 @@ tool_box!(
     DrunTools,
     [
         CreateSessionTool,
+        SessionForkTool,
         SessionListTool,
         SessionCloseTool,
         SessionHistoryTool,

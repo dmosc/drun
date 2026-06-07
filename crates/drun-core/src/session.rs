@@ -14,6 +14,7 @@ pub struct Session {
     checkpoints: Vec<Checkpoint>,
     origins: HashMap<String, PathBuf>,
     packages: Vec<String>,
+    network: NetworkPolicy,
     pub timeout_ms: u64,
 }
 
@@ -57,8 +58,28 @@ impl Session {
             checkpoints: vec![Self::empty_checkpoint(0, HashMap::new())],
             origins: HashMap::new(),
             packages: Vec::new(),
+            network,
             timeout_ms: timeout_ms.unwrap_or(10_000),
         })
+    }
+
+    pub fn from_session(
+        engine: &DrunEngine,
+        source: &Session,
+        checkpoint_id: Option<usize>,
+    ) -> anyhow::Result<Self> {
+        // Default to forking from current checkpoint.
+        let checkpoint_idx = checkpoint_id.unwrap_or(source.checkpoints.len() - 1);
+        if checkpoint_idx >= source.checkpoints.len() {
+            anyhow::bail!("checkpoint {} does not exist", checkpoint_idx);
+        }
+        let files = source.checkpoints[checkpoint_idx].files.clone();
+        let mut session = Self::new(engine, source.network, Some(source.timeout_ms))?;
+        for package in &source.packages {
+            session.install(package)?;
+        }
+        session.checkpoints[0].files = files;
+        Ok(session)
     }
 
     pub fn mount(&mut self, path: &Path) -> anyhow::Result<Vec<String>> {
@@ -185,15 +206,6 @@ impl Session {
         Ok(())
     }
 
-    fn empty_checkpoint(id: usize, files: HashMap<String, Vec<u8>>) -> Checkpoint {
-        Checkpoint {
-            id,
-            stdout: String::new(),
-            stderr: String::new(),
-            files,
-        }
-    }
-
     pub fn export(
         &self,
         output_dir: &Path,
@@ -291,6 +303,15 @@ impl Session {
 
     pub fn history(&self) -> &[Checkpoint] {
         &self.checkpoints
+    }
+
+    fn empty_checkpoint(id: usize, files: HashMap<String, Vec<u8>>) -> Checkpoint {
+        Checkpoint {
+            id,
+            stdout: String::new(),
+            stderr: String::new(),
+            files,
+        }
     }
 }
 
