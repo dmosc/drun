@@ -314,6 +314,32 @@ impl ServerHandler for DrunHandler {
                     committed_files,
                 )))
             }
+            DrunTools::SessionExportTool(t) => {
+                static DEFAULT_DRUN_EXPORT_FOLDER: &str = "drun-export";
+                let sessions = self.sessions.lock().unwrap();
+                let session = sessions
+                    .get(&t.session_id)
+                    .ok_or_else(|| err(format!("session '{}' not found", t.session_id)))?;
+                let output_dir = match &t.output_dir {
+                    Some(d) => std::path::PathBuf::from(d),
+                    None => std::env::current_dir()
+                        .map_err(err)?
+                        .join(DEFAULT_DRUN_EXPORT_FOLDER)
+                        .join(&t.session_id),
+                };
+                let exported_files = session.export(&output_dir, t.keys).map_err(err)?;
+                let exported_files: Vec<String> = exported_files
+                    .iter()
+                    .map(|p| p.to_string_lossy().into_owned())
+                    .collect();
+                Ok(text(
+                    serde_json::json!({
+                        "output_dir": output_dir.to_string_lossy(),
+                        "exported_files": exported_files,
+                    })
+                    .to_string(),
+                ))
+            }
         }
     }
 }

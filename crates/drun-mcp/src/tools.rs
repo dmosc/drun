@@ -171,6 +171,23 @@ pub struct SessionDeleteFileTool {
 }
 
 #[mcp_tool(
+    name = "session_export",
+    description = "Write sandbox-generated files to the host filesystem. By default exports all files with no host origin (i.e. created inside the sandbox, not from session_mount) into output_dir. Pass keys to select specific files. output_dir defaults to ./drun-export/<session> in the current working directory.",
+    idempotent_hint = false,
+    destructive_hint = false,
+    read_only_hint = false
+)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct SessionExportTool {
+    /// Session ID from create_session.
+    pub session_id: String,
+    /// Absolute path to a directory on the host to write files into. Defaults to ./drun-export/<session_id>.
+    pub output_dir: Option<String>,
+    /// Specific workspace-relative file keys to export. Omit to export all sandbox-generated files.
+    pub keys: Option<Vec<String>>,
+}
+
+#[mcp_tool(
     name = "session_commit",
     description = "Write changed files back to their original host paths. Only files that were mounted and have changed since mounting are written. Pass specific keys to commit a subset, or omit to commit all changed mounted files.",
     idempotent_hint = false,
@@ -200,5 +217,6 @@ tool_box!(
         SessionMountTool,
         SessionDiffTool,
         SessionCommitTool,
+        SessionExportTool,
     ]
 );

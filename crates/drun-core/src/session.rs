@@ -100,6 +100,34 @@ impl Session {
         Ok(keys)
     }
 
+    pub fn export(
+        &self,
+        output_dir: &Path,
+        keys: Option<Vec<String>>,
+    ) -> anyhow::Result<Vec<PathBuf>> {
+        let current = &self.checkpoints.last().unwrap().files;
+        let keys_to_export: Vec<&String> = match &keys {
+            Some(ks) => ks.iter().collect(),
+            None => current
+                .keys()
+                .filter(|k| !self.origins.contains_key(*k))
+                .collect(),
+        };
+        let mut exported_files = Vec::new();
+        for key in keys_to_export {
+            let output_bytes = current
+                .get(key)
+                .ok_or_else(|| anyhow::anyhow!("'{}' not in current checkpoint", key))?;
+            let target_path = output_dir.join(key);
+            if let Some(target_path_parent) = target_path.parent() {
+                std::fs::create_dir_all(target_path_parent)?;
+            }
+            std::fs::write(&target_path, output_bytes)?;
+            exported_files.push(target_path);
+        }
+        Ok(exported_files)
+    }
+
     pub fn commit(&self, keys: Option<Vec<String>>) -> anyhow::Result<Vec<PathBuf>> {
         let mounted = &self.checkpoints[0].files;
         let current = &self.checkpoints.last().unwrap().files;
