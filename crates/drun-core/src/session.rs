@@ -1,4 +1,4 @@
-use crate::{Checkpoint, DrunEngine, NetworkPolicy};
+use crate::{Checkpoint, CheckpointRef, DrunEngine, NetworkPolicy};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, BufWriter, Write};
@@ -12,10 +12,12 @@ pub struct Session {
     stdout: BufReader<ChildStdout>,
     child: Arc<Mutex<Child>>,
     checkpoints: Vec<Checkpoint>,
+    checkpoint_idx: usize,
     origins: HashMap<String, PathBuf>,
     packages: Vec<String>,
     network: NetworkPolicy,
     pub timeout_ms: u64,
+    pub parent: Option<CheckpointRef>,
 }
 
 #[derive(Serialize)]
@@ -56,20 +58,22 @@ impl Session {
             stdout,
             child: Arc::new(Mutex::new(child)),
             checkpoints: vec![Self::empty_checkpoint(0, HashMap::new())],
+            checkpoint_idx: 0,
             origins: HashMap::new(),
             packages: Vec::new(),
             network,
             timeout_ms: timeout_ms.unwrap_or(10_000),
+            parent: None,
         })
     }
 
     pub fn from_session(
         engine: &DrunEngine,
+        source_session_id: &str,
         source: &Session,
         checkpoint_id: Option<usize>,
     ) -> anyhow::Result<Self> {
-        // Default to forking from current checkpoint.
-        let checkpoint_idx = checkpoint_id.unwrap_or(source.checkpoints.len() - 1);
+        let checkpoint_idx = checkpoint_id.unwrap_or(source.checkpoint_idx);
         if checkpoint_idx >= source.checkpoints.len() {
             anyhow::bail!("checkpoint {} does not exist", checkpoint_idx);
         }
@@ -79,6 +83,10 @@ impl Session {
             session.install(package)?;
         }
         session.checkpoints[0].files = files;
+        session.parent = Some(CheckpointRef {
+            session_id: source_session_id.to_string(),
+            checkpoint_id: checkpoint_idx,
+        });
         Ok(session)
     }
 
@@ -124,20 +132,25 @@ impl Session {
     }
 
     pub fn write_file(&mut self, path: &str, content: Vec<u8>) -> &Checkpoint {
-        let mut files = self.checkpoints.last().unwrap().files.clone();
+        let mut files = self.checkpoints[self.checkpoint_idx].files.clone();
         files.insert(path.to_string(), content);
-        let id = self.checkpoints.len();
-        self.checkpoints.push(Self::empty_checkpoint(id, files));
+        self.checkpoints.truncate(self.checkpoint_idx + 1);
+        let checkpoint_idx = self.checkpoints.len();
+        self.checkpoints
+            .push(Self::empty_checkpoint(checkpoint_idx, files));
+        self.checkpoint_idx = checkpoint_idx;
         self.checkpoints.last().unwrap()
     }
 
     pub fn delete_file(&mut self, path: &str) -> anyhow::Result<&Checkpoint> {
-        let mut files = self.checkpoints.last().unwrap().files.clone();
+        let mut files = self.checkpoints[self.checkpoint_idx].files.clone();
         if files.remove(path).is_none() {
             anyhow::bail!("'{}' not in current checkpoint", path);
         }
+        self.checkpoints.truncate(self.checkpoint_idx + 1);
         let id = self.checkpoints.len();
         self.checkpoints.push(Self::empty_checkpoint(id, files));
+        self.checkpoint_idx = id;
         Ok(self.checkpoints.last().unwrap())
     }
 
@@ -157,7 +170,8 @@ impl Session {
     }
 
     pub fn execute(&mut self, code: &str) -> anyhow::Result<&Checkpoint> {
-        let files = &self.checkpoints.last().unwrap().files;
+        self.checkpoints.truncate(self.checkpoint_idx + 1);
+        let files = &self.checkpoints[self.checkpoint_idx].files;
         let request = serde_json::to_string(&ExecRequest { code, files })?;
         writeln!(self.stdin, "{}", request)?;
         self.stdin.flush()?;
@@ -192,17 +206,18 @@ impl Session {
                     stderr,
                     files,
                 });
+                self.checkpoint_idx = id;
                 Ok(self.checkpoints.last().unwrap())
             }
             RunnerResponse::Err { error } => anyhow::bail!(error),
         }
     }
 
-    pub fn rollback(&mut self, id: usize) -> anyhow::Result<()> {
-        if id >= self.checkpoints.len() {
-            anyhow::bail!("checkpoint {} does not exist", id);
+    pub fn rollback(&mut self, checkpoint_idx: usize) -> anyhow::Result<()> {
+        if checkpoint_idx >= self.checkpoints.len() {
+            anyhow::bail!("checkpoint {} does not exist", checkpoint_idx);
         }
-        self.checkpoints.truncate(id + 1);
+        self.checkpoint_idx = checkpoint_idx;
         Ok(())
     }
 
@@ -298,7 +313,7 @@ impl Session {
     }
 
     pub fn current(&self) -> &Checkpoint {
-        self.checkpoints.last().unwrap()
+        &self.checkpoints[self.checkpoint_idx]
     }
 
     pub fn history(&self) -> &[Checkpoint] {

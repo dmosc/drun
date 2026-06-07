@@ -103,6 +103,7 @@ impl ServerHandler for DrunHandler {
                         .ok_or_else(|| err(format!("session '{}' not found", t.session_id)))?;
                     Session::from_session(
                         &self.engine,
+                        &t.session_id,
                         source,
                         t.checkpoint_id.map(|id| id as usize),
                     )
@@ -119,12 +120,17 @@ impl ServerHandler for DrunHandler {
                 let list: Vec<serde_json::Value> = sessions
                     .iter()
                     .map(|(id, session)| {
-                        serde_json::json!({
+                        let mut entry = serde_json::json!({
                             "session_id": id,
                             "checkpoint_count": session.history().len(),
                             "packages": session.packages(),
                             "timeout_ms": session.timeout_ms,
-                        })
+                        });
+                        if let Some(r) = &session.parent {
+                            entry["parent_session_id"] = serde_json::json!(r.session_id);
+                            entry["parent_checkpoint_id"] = serde_json::json!(r.checkpoint_id);
+                        }
+                        entry
                     })
                     .collect();
                 Ok(text(serde_json::to_string(&list).unwrap()))

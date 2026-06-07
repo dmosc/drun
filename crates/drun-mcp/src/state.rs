@@ -14,6 +14,10 @@ use std::collections::HashMap;
 pub(crate) struct SessionState {
     pub session_id: String,
     pub checkpoint_id: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_session_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_checkpoint_id: Option<usize>,
     #[serde(skip_serializing_if = "String::is_empty")]
     pub stdout: String,
     #[serde(skip_serializing_if = "String::is_empty")]
@@ -87,11 +91,16 @@ pub(crate) fn build_session_state(
     let current = session.current();
     let mut workspace: Vec<String> = current.files.keys().cloned().collect();
     workspace.sort();
-    let (files_added, files_modified, files_removed) =
-        file_delta(previous_files, &current.files);
+    let (files_added, files_modified, files_removed) = file_delta(previous_files, &current.files);
+    let (parent_session_id, parent_checkpoint_id) = match &session.parent {
+        Some(r) => (Some(r.session_id.clone()), Some(r.checkpoint_id)),
+        None => (None, None),
+    };
     serde_json::to_string(&SessionState {
         session_id: session_id.to_string(),
         checkpoint_id: current.id,
+        parent_session_id,
+        parent_checkpoint_id,
         stdout: current.stdout.clone(),
         stderr: current.stderr.clone(),
         workspace,

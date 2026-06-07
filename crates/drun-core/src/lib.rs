@@ -6,7 +6,7 @@ mod engine;
 mod network;
 mod session;
 
-pub use checkpoint::Checkpoint;
+pub use checkpoint::{Checkpoint, CheckpointRef};
 pub use engine::DrunEngine;
 pub use network::NetworkPolicy;
 pub use session::Session;
