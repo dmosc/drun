@@ -2,7 +2,7 @@
 //! the appropriate session operation.
 
 use crate::response::{err, file_content, text};
-use crate::state::{build_checkpoint_history, build_session_state};
+use crate::state::{build_checkpoint_history, build_session_state, build_session_tree};
 use crate::tools::DrunTools;
 use async_trait::async_trait;
 use drun_core::{DrunEngine, NetworkPolicy, Session};
@@ -263,6 +263,11 @@ impl ServerHandler for DrunHandler {
                     committed_files,
                 )))
             }),
+
+            DrunTools::SessionTreeTool(_) => {
+                let sessions = self.sessions.lock().unwrap();
+                Ok(text(build_session_tree(&sessions)))
+            }
 
             DrunTools::SessionExportTool(t) => {
                 static DEFAULT_EXPORT_FOLDER: &str = "drun-export";

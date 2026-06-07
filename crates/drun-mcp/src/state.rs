@@ -11,6 +11,78 @@ use serde::Serialize;
 use std::collections::HashMap;
 
 #[derive(Serialize)]
+struct CheckpointTreeNode {
+    checkpoint_id: usize,
+    is_current: bool,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    stdout: String,
+    file_count: usize,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    forks: Vec<SessionTreeNode>,
+}
+
+#[derive(Serialize)]
+struct SessionTreeNode {
+    session_id: String,
+    checkpoints: Vec<CheckpointTreeNode>,
+}
+
+fn build_session_node(
+    session_id: &str,
+    session: &Session,
+    children: &HashMap<(String, usize), Vec<(String, &Session)>>,
+) -> SessionTreeNode {
+    let current_id = session.current().id;
+    let checkpoints = session
+        .history()
+        .iter()
+        .map(|cp| {
+            let forks = children
+                .get(&(session_id.to_string(), cp.id))
+                .map(|kids| {
+                    kids.iter()
+                        .map(|(id, s)| build_session_node(id, s, children))
+                        .collect()
+                })
+                .unwrap_or_default();
+            CheckpointTreeNode {
+                checkpoint_id: cp.id,
+                is_current: cp.id == current_id,
+                stdout: cp.stdout.clone(),
+                file_count: cp.files.len(),
+                forks,
+            }
+        })
+        .collect();
+    SessionTreeNode {
+        session_id: session_id.to_string(),
+        checkpoints,
+    }
+}
+
+pub(crate) fn build_session_tree(sessions: &HashMap<String, Session>) -> String {
+    let mut children: HashMap<(String, usize), Vec<(String, &Session)>> = HashMap::new();
+    let mut roots: Vec<(&str, &Session)> = Vec::new();
+
+    for (id, session) in sessions {
+        match &session.parent {
+            Some(r) => children
+                .entry((r.session_id.clone(), r.checkpoint_id))
+                .or_default()
+                .push((id.clone(), session)),
+            None => roots.push((id.as_str(), session)),
+        }
+    }
+
+    let tree: Vec<SessionTreeNode> = roots
+        .into_iter()
+        .map(|(id, session)| build_session_node(id, session, &children))
+        .collect();
+
+    serde_json::to_string(&tree).unwrap()
+}
+
+#[derive(Serialize)]
 pub(crate) struct SessionState {
     pub session_id: String,
     pub checkpoint_id: usize,

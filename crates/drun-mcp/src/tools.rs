@@ -42,9 +42,9 @@ pub struct SessionExecuteTool {
 
 #[mcp_tool(
     name = "session_rollback",
-    description = "Roll back a session to a prior checkpoint, discarding all state after it.",
+    description = "Move the session head to a prior checkpoint without discarding history. Subsequent writes branch from the new head. Use session_fork if you want to explore a branch while keeping the original.",
     idempotent_hint = false,
-    destructive_hint = true,
+    destructive_hint = false,
     read_only_hint = false
 )]
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -245,6 +245,16 @@ pub struct SessionCommitTool {
     pub keys: Option<Vec<String>>,
 }
 
+#[mcp_tool(
+    name = "session_tree",
+    description = "Return the full session-checkpoint tree in a single call. Root sessions are top-level; forks are nested under the checkpoint they branched from. Each checkpoint is flagged with is_current so you can see the active head of every session at a glance.",
+    idempotent_hint = true,
+    destructive_hint = false,
+    read_only_hint = true
+)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct SessionTreeTool {}
+
 tool_box!(
     DrunTools,
     [
@@ -264,5 +274,6 @@ tool_box!(
         SessionDiffTool,
         SessionCommitTool,
         SessionExportTool,
+        SessionTreeTool,
     ]
 );
