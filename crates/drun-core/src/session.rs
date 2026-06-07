@@ -201,6 +201,32 @@ impl Session {
         Ok(output)
     }
 
+    pub fn write_file(&mut self, path: &str, content: Vec<u8>) -> &Checkpoint {
+        let mut files = self.checkpoints.last().unwrap().files.clone();
+        files.insert(path.to_string(), content);
+        let id = self.checkpoints.len();
+        self.checkpoints.push(Checkpoint {
+            id,
+            stdout: String::new(),
+            files,
+        });
+        self.checkpoints.last().unwrap()
+    }
+
+    pub fn delete_file(&mut self, path: &str) -> anyhow::Result<&Checkpoint> {
+        let mut files = self.checkpoints.last().unwrap().files.clone();
+        if files.remove(path).is_none() {
+            anyhow::bail!("'{}' not in current checkpoint", path);
+        }
+        let id = self.checkpoints.len();
+        self.checkpoints.push(Checkpoint {
+            id,
+            stdout: String::new(),
+            files,
+        });
+        Ok(self.checkpoints.last().unwrap())
+    }
+
     pub fn packages(&self) -> &[String] {
         &self.packages
     }

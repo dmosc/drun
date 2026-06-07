@@ -126,6 +126,38 @@ pub struct GetSessionStateTool {
 }
 
 #[mcp_tool(
+    name = "session_write_file",
+    description = "Create or overwrite a file in the session workspace. Creates a new checkpoint. Path is relative to /workspace.",
+    idempotent_hint = false,
+    destructive_hint = false,
+    read_only_hint = false
+)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct SessionWriteFileTool {
+    /// Session ID from create_session.
+    pub session_id: String,
+    /// File path relative to /workspace.
+    pub path: String,
+    /// UTF-8 text content to write.
+    pub content: String,
+}
+
+#[mcp_tool(
+    name = "session_delete_file",
+    description = "Delete a file from the session workspace. Creates a new checkpoint.",
+    idempotent_hint = false,
+    destructive_hint = true,
+    read_only_hint = false
+)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct SessionDeleteFileTool {
+    /// Session ID from create_session.
+    pub session_id: String,
+    /// File path relative to /workspace.
+    pub path: String,
+}
+
+#[mcp_tool(
     name = "session_commit",
     description = "Write changed files back to their original host paths. Only files that were mounted and have changed since mounting are written. Pass specific keys to commit a subset, or omit to commit all changed mounted files.",
     idempotent_hint = false,
@@ -149,6 +181,8 @@ tool_box!(
         SessionExecuteTool,
         SessionRollbackTool,
         SessionReadFileTool,
+        SessionWriteFileTool,
+        SessionDeleteFileTool,
         SessionMountTool,
         SessionDiffTool,
         SessionCommitTool,

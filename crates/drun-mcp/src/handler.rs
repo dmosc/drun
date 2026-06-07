@@ -186,6 +186,34 @@ impl ServerHandler for DrunHandler {
                     .ok_or_else(|| err(format!("'{}' not in current checkpoint", t.path)))?;
                 Ok(file_content(&t.path, bytes))
             }
+            DrunTools::SessionWriteFileTool(t) => {
+                let mut sessions = self.sessions.lock().unwrap();
+                let session = sessions
+                    .get_mut(&t.session_id)
+                    .ok_or_else(|| err(format!("session '{}' not found", t.session_id)))?;
+                let previous_files = session.current().files.clone();
+                session.write_file(&t.path, t.content.into_bytes());
+                Ok(text(build_state(
+                    &t.session_id,
+                    session,
+                    Some(&previous_files),
+                    vec![],
+                )))
+            }
+            DrunTools::SessionDeleteFileTool(t) => {
+                let mut sessions = self.sessions.lock().unwrap();
+                let session = sessions
+                    .get_mut(&t.session_id)
+                    .ok_or_else(|| err(format!("session '{}' not found", t.session_id)))?;
+                let previous_files = session.current().files.clone();
+                session.delete_file(&t.path).map_err(err)?;
+                Ok(text(build_state(
+                    &t.session_id,
+                    session,
+                    Some(&previous_files),
+                    vec![],
+                )))
+            }
             DrunTools::SessionDiffTool(t) => {
                 let sessions = self.sessions.lock().unwrap();
                 let session = sessions
