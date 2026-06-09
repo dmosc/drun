@@ -9,6 +9,7 @@
 use drun_core::Session;
 use serde::Serialize;
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 #[derive(Serialize)]
 struct CheckpointTreeNode {
@@ -60,11 +61,16 @@ fn build_session_node(
     }
 }
 
-pub(crate) fn build_session_tree(sessions: &HashMap<String, Session>) -> String {
+pub(crate) fn build_session_tree(sessions: &HashMap<String, Arc<Mutex<Session>>>) -> String {
+    let mutex_guarded_sessions: Vec<(String, std::sync::MutexGuard<Session>)> = sessions
+        .iter()
+        .map(|(id, arc)| (id.clone(), arc.lock().unwrap()))
+        .collect();
     let mut children: HashMap<(String, usize), Vec<(String, &Session)>> = HashMap::new();
     let mut roots: Vec<(&str, &Session)> = Vec::new();
 
-    for (id, session) in sessions {
+    for (id, session) in &mutex_guarded_sessions {
+        let session: &Session = &*session;
         match &session.parent {
             Some(r) => children
                 .entry((r.session_id.clone(), r.checkpoint_id))

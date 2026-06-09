@@ -31,7 +31,7 @@ fn parse_network_policy(s: Option<&str>) -> NetworkPolicy {
 
 pub struct DrunHandler {
     engine: DrunEngine,
-    sessions: Mutex<HashMap<String, Session>>,
+    sessions: Mutex<HashMap<String, Arc<Mutex<Session>>>>,
 }
 
 impl DrunHandler {
@@ -47,11 +47,14 @@ impl DrunHandler {
         session_id: &str,
         f: impl FnOnce(&Session) -> Result<CallToolResult, CallToolError>,
     ) -> Result<CallToolResult, CallToolError> {
-        let sessions = self.sessions.lock().unwrap();
-        let session = sessions
+        let session = self
+            .sessions
+            .lock()
+            .unwrap()
             .get(session_id)
-            .ok_or_else(|| err(format!("session '{}' not found", session_id)))?;
-        f(session)
+            .ok_or_else(|| err(format!("session '{}' not found", session_id)))?
+            .clone();
+        f(&session.lock().unwrap())
     }
 
     fn with_session_mut(
@@ -59,11 +62,14 @@ impl DrunHandler {
         session_id: &str,
         f: impl FnOnce(&mut Session) -> Result<CallToolResult, CallToolError>,
     ) -> Result<CallToolResult, CallToolError> {
-        let mut sessions = self.sessions.lock().unwrap();
-        let session = sessions
-            .get_mut(session_id)
-            .ok_or_else(|| err(format!("session '{}' not found", session_id)))?;
-        f(session)
+        let session = self
+            .sessions
+            .lock()
+            .unwrap()
+            .get(session_id)
+            .ok_or_else(|| err(format!("session '{}' not found", session_id)))?
+            .clone();
+        f(&mut session.lock().unwrap())
     }
 }
 
@@ -92,35 +98,48 @@ impl ServerHandler for DrunHandler {
                 let network = parse_network_policy(t.network.as_deref());
                 let session = Session::new(&self.engine, network, t.timeout_ms).map_err(err)?;
                 let state = build_session_state(&session_id, &session, None, vec![]);
-                self.sessions.lock().unwrap().insert(session_id, session);
+                self.sessions
+                    .lock()
+                    .unwrap()
+                    .insert(session_id, Arc::new(Mutex::new(session)));
                 Ok(text(state))
             }
 
             DrunTools::SessionForkTool(t) => {
-                let fork = {
+                let source_session = {
                     let sessions = self.sessions.lock().unwrap();
-                    let source = sessions
+                    sessions
                         .get(&t.session_id)
-                        .ok_or_else(|| err(format!("session '{}' not found", t.session_id)))?;
+                        .ok_or_else(|| err(format!("session '{}' not found", t.session_id)))?
+                        .clone()
+                };
+                let forked_session = {
+                    let source = source_session.lock().unwrap();
                     Session::from_session(
                         &self.engine,
                         &t.session_id,
-                        source,
+                        &source,
                         t.checkpoint_id.map(|id| id as usize),
                     )
                     .map_err(err)?
                 };
-                let fork_id = Uuid::new_v4().to_string();
-                let state = build_session_state(&fork_id, &fork, None, vec![]);
-                self.sessions.lock().unwrap().insert(fork_id, fork);
-                Ok(text(state))
+                let fork_session_id = Uuid::new_v4().to_string();
+                let session_state =
+                    build_session_state(&fork_session_id, &forked_session, None, vec![]);
+                self.sessions
+                    .lock()
+                    .unwrap()
+                    .insert(fork_session_id, Arc::new(Mutex::new(forked_session)));
+                Ok(text(session_state))
             }
 
             DrunTools::SessionListTool(_) => {
-                let sessions = self.sessions.lock().unwrap();
-                let list: Vec<serde_json::Value> = sessions
+                let sessions: HashMap<String, Arc<Mutex<Session>>> =
+                    self.sessions.lock().unwrap().clone();
+                let session_summaries: Vec<serde_json::Value> = sessions
                     .iter()
-                    .map(|(id, session)| {
+                    .map(|(id, arc)| {
+                        let session = arc.lock().unwrap();
                         let mut entry = serde_json::json!({
                             "session_id": id,
                             "checkpoint_id": session.current().id,
@@ -135,12 +154,12 @@ impl ServerHandler for DrunHandler {
                         entry
                     })
                     .collect();
-                Ok(text(serde_json::to_string(&list).unwrap()))
+                Ok(text(serde_json::to_string(&session_summaries).unwrap()))
             }
 
             DrunTools::SessionCloseTool(t) => {
-                let session = self.sessions.lock().unwrap().remove(&t.session_id);
-                if session.is_none() {
+                let removed_session = self.sessions.lock().unwrap().remove(&t.session_id);
+                if removed_session.is_none() {
                     return Err(err(format!("session '{}' not found", t.session_id)));
                 }
                 Ok(text(format!("closed {}", t.session_id)))
@@ -273,7 +292,8 @@ impl ServerHandler for DrunHandler {
             }),
 
             DrunTools::SessionTreeTool(_) => {
-                let sessions = self.sessions.lock().unwrap();
+                let sessions: HashMap<String, Arc<Mutex<Session>>> =
+                    self.sessions.lock().unwrap().clone();
                 Ok(text(build_session_tree(&sessions)))
             }
 
