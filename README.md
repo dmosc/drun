@@ -21,6 +21,8 @@ the risk. drun rejects the tradeoff.
 - **Checkpointing and rollback.** Every execution step is a checkpoint. Agents
   can explore a branch of execution, decide it was wrong, and roll back to any
   prior state — like `git` for runtime.
+- **Forking.** Spin up a new session branching from any checkpoint. Run two
+  approaches in parallel, compare results, discard the worse one.
 - **Frozen dependency surface.** The runtime bundles its own execution
   environment. Agents can't accidentally pull in a compromised or outdated
   package at the system level — the core sandbox is immutable and auditable.
@@ -95,32 +97,106 @@ curl -fsSL https://deno.land/install.sh | sh
 
 ---
 
+## MCP tools
+
+Once registered, drun exposes 17 tools to any MCP-compatible client, organized
+below by function.
+
+### Session lifecycle
+
+| Tool             | Description                                                                                                                                                         |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `create_session` | Start a new sandbox session. Accepts `network` (`"packages"` / `"full"` / `"none"`) and `timeout_ms`. Returns a `session_id`.                                       |
+| `session_list`   | List all active sessions with checkpoint count, installed packages, and resource limits.                                                                            |
+| `session_close`  | Terminate a session and free all associated resources.                                                                                                              |
+| `session_tree`   | Return the full session-and-fork tree in one call. Shows which checkpoint every session currently heads, with forks nested under the checkpoint they branched from. |
+
+### Execution
+
+| Tool                      | Description                                                                                                            |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `session_execute`         | Run Python code in a session, building on the current checkpoint. Returns stdout, stderr, and the new `checkpoint_id`. |
+| `session_install_package` | Install a PyPI package into the session. Available in all subsequent `session_execute` calls.                          |
+
+### Navigation & inspection
+
+| Tool                | Description                                                                                                                                                    |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `session_rollback`  | Move the session head to a prior checkpoint without discarding history. Subsequent writes branch from the new head.                                            |
+| `session_fork`      | Create a new independent session branching from an existing session at a given checkpoint. The fork inherits workspace, packages, network policy, and timeout. |
+| `session_history`   | List every checkpoint with its stdout and the file delta relative to the previous checkpoint. Use this to decide which checkpoint to roll back to.             |
+| `get_session_state` | Get the current state of a session: workspace files, installed packages, and checkpoint info.                                                                  |
+
+### File operations
+
+| Tool                  | Description                                                                                               |
+| --------------------- | --------------------------------------------------------------------------------------------------------- |
+| `session_read_file`   | Read the contents of a file from the current checkpoint. Handles text, JSON, images, and binary formats.  |
+| `session_write_file`  | Create or overwrite a file in the session workspace. Creates a new checkpoint.                            |
+| `session_delete_file` | Delete a file from the session workspace. Creates a new checkpoint.                                       |
+| `session_mount`       | Copy a file or directory from the host filesystem into the session workspace at `/workspace`.             |
+| `session_diff`        | Compute a unified diff between two checkpoints. Defaults to initial mounted state vs. current checkpoint. |
+
+### Export & host I/O
+
+| Tool             | Description                                                                                                                                            |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `session_export` | Write sandbox-generated files to the host filesystem. Exports only files created inside the sandbox (not mounted ones) unless specific keys are given. |
+| `session_commit` | Write changed mounted files back to their original host paths. Only files that were mounted and have changed are written.                              |
+
+---
+
 ## Usage
 
-### MCP tools
+### Typical agent flows
 
-Once registered, drun exposes five tools to any MCP-compatible client:
-
-| Tool                      | Description                                                              |
-| ------------------------- | ------------------------------------------------------------------------ |
-| `create_session`          | Start a new sandbox session. Returns a `session_id`.                     |
-| `session_execute`         | Run code in the session. Returns stdout and a `checkpoint_id`.           |
-| `session_install_package` | Install a package into the session. Available in all subsequent steps.   |
-| `session_read_file`       | Read a file from the session. Text, JSON, images — all handled natively. |
-| `session_rollback`        | Roll back to a prior checkpoint, discarding everything after it.         |
-
-A typical agent flow:
+**Data analysis:**
 
 ```
 create_session
-session_install_package(numpy)
-session_execute(data analysis)
-session_execute(generate chart)
+session_install_package(pandas)
+session_mount(/path/to/data.csv)
+session_execute(load and analyze data)
+session_execute(generate summary chart)
 session_read_file(chart.png)
-session_rollback (if something went wrong)
+session_export               ← writes chart.png to ./drun-export/<session>/
 ```
 
-### Library
+**Parallel hypothesis testing:**
+
+```
+create_session               → session A
+session_execute(load data)   → checkpoint 1
+
+session_fork(session_A, checkpoint_1)  → session B
+
+session_execute(session_A, approach 1)
+session_execute(session_B, approach 2)
+
+session_read_file(session_A, results.json)
+session_read_file(session_B, results.json)
+session_close(loser)
+```
+
+**Editing host files safely:**
+
+```
+create_session
+session_mount(/path/to/script.py)
+session_execute(refactor the code)
+session_diff                 ← review changes before writing back
+session_commit               ← writes only changed mounted files to host
+```
+
+**Recovering from a mistake:**
+
+```
+session_history              ← review all checkpoints
+session_rollback(checkpoint_id)
+session_execute(corrected approach)
+```
+
+### Python library
 
 ```python
 from drun import Session
@@ -177,6 +253,9 @@ Always use drun MCP tools for code execution:
 - Use `session_install_package` before importing third-party packages
 - Use `session_execute` to run code
 - Use `session_read_file` to inspect output files and images
+- Use `session_fork` to explore alternative approaches in parallel
+- Use `session_rollback` to recover from mistakes
+- Use `session_commit` to write changes back to host files after review
 - Never run code directly on the host machine
 ```
 
@@ -188,9 +267,10 @@ This instruction is picked up by Claude Code at the start of every conversation.
 
 drun runs code via [Pyodide](https://pyodide.org) — a WebAssembly port of
 CPython — inside a [Deno](https://deno.land) subprocess. The Deno process stays
-alive for the lifetime of a session, communicating with the Rust host. Pyodide's
-in-memory filesystem provides an ephemeral directory; drun snapshots it at each
-step to power checkpointing and rollback.
+alive for the lifetime of a session, communicating with the Rust host over
+stdin/stdout. Pyodide's in-memory filesystem provides an ephemeral workspace;
+drun snapshots it at each step to power checkpointing, rollback, diffing, and
+forking.
 
 The isolation is structural, not policy-based. Because execution happens inside
 WebAssembly, the sandbox cannot make arbitrary system calls, access the host

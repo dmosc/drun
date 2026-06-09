@@ -7,10 +7,28 @@ use std::process::{Child, ChildStdin, ChildStdout};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-pub struct Session {
+struct Runner {
+    child: Arc<Mutex<Child>>,
     stdin: BufWriter<ChildStdin>,
     stdout: BufReader<ChildStdout>,
-    child: Arc<Mutex<Child>>,
+}
+
+impl Runner {
+    fn new(engine: &DrunEngine, network: NetworkPolicy) -> anyhow::Result<Self> {
+        let mut child = engine.spawn_runner(network)?;
+        let stdin = BufWriter::new(child.stdin.take().unwrap());
+        let stdout = BufReader::new(child.stdout.take().unwrap());
+        Ok(Self {
+            child: Arc::new(Mutex::new(child)),
+            stdin,
+            stdout,
+        })
+    }
+}
+
+pub struct Session {
+    runner: Runner,
+    engine: DrunEngine,
     checkpoints: Vec<Checkpoint>,
     checkpoint_idx: usize,
     origins: HashMap<String, PathBuf>,
@@ -50,13 +68,10 @@ impl Session {
         network: NetworkPolicy,
         timeout_ms: Option<u64>,
     ) -> anyhow::Result<Self> {
-        let mut child = engine.spawn_runner(network)?;
-        let stdin = BufWriter::new(child.stdin.take().unwrap());
-        let stdout = BufReader::new(child.stdout.take().unwrap());
+        let runner = Runner::new(engine, network)?;
         Ok(Self {
-            stdin,
-            stdout,
-            child: Arc::new(Mutex::new(child)),
+            runner,
+            engine: engine.clone(),
             checkpoints: vec![Self::empty_checkpoint(0, HashMap::new())],
             checkpoint_idx: 0,
             origins: HashMap::new(),
@@ -88,6 +103,21 @@ impl Session {
             checkpoint_id: checkpoint_idx,
         });
         Ok(session)
+    }
+
+    fn restart(&mut self) -> anyhow::Result<()> {
+        let _ = self.runner.child.lock().unwrap().kill();
+        self.runner = Runner::new(&self.engine, self.network)?;
+        let packages = std::mem::take(&mut self.packages);
+        for package in &packages {
+            let request = serde_json::to_string(&InstallRequest { package })?;
+            writeln!(self.runner.stdin, "{}", request)?;
+            self.runner.stdin.flush()?;
+            let mut line = String::new();
+            let _ = self.runner.stdout.read_line(&mut line);
+        }
+        self.packages = packages;
+        Ok(())
     }
 
     pub fn mount(&mut self, path: &Path) -> anyhow::Result<Vec<String>> {
@@ -156,10 +186,10 @@ impl Session {
 
     pub fn install(&mut self, package: &str) -> anyhow::Result<()> {
         let request = serde_json::to_string(&InstallRequest { package })?;
-        writeln!(self.stdin, "{}", request)?;
-        self.stdin.flush()?;
+        writeln!(self.runner.stdin, "{}", request)?;
+        self.runner.stdin.flush()?;
         let mut line = String::new();
-        self.stdout.read_line(&mut line)?;
+        self.runner.stdout.read_line(&mut line)?;
         match serde_json::from_str::<RunnerResponse>(&line)? {
             RunnerResponse::Ok { .. } => {
                 self.packages.push(package.to_string());
@@ -173,12 +203,12 @@ impl Session {
         self.checkpoints.truncate(self.checkpoint_idx + 1);
         let files = &self.checkpoints[self.checkpoint_idx].files;
         let request = serde_json::to_string(&ExecRequest { code, files })?;
-        writeln!(self.stdin, "{}", request)?;
-        self.stdin.flush()?;
+        writeln!(self.runner.stdin, "{}", request)?;
+        self.runner.stdin.flush()?;
 
         let mut line = String::new();
 
-        let child = Arc::clone(&self.child);
+        let child = Arc::clone(&self.runner.child);
         let duration = Duration::from_millis(self.timeout_ms);
         let (cancel_tx, cancel_rx) = std::sync::mpsc::channel::<()>();
         std::thread::spawn(move || {
@@ -186,10 +216,14 @@ impl Session {
                 let _ = child.lock().unwrap().kill();
             }
         });
-        let read_result = self.stdout.read_line(&mut line);
+        let read_result = self.runner.stdout.read_line(&mut line);
         let _ = cancel_tx.send(());
+
         match read_result {
-            Ok(0) | Err(_) => anyhow::bail!("execution timed out after {}ms", self.timeout_ms),
+            Ok(0) | Err(_) => {
+                self.restart()?;
+                anyhow::bail!("execution timed out after {}ms", self.timeout_ms);
+            }
             Ok(_) => {}
         }
 
@@ -332,6 +366,6 @@ impl Session {
 
 impl Drop for Session {
     fn drop(&mut self) {
-        let _ = self.child.lock().unwrap().kill();
+        let _ = self.runner.child.lock().unwrap().kill();
     }
 }

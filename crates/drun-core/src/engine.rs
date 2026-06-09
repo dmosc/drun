@@ -4,6 +4,7 @@
 use crate::NetworkPolicy;
 use std::process::Stdio;
 
+#[derive(Clone)]
 pub struct DrunEngine {
     pub(crate) deno_path: std::path::PathBuf,
     pub(crate) runner_path: std::path::PathBuf,
