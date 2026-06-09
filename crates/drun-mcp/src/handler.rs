@@ -5,6 +5,7 @@ use crate::response::{err, file_content, text};
 use crate::state::{build_checkpoint_history, build_session_state, build_session_tree};
 use crate::tools::DrunTools;
 use async_trait::async_trait;
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use drun_core::{DrunEngine, NetworkPolicy, Session};
 use rust_mcp_sdk::{
     McpServer,
@@ -202,8 +203,15 @@ impl ServerHandler for DrunHandler {
             }),
 
             DrunTools::SessionWriteFileTool(t) => self.with_session_mut(&t.session_id, |session| {
+                let bytes = if t.is_base64.unwrap_or(false) {
+                    BASE64
+                        .decode(&t.content)
+                        .map_err(|e| err(format!("base64 decode error: {e}")))?
+                } else {
+                    t.content.into_bytes()
+                };
                 let previous_files = session.current().files.clone();
-                session.write_file(&t.path, t.content.into_bytes());
+                session.write_file(&t.path, bytes);
                 Ok(text(build_session_state(
                     &t.session_id,
                     session,

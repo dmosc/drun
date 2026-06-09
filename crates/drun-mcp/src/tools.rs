@@ -168,7 +168,7 @@ pub struct GetSessionStateTool {
 
 #[mcp_tool(
     name = "session_write_file",
-    description = "Create or overwrite a file in the session workspace. Creates a new checkpoint. Path is relative to /workspace.",
+    description = "Create or overwrite a file in the session workspace. Creates a new checkpoint. Path is relative to /workspace. Set is_base64 to true to write binary files — content will be decoded from standard base64 before writing.",
     idempotent_hint = false,
     destructive_hint = false,
     read_only_hint = false
@@ -179,8 +179,8 @@ pub struct SessionWriteFileTool {
     pub session_id: String,
     /// File path relative to /workspace.
     pub path: String,
-    /// UTF-8 text content to write.
     pub content: String,
+    pub is_base64: Option<bool>,
 }
 
 #[mcp_tool(
