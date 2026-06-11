@@ -322,8 +322,8 @@ impl ServerHandler for DrunHandler {
                 let client = reqwest::Client::new();
                 let mut request_builder = client.request(parsed_method, &t.url);
                 if let Some(headers) = t.headers {
-                    for (key, value) in headers {
-                        request_builder = request_builder.header(key, value);
+                    for header in headers {
+                        request_builder = request_builder.header(header.name, header.value);
                     }
                 }
                 if let Some(body) = t.body {

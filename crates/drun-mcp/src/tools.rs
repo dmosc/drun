@@ -6,7 +6,12 @@ use rust_mcp_sdk::{
     tool_box,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct HttpHeader {
+    pub name: String,
+    pub value: String,
+}
 
 #[mcp_tool(
     name = "create_session",
@@ -271,8 +276,8 @@ pub struct SessionFetchTool {
     pub url: String,
     /// HTTP method. Defaults to GET.
     pub method: Option<String>,
-    /// Request headers.
-    pub headers: Option<HashMap<String, String>>,
+    /// Request headers as name/value pairs.
+    pub headers: Option<Vec<HttpHeader>>,
     /// Request body for POST/PUT/PATCH.
     pub body: Option<String>,
 }
