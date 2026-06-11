@@ -1,13 +1,12 @@
-//! Snapshot of sandbox state after a single execution step, holding stdout and
-//! all workspace files.
-
 use std::collections::HashMap;
+
+pub type FileMap = HashMap<String, Vec<u8>>;
 
 pub struct Checkpoint {
     pub id: usize,
     pub stdout: String,
     pub stderr: String,
-    pub files: HashMap<String, Vec<u8>>,
+    pub files: FileMap,
 }
 
 pub struct CheckpointRef {

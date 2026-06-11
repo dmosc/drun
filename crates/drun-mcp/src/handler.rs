@@ -1,8 +1,7 @@
-//! MCP request handler. Owns the session map and dispatches each tool call to
-//! the appropriate session operation.
-
 use crate::response::{err, file_content, text};
-use crate::state::{build_checkpoint_history, build_session_state, build_session_tree};
+use crate::state::{
+    build_checkpoint_history, build_session_list, build_session_state, build_session_tree,
+};
 use crate::tools::DrunTools;
 use async_trait::async_trait;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
@@ -20,14 +19,6 @@ use std::{
     sync::{Arc, Mutex},
 };
 use uuid::Uuid;
-
-fn parse_network_policy(s: Option<&str>) -> NetworkPolicy {
-    match s {
-        Some("full") => NetworkPolicy::Full,
-        Some("none") => NetworkPolicy::None,
-        _ => NetworkPolicy::Packages,
-    }
-}
 
 pub struct DrunHandler {
     engine: DrunEngine,
@@ -95,7 +86,7 @@ impl ServerHandler for DrunHandler {
         match DrunTools::try_from(params)? {
             DrunTools::CreateSessionTool(t) => {
                 let session_id = Uuid::new_v4().to_string();
-                let network = parse_network_policy(t.network.as_deref());
+                let network = NetworkPolicy::from_opt_str(t.network.as_deref());
                 let session = Session::new(&self.engine, network, t.timeout_ms).map_err(err)?;
                 let state = build_session_state(&session_id, &session, None, vec![]);
                 self.sessions
@@ -134,27 +125,8 @@ impl ServerHandler for DrunHandler {
             }
 
             DrunTools::SessionListTool(_) => {
-                let sessions: HashMap<String, Arc<Mutex<Session>>> =
-                    self.sessions.lock().unwrap().clone();
-                let session_summaries: Vec<serde_json::Value> = sessions
-                    .iter()
-                    .map(|(id, arc)| {
-                        let session = arc.lock().unwrap();
-                        let mut entry = serde_json::json!({
-                            "session_id": id,
-                            "checkpoint_id": session.current().id,
-                            "checkpoint_count": session.history().len(),
-                            "packages": session.packages(),
-                            "timeout_ms": session.timeout_ms,
-                        });
-                        if let Some(r) = &session.parent {
-                            entry["parent_session_id"] = serde_json::json!(r.session_id);
-                            entry["parent_checkpoint_id"] = serde_json::json!(r.checkpoint_id);
-                        }
-                        entry
-                    })
-                    .collect();
-                Ok(text(serde_json::to_string(&session_summaries).unwrap()))
+                let sessions = self.sessions.lock().unwrap().clone();
+                Ok(text(build_session_list(&sessions)))
             }
 
             DrunTools::SessionCloseTool(t) => {

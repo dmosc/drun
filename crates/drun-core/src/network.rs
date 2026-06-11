@@ -1,9 +1,16 @@
-//! Network access policy passed at session creation to control what the sandbox
-//! can reach.
-
 #[derive(Clone, Copy)]
 pub enum NetworkPolicy {
-    Packages, // allow only package registries (default)
-    Full,     // unrestricted network access
-    None,     // no network
+    Packages,
+    Full,
+    None,
+}
+
+impl NetworkPolicy {
+    pub fn from_opt_str(s: Option<&str>) -> Self {
+        match s {
+            Some("full") => Self::Full,
+            Some("none") => Self::None,
+            _ => Self::Packages,
+        }
+    }
 }

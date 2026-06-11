@@ -1,30 +1,7 @@
-use crate::{Checkpoint, CheckpointRef, DrunEngine, NetworkPolicy};
-use serde::{Deserialize, Serialize};
+use crate::runner::{ExecSuccess, Runner};
+use crate::{Checkpoint, CheckpointRef, DrunEngine, FileMap, NetworkPolicy};
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Child, ChildStdin, ChildStdout};
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
-
-struct Runner {
-    child: Arc<Mutex<Child>>,
-    stdin: BufWriter<ChildStdin>,
-    stdout: BufReader<ChildStdout>,
-}
-
-impl Runner {
-    fn new(engine: &DrunEngine, network: NetworkPolicy) -> anyhow::Result<Self> {
-        let mut child = engine.spawn_runner(network)?;
-        let stdin = BufWriter::new(child.stdin.take().unwrap());
-        let stdout = BufReader::new(child.stdout.take().unwrap());
-        Ok(Self {
-            child: Arc::new(Mutex::new(child)),
-            stdin,
-            stdout,
-        })
-    }
-}
 
 pub struct Session {
     runner: Runner,
@@ -38,39 +15,14 @@ pub struct Session {
     pub parent: Option<CheckpointRef>,
 }
 
-#[derive(Serialize)]
-struct ExecRequest<'a> {
-    code: &'a str,
-    files: &'a HashMap<String, Vec<u8>>,
-}
-
-#[derive(Serialize)]
-struct InstallRequest<'a> {
-    package: &'a str,
-}
-
-#[derive(Deserialize)]
-#[serde(untagged)]
-enum RunnerResponse {
-    Ok {
-        stdout: String,
-        stderr: String,
-        files: HashMap<String, Vec<u8>>,
-    },
-    Err {
-        error: String,
-    },
-}
-
 impl Session {
     pub fn new(
         engine: &DrunEngine,
         network: NetworkPolicy,
         timeout_ms: Option<u64>,
     ) -> anyhow::Result<Self> {
-        let runner = Runner::new(engine, network)?;
         Ok(Self {
-            runner,
+            runner: Runner::new(engine, network)?,
             engine: engine.clone(),
             checkpoints: vec![Self::empty_checkpoint(0, HashMap::new())],
             checkpoint_idx: 0,
@@ -105,54 +57,12 @@ impl Session {
         Ok(session)
     }
 
-    fn restart(&mut self) -> anyhow::Result<()> {
-        let _ = self.runner.child.lock().unwrap().kill();
-        self.runner = Runner::new(&self.engine, self.network)?;
-        let packages = std::mem::take(&mut self.packages);
-        for package in &packages {
-            let request = serde_json::to_string(&InstallRequest { package })?;
-            writeln!(self.runner.stdin, "{}", request)?;
-            self.runner.stdin.flush()?;
-            let mut line = String::new();
-            let _ = self.runner.stdout.read_line(&mut line);
-        }
-        self.packages = packages;
-        Ok(())
-    }
-
     pub fn mount(&mut self, path: &Path) -> anyhow::Result<Vec<String>> {
         let abs = path
             .canonicalize()
             .map_err(|_| anyhow::anyhow!("path does not exist: {}", path.display()))?;
-
-        let mut entries: Vec<(String, Vec<u8>, PathBuf)> = Vec::new();
-        if abs.is_dir() {
-            for entry in walkdir::WalkDir::new(&abs) {
-                let entry = entry?;
-                if entry.file_type().is_file() {
-                    let key = entry
-                        .path()
-                        .strip_prefix(&abs)
-                        .unwrap()
-                        .to_string_lossy()
-                        .into_owned();
-                    entries.push((
-                        key,
-                        std::fs::read(entry.path())?,
-                        entry.path().to_path_buf(),
-                    ));
-                }
-            }
-        } else {
-            let key = abs
-                .file_name()
-                .ok_or_else(|| anyhow::anyhow!("path has no filename: {}", abs.display()))?
-                .to_string_lossy()
-                .into_owned();
-            entries.push((key, std::fs::read(&abs)?, abs.clone()));
-        }
-
-        let keys: Vec<String> = entries.iter().map(|(k, _, _)| k.clone()).collect();
+        let entries = Self::read_host_entries(&abs)?;
+        let keys: Vec<String> = entries.iter().map(|(key, _, _)| key.clone()).collect();
         let checkpoint = &mut self.checkpoints[self.checkpoint_idx];
         for (key, bytes, host_path) in entries {
             checkpoint.files.insert(key.clone(), bytes);
@@ -164,12 +74,7 @@ impl Session {
     pub fn write_file(&mut self, path: &str, content: Vec<u8>) -> &Checkpoint {
         let mut files = self.checkpoints[self.checkpoint_idx].files.clone();
         files.insert(path.to_string(), content);
-        self.checkpoints.truncate(self.checkpoint_idx + 1);
-        let checkpoint_idx = self.checkpoints.len();
-        self.checkpoints
-            .push(Self::empty_checkpoint(checkpoint_idx, files));
-        self.checkpoint_idx = checkpoint_idx;
-        self.checkpoints.last().unwrap()
+        self.push_files_as_checkpoint(files)
     }
 
     pub fn delete_file(&mut self, path: &str) -> anyhow::Result<&Checkpoint> {
@@ -177,62 +82,30 @@ impl Session {
         if files.remove(path).is_none() {
             anyhow::bail!("'{}' not in current checkpoint", path);
         }
-        self.checkpoints.truncate(self.checkpoint_idx + 1);
-        let id = self.checkpoints.len();
-        self.checkpoints.push(Self::empty_checkpoint(id, files));
-        self.checkpoint_idx = id;
-        Ok(self.checkpoints.last().unwrap())
+        Ok(self.push_files_as_checkpoint(files))
     }
 
     pub fn install(&mut self, package: &str) -> anyhow::Result<()> {
-        let request = serde_json::to_string(&InstallRequest { package })?;
-        writeln!(self.runner.stdin, "{}", request)?;
-        self.runner.stdin.flush()?;
-        let mut line = String::new();
-        self.runner.stdout.read_line(&mut line)?;
-        match serde_json::from_str::<RunnerResponse>(&line)? {
-            RunnerResponse::Ok { .. } => {
-                self.packages.push(package.to_string());
-                Ok(())
-            }
-            RunnerResponse::Err { error } => anyhow::bail!(error),
-        }
+        self.runner.install(package)?;
+        self.packages.push(package.to_string());
+        Ok(())
     }
 
     pub fn execute(&mut self, code: &str) -> anyhow::Result<&Checkpoint> {
         self.checkpoints.truncate(self.checkpoint_idx + 1);
         let files = &self.checkpoints[self.checkpoint_idx].files;
-        let request = serde_json::to_string(&ExecRequest { code, files })?;
-        writeln!(self.runner.stdin, "{}", request)?;
-        self.runner.stdin.flush()?;
-
-        let mut line = String::new();
-
-        let child = Arc::clone(&self.runner.child);
-        let duration = Duration::from_millis(self.timeout_ms);
-        let (cancel_tx, cancel_rx) = std::sync::mpsc::channel::<()>();
-        std::thread::spawn(move || {
-            if cancel_rx.recv_timeout(duration).is_err() {
-                let _ = child.lock().unwrap().kill();
+        let exec_result = self.runner.execute(code, files, self.timeout_ms);
+        match exec_result {
+            Err(timeout_error) => {
+                self.rebuild_runner_after_timeout()?;
+                Err(timeout_error)
             }
-        });
-        let read_result = self.runner.stdout.read_line(&mut line);
-        let _ = cancel_tx.send(());
-
-        match read_result {
-            Ok(0) | Err(_) => {
-                self.restart()?;
-                anyhow::bail!("execution timed out after {}ms", self.timeout_ms);
-            }
-            Ok(_) => {}
-        }
-
-        match serde_json::from_str::<RunnerResponse>(&line)? {
-            RunnerResponse::Ok {
+            Ok(Err(python_error)) => anyhow::bail!(python_error),
+            Ok(Ok(ExecSuccess {
                 stdout,
                 stderr,
                 files,
-            } => {
+            })) => {
                 let id = self.checkpoints.len();
                 self.checkpoints.push(Checkpoint {
                     id,
@@ -243,7 +116,6 @@ impl Session {
                 self.checkpoint_idx = id;
                 Ok(self.checkpoints.last().unwrap())
             }
-            RunnerResponse::Err { error } => anyhow::bail!(error),
         }
     }
 
@@ -270,21 +142,21 @@ impl Session {
         };
         let mut exported_files = Vec::new();
         for key in keys_to_export {
-            let output_bytes = current
+            let bytes = current
                 .get(key)
                 .ok_or_else(|| anyhow::anyhow!("'{}' not in current checkpoint", key))?;
-            let target_path = output_dir.join(key);
-            if let Some(target_path_parent) = target_path.parent() {
-                std::fs::create_dir_all(target_path_parent)?;
+            let dest_path = output_dir.join(key);
+            if let Some(parent) = dest_path.parent() {
+                std::fs::create_dir_all(parent)?;
             }
-            std::fs::write(&target_path, output_bytes)?;
-            exported_files.push(target_path);
+            std::fs::write(&dest_path, bytes)?;
+            exported_files.push(dest_path);
         }
         Ok(exported_files)
     }
 
     pub fn commit(&self, keys: Option<Vec<String>>) -> anyhow::Result<Vec<PathBuf>> {
-        let mounted = &self.checkpoints[0].files;
+        let mounted_files = &self.checkpoints[0].files;
         let current = &self.current().files;
         let keys_to_commit: Vec<&String> = match &keys {
             Some(ks) => ks.iter().collect(),
@@ -299,7 +171,7 @@ impl Session {
             let current_bytes = current
                 .get(key)
                 .ok_or_else(|| anyhow::anyhow!("'{}' not in current checkpoint", key))?;
-            let mounted_bytes = mounted.get(key).map(Vec::as_slice).unwrap_or(&[]);
+            let mounted_bytes = mounted_files.get(key).map(Vec::as_slice).unwrap_or(&[]);
             if current_bytes.as_slice() == mounted_bytes {
                 continue;
             }
@@ -318,9 +190,9 @@ impl Session {
         }
         let from = &self.checkpoints[from_id].files;
         let to = &self.checkpoints[to_id].files;
-        let keys: std::collections::BTreeSet<&String> = from.keys().chain(to.keys()).collect();
+        let all_keys: std::collections::BTreeSet<&String> = from.keys().chain(to.keys()).collect();
         let mut output = String::new();
-        for key in keys {
+        for key in all_keys {
             let from_bytes = from.get(key).map(Vec::as_slice).unwrap_or(&[]);
             let to_bytes = to.get(key).map(Vec::as_slice).unwrap_or(&[]);
             if from_bytes == to_bytes {
@@ -354,18 +226,53 @@ impl Session {
         &self.checkpoints
     }
 
-    fn empty_checkpoint(id: usize, files: HashMap<String, Vec<u8>>) -> Checkpoint {
+    fn read_host_entries(abs: &Path) -> anyhow::Result<Vec<(String, Vec<u8>, PathBuf)>> {
+        if abs.is_dir() {
+            walkdir::WalkDir::new(abs)
+                .into_iter()
+                .filter_map(|e| e.ok())
+                .filter(|e| e.file_type().is_file())
+                .map(|entry| {
+                    let key = entry
+                        .path()
+                        .strip_prefix(abs)
+                        .unwrap()
+                        .to_string_lossy()
+                        .into_owned();
+                    let bytes = std::fs::read(entry.path())?;
+                    Ok((key, bytes, entry.path().to_path_buf()))
+                })
+                .collect()
+        } else {
+            let key = abs
+                .file_name()
+                .ok_or_else(|| anyhow::anyhow!("path has no filename: {}", abs.display()))?
+                .to_string_lossy()
+                .into_owned();
+            Ok(vec![(key, std::fs::read(abs)?, abs.to_path_buf())])
+        }
+    }
+
+    fn push_files_as_checkpoint(&mut self, files: FileMap) -> &Checkpoint {
+        self.checkpoints.truncate(self.checkpoint_idx + 1);
+        let id = self.checkpoints.len();
+        self.checkpoints.push(Self::empty_checkpoint(id, files));
+        self.checkpoint_idx = id;
+        self.checkpoints.last().unwrap()
+    }
+
+    fn rebuild_runner_after_timeout(&mut self) -> anyhow::Result<()> {
+        self.runner =
+            Runner::new_from_timeout_recovery(&self.engine, self.network, &self.packages)?;
+        Ok(())
+    }
+
+    fn empty_checkpoint(id: usize, files: FileMap) -> Checkpoint {
         Checkpoint {
             id,
             stdout: String::new(),
             stderr: String::new(),
             files,
         }
-    }
-}
-
-impl Drop for Session {
-    fn drop(&mut self) {
-        let _ = self.runner.child.lock().unwrap().kill();
     }
 }
