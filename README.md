@@ -144,7 +144,7 @@ below by function.
 | `session_export` | Write sandbox-generated files to the host filesystem. Exports only files created inside the sandbox (not mounted ones) unless specific keys are given.                                                                                         |
 | `session_commit` | Write changed mounted files back to their original host paths. Only files that were mounted and have changed are written.                                                                                                                      |
 | `session_fetch`         | Make an HTTP request from the host and return the response body. Bypasses the WASM networking boundary so agents can reach external APIs. Requires the target URL to match the server's fetch allowlist — see [Configuration](#configuration). |
-| `get_fetch_allowlist`   | Return the list of URL prefixes the server permits for `session_fetch` calls. Read-only — the agent cannot modify the allowlist.                                                                                                              |
+| `get_fetch_allowlist`   | Return the list of domains the server permits for `session_fetch` calls. Read-only — the agent cannot modify the allowlist.                                                                                                                   |
 
 ---
 
@@ -158,12 +158,12 @@ variable. If the variable is not set, drun starts with defaults — which means
 # ~/drun-config.toml
 
 [fetch]
-# URL prefixes permitted for session_fetch calls.
-# Use ["*"] to allow all URLs, or list specific prefixes to restrict access.
+# Domains permitted for session_fetch calls and Python outbound HTTP.
+# Use ["*"] to allow all. Omit or leave empty to block all external fetches.
 allowlist = [
-    "https://data.sec.gov/",
-    "https://efts.sec.gov/",
-    "https://query1.finance.yahoo.com/",
+    "data.sec.gov",
+    "efts.sec.gov",
+    "query1.finance.yahoo.com",
 ]
 ```
 

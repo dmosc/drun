@@ -1,8 +1,5 @@
-//! `DrunSession` Python class: wraps a core `Session` and exposes all session
-//! operations to Python.
-
 use crate::types::{DrunCheckpoint, checkpoint_to_py};
-use drun_core::{DrunEngine, NetworkPolicy, Session};
+use drun_core::{DrunEngine, PYTHON_PACKAGE_HOSTS, Session};
 use pyo3::{exceptions::PyRuntimeError, prelude::*};
 use std::sync::Mutex;
 
@@ -14,15 +11,12 @@ pub struct DrunSession {
 #[pymethods]
 impl DrunSession {
     #[new]
-    #[pyo3(signature = (network=None, timeout_ms=None))]
-    pub fn new(network: Option<String>, timeout_ms: Option<u64>) -> PyResult<Self> {
+    #[pyo3(signature = (allowed_hosts=None, timeout_ms=None))]
+    pub fn new(allowed_hosts: Option<Vec<String>>, timeout_ms: Option<u64>) -> PyResult<Self> {
         let engine = DrunEngine::new().map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
-        let policy = match network.as_deref() {
-            Some("full") => NetworkPolicy::Full,
-            Some("none") => NetworkPolicy::None,
-            _ => NetworkPolicy::Packages,
-        };
-        let session = Session::new(&engine, policy, timeout_ms)
+        let hosts = allowed_hosts
+            .unwrap_or_else(|| PYTHON_PACKAGE_HOSTS.iter().map(|s| s.to_string()).collect());
+        let session = Session::new(&engine, hosts, timeout_ms)
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
         Ok(Self {
             inner: Mutex::new(session),

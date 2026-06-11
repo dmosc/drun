@@ -1,0 +1,7 @@
+[fetch]
+allowlist = [
+    "data.sec.gov",
+    "efts.sec.gov",
+    "query1.finance.yahoo.com",
+    "api.github.com",
+]

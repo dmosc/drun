@@ -1,5 +1,5 @@
 use crate::runner::{ExecSuccess, Runner};
-use crate::{Checkpoint, CheckpointRef, DrunEngine, FileMap, NetworkPolicy};
+use crate::{Checkpoint, CheckpointRef, DrunEngine, FileMap};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -10,7 +10,7 @@ pub struct Session {
     checkpoint_idx: usize,
     origins: HashMap<String, PathBuf>,
     packages: Vec<String>,
-    network: NetworkPolicy,
+    allowed_hosts: Vec<String>,
     pub timeout_ms: u64,
     pub parent: Option<CheckpointRef>,
 }
@@ -18,17 +18,17 @@ pub struct Session {
 impl Session {
     pub fn new(
         engine: &DrunEngine,
-        network: NetworkPolicy,
+        allowed_hosts: Vec<String>,
         timeout_ms: Option<u64>,
     ) -> anyhow::Result<Self> {
         Ok(Self {
-            runner: Runner::new(engine, network)?,
+            runner: Runner::new(engine, &allowed_hosts)?,
             engine: engine.clone(),
             checkpoints: vec![Self::empty_checkpoint(0, HashMap::new())],
             checkpoint_idx: 0,
             origins: HashMap::new(),
             packages: Vec::new(),
-            network,
+            allowed_hosts,
             timeout_ms: timeout_ms.unwrap_or(10_000),
             parent: None,
         })
@@ -45,7 +45,11 @@ impl Session {
             anyhow::bail!("checkpoint {} does not exist", checkpoint_idx);
         }
         let files = source.checkpoints[checkpoint_idx].files.clone();
-        let mut session = Self::new(engine, source.network, Some(source.timeout_ms))?;
+        let mut session = Self::new(
+            engine,
+            source.allowed_hosts.clone(),
+            Some(source.timeout_ms),
+        )?;
         for package in &source.packages {
             session.install(package)?;
         }
@@ -263,7 +267,7 @@ impl Session {
 
     fn rebuild_runner_after_timeout(&mut self) -> anyhow::Result<()> {
         self.runner =
-            Runner::new_from_timeout_recovery(&self.engine, self.network, &self.packages)?;
+            Runner::new_from_timeout_recovery(&self.engine, &self.allowed_hosts, &self.packages)?;
         Ok(())
     }
 

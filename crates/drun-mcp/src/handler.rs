@@ -6,7 +6,7 @@ use crate::state::{
 use crate::tools::DrunTools;
 use async_trait::async_trait;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
-use drun_core::{DrunEngine, NetworkPolicy, Session};
+use drun_core::{DrunEngine, PYTHON_PACKAGE_HOSTS, Session};
 use rust_mcp_sdk::{
     McpServer,
     mcp_server::ServerHandler,
@@ -35,6 +35,22 @@ impl DrunHandler {
             sessions: Mutex::new(HashMap::new()),
             fetch_allowlist: config.fetch.allowlist,
         }
+    }
+
+    fn build_allowed_hosts(&self, requested: Option<Vec<String>>) -> Vec<String> {
+        if let Some(hosts) = requested {
+            return hosts;
+        }
+        if self.fetch_allowlist.iter().any(|h| h == "*") {
+            return vec!["*".to_string()];
+        }
+        let mut hosts: Vec<String> = PYTHON_PACKAGE_HOSTS.iter().map(|s| s.to_string()).collect();
+        for host in &self.fetch_allowlist {
+            if !hosts.contains(host) {
+                hosts.push(host.clone());
+            }
+        }
+        hosts
     }
 
     fn with_session(
@@ -91,8 +107,9 @@ impl ServerHandler for DrunHandler {
         match tool {
             DrunTools::CreateSessionTool(t) => {
                 let session_id = Uuid::new_v4().to_string();
-                let network = NetworkPolicy::from_opt_str(t.network.as_deref());
-                let session = Session::new(&self.engine, network, t.timeout_ms).map_err(err)?;
+                let allowed_hosts = self.build_allowed_hosts(t.allowed_hosts);
+                let session =
+                    Session::new(&self.engine, allowed_hosts, t.timeout_ms).map_err(err)?;
                 let state = build_session_state(&session_id, &session, None, vec![]);
                 self.sessions
                     .lock()
@@ -303,10 +320,9 @@ impl ServerHandler for DrunHandler {
                 if !self.sessions.lock().unwrap().contains_key(&t.session_id) {
                     return Err(err(format!("session '{}' not found", t.session_id)));
                 }
-                let url_is_allowed = self
-                    .fetch_allowlist
-                    .iter()
-                    .any(|pattern| pattern == "*" || t.url.starts_with(pattern.as_str()));
+                let url_is_allowed = self.fetch_allowlist.iter().any(|h| h == "*")
+                    || host_from_url(&t.url)
+                        .map_or(false, |h| self.fetch_allowlist.contains(&h));
                 if !url_is_allowed {
                     return Err(err(format!(
                         "'{}' is not permitted by the server's fetch allowlist",
@@ -362,6 +378,14 @@ impl ServerHandler for DrunHandler {
             }
         }
     }
+}
+
+fn host_from_url(url: &str) -> Option<String> {
+    let s = url
+        .strip_prefix("https://")
+        .or_else(|| url.strip_prefix("http://"))?;
+    let host = s.split('/').next().filter(|h| !h.is_empty())?;
+    Some(host.to_string())
 }
 
 #[derive(Serialize)]

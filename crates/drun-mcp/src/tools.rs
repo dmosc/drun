@@ -22,9 +22,8 @@ pub struct HttpHeader {
 )]
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct CreateSessionTool {
-    /// Network access policy: "packages" (default — PyPI only), "full"
-    /// (unrestricted), or "none".
-    pub network: Option<String>,
+    /// Hostnames the sandbox may reach.
+    pub allowed_hosts: Option<Vec<String>>,
     /// Wall-clock timeout in milliseconds applied to every session_execute
     /// call. Triggers a KeyboardInterrupt in the running Python code when
     /// exceeded.
@@ -253,7 +252,7 @@ pub struct SessionCommitTool {
 
 #[mcp_tool(
     name = "get_fetch_allowlist",
-    description = "Return the list of URL prefixes the server permits for session_fetch calls. Use this to check what external URLs are available before constructing fetch requests.",
+    description = "Return the list of domains the server permits for session_fetch calls and Python outbound HTTP. Use this to check what external hosts are available before constructing fetch requests.",
     idempotent_hint = true,
     destructive_hint = false,
     read_only_hint = true
@@ -263,7 +262,7 @@ pub struct GetFetchAllowlistTool {}
 
 #[mcp_tool(
     name = "session_fetch",
-    description = "Make an HTTP request from the host and return the response. The target URL must match the server's fetch allowlist configured via DRUN_CONFIG. Use get_fetch_allowlist to see which URL prefixes are permitted.",
+    description = "Make an HTTP request from the host and return the response. The target URL's domain must be in the server's fetch allowlist configured via DRUN_CONFIG. Use get_fetch_allowlist to see permitted domains.",
     idempotent_hint = false,
     destructive_hint = false,
     read_only_hint = false

@@ -1,4 +1,4 @@
-use crate::{DrunEngine, FileMap, NetworkPolicy};
+use crate::{DrunEngine, FileMap};
 use serde::{Deserialize, Serialize};
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::process::{Child, ChildStdin, ChildStdout};
@@ -47,8 +47,8 @@ pub(crate) struct Runner {
 }
 
 impl Runner {
-    pub fn new(engine: &DrunEngine, network: NetworkPolicy) -> anyhow::Result<Self> {
-        let mut child = engine.spawn_runner(network)?;
+    pub fn new(engine: &DrunEngine, allowed_hosts: &[String]) -> anyhow::Result<Self> {
+        let mut child = engine.spawn_runner(allowed_hosts)?;
         let stdin = BufWriter::new(child.stdin.take().unwrap());
         let stdout = BufReader::new(child.stdout.take().unwrap());
         Ok(Self {
@@ -62,10 +62,10 @@ impl Runner {
     /// Used when a prior runner's child died after a timeout.
     pub fn new_from_timeout_recovery(
         engine: &DrunEngine,
-        network: NetworkPolicy,
+        allowed_hosts: &[String],
         packages: &[String],
     ) -> anyhow::Result<Self> {
-        let mut runner = Self::new(engine, network)?;
+        let mut runner = Self::new(engine, allowed_hosts)?;
         for package in packages {
             let _ = runner.install(package);
         }
