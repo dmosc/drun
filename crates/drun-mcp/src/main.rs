@@ -1,11 +1,13 @@
 //! MCP server entry point. Wires up the transport, server metadata, and
 //! handler, then starts the stdio loop.
 
+mod config;
 mod handler;
 mod response;
 mod state;
 mod tools;
 
+use config::Config;
 use handler::DrunHandler;
 use rust_mcp_sdk::{
     McpServer, StdioTransport, ToMcpServerHandler, TransportOptions,
@@ -19,7 +21,7 @@ use rust_mcp_sdk::{
 
 #[tokio::main]
 async fn main() -> SdkResult<()> {
-    let handler = DrunHandler::new().to_mcp_server_handler();
+    let handler = DrunHandler::new(Config::load()).to_mcp_server_handler();
 
     let server = server_runtime::create_server(McpServerOptions {
         server_details: InitializeResult {

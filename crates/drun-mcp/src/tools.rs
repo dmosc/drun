@@ -6,6 +6,7 @@ use rust_mcp_sdk::{
     tool_box,
 };
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[mcp_tool(
     name = "create_session",
@@ -246,6 +247,37 @@ pub struct SessionCommitTool {
 }
 
 #[mcp_tool(
+    name = "get_fetch_allowlist",
+    description = "Return the list of URL prefixes the server permits for session_fetch calls. Use this to check what external URLs are available before constructing fetch requests.",
+    idempotent_hint = true,
+    destructive_hint = false,
+    read_only_hint = true
+)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct GetFetchAllowlistTool {}
+
+#[mcp_tool(
+    name = "session_fetch",
+    description = "Make an HTTP request from the host and return the response. The target URL must match the server's fetch allowlist configured via DRUN_CONFIG. Use get_fetch_allowlist to see which URL prefixes are permitted.",
+    idempotent_hint = false,
+    destructive_hint = false,
+    read_only_hint = false
+)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct SessionFetchTool {
+    /// Session ID from create_session.
+    pub session_id: String,
+    /// Fully-qualified URL to request.
+    pub url: String,
+    /// HTTP method. Defaults to GET.
+    pub method: Option<String>,
+    /// Request headers.
+    pub headers: Option<HashMap<String, String>>,
+    /// Request body for POST/PUT/PATCH.
+    pub body: Option<String>,
+}
+
+#[mcp_tool(
     name = "session_tree",
     description = "Return the full session-checkpoint tree in a single call. Root sessions are top-level; forks are nested under the checkpoint they branched from. Each checkpoint is flagged with is_current so you can see the active head of every session at a glance.",
     idempotent_hint = true,
@@ -275,5 +307,7 @@ tool_box!(
         SessionCommitTool,
         SessionExportTool,
         SessionTreeTool,
+        SessionFetchTool,
+        GetFetchAllowlistTool,
     ]
 );

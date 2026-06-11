@@ -1,3 +1,4 @@
+use crate::config::Config;
 use crate::response::{err, file_content, text};
 use crate::state::{
     build_checkpoint_history, build_session_list, build_session_state, build_session_tree,
@@ -14,6 +15,7 @@ use rust_mcp_sdk::{
         schema_utils::CallToolError,
     },
 };
+use serde::Serialize;
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
@@ -23,13 +25,15 @@ use uuid::Uuid;
 pub struct DrunHandler {
     engine: DrunEngine,
     sessions: Mutex<HashMap<String, Arc<Mutex<Session>>>>,
+    fetch_allowlist: Vec<String>,
 }
 
 impl DrunHandler {
-    pub fn new() -> Self {
+    pub fn new(config: Config) -> Self {
         Self {
             engine: DrunEngine::new().expect("failed to initialize drun engine"),
             sessions: Mutex::new(HashMap::new()),
+            fetch_allowlist: config.fetch.allowlist,
         }
     }
 
@@ -83,7 +87,8 @@ impl ServerHandler for DrunHandler {
         params: CallToolRequestParams,
         _runtime: Arc<dyn McpServer>,
     ) -> Result<CallToolResult, CallToolError> {
-        match DrunTools::try_from(params)? {
+        let tool = DrunTools::try_from(params)?;
+        match tool {
             DrunTools::CreateSessionTool(t) => {
                 let session_id = Uuid::new_v4().to_string();
                 let network = NetworkPolicy::from_opt_str(t.network.as_deref());
@@ -293,6 +298,77 @@ impl ServerHandler for DrunHandler {
                     ))
                 })
             }
+
+            DrunTools::SessionFetchTool(t) => {
+                if !self.sessions.lock().unwrap().contains_key(&t.session_id) {
+                    return Err(err(format!("session '{}' not found", t.session_id)));
+                }
+                let url_is_allowed = self
+                    .fetch_allowlist
+                    .iter()
+                    .any(|pattern| pattern == "*" || t.url.starts_with(pattern.as_str()));
+                if !url_is_allowed {
+                    return Err(err(format!(
+                        "'{}' is not permitted by the server's fetch allowlist",
+                        t.url
+                    )));
+                }
+
+                let method = t.method.as_deref().unwrap_or("GET").to_uppercase();
+                let parsed_method = method
+                    .parse::<reqwest::Method>()
+                    .map_err(|_| err(format!("invalid HTTP method: {}", method)))?;
+
+                let client = reqwest::Client::new();
+                let mut request_builder = client.request(parsed_method, &t.url);
+                if let Some(headers) = t.headers {
+                    for (key, value) in headers {
+                        request_builder = request_builder.header(key, value);
+                    }
+                }
+                if let Some(body) = t.body {
+                    request_builder = request_builder.body(body);
+                }
+
+                let response = request_builder
+                    .send()
+                    .await
+                    .map_err(|e| err(e.to_string()))?;
+                let status = response.status().as_u16();
+                let response_headers: HashMap<String, String> = response
+                    .headers()
+                    .iter()
+                    .filter_map(|(k, v)| v.to_str().ok().map(|v| (k.to_string(), v.to_string())))
+                    .collect();
+                let body_bytes = response.bytes().await.map_err(|e| err(e.to_string()))?;
+                let (body, body_encoding) = match std::str::from_utf8(&body_bytes) {
+                    Ok(text) => (text.to_string(), None),
+                    Err(_) => (BASE64.encode(&body_bytes), Some("base64")),
+                };
+
+                Ok(text(
+                    serde_json::to_string(&FetchResponse {
+                        status,
+                        headers: response_headers,
+                        body,
+                        body_encoding,
+                    })
+                    .unwrap(),
+                ))
+            }
+
+            DrunTools::GetFetchAllowlistTool(_) => {
+                Ok(text(serde_json::to_string(&self.fetch_allowlist).unwrap()))
+            }
         }
     }
+}
+
+#[derive(Serialize)]
+struct FetchResponse {
+    status: u16,
+    headers: HashMap<String, String>,
+    body: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    body_encoding: Option<&'static str>,
 }

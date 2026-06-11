@@ -99,7 +99,7 @@ curl -fsSL https://deno.land/install.sh | sh
 
 ## MCP tools
 
-Once registered, drun exposes 17 tools to any MCP-compatible client, organized
+Once registered, drun exposes 19 tools to any MCP-compatible client, organized
 below by function.
 
 ### Session lifecycle
@@ -139,10 +139,52 @@ below by function.
 
 ### Export & host I/O
 
-| Tool             | Description                                                                                                                                            |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `session_export` | Write sandbox-generated files to the host filesystem. Exports only files created inside the sandbox (not mounted ones) unless specific keys are given. |
-| `session_commit` | Write changed mounted files back to their original host paths. Only files that were mounted and have changed are written.                              |
+| Tool             | Description                                                                                                                                                                                                                                    |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `session_export` | Write sandbox-generated files to the host filesystem. Exports only files created inside the sandbox (not mounted ones) unless specific keys are given.                                                                                         |
+| `session_commit` | Write changed mounted files back to their original host paths. Only files that were mounted and have changed are written.                                                                                                                      |
+| `session_fetch`         | Make an HTTP request from the host and return the response body. Bypasses the WASM networking boundary so agents can reach external APIs. Requires the target URL to match the server's fetch allowlist — see [Configuration](#configuration). |
+| `get_fetch_allowlist`   | Return the list of URL prefixes the server permits for `session_fetch` calls. Read-only — the agent cannot modify the allowlist.                                                                                                              |
+
+---
+
+## Configuration
+
+drun reads a TOML config file at the path set by the `DRUN_CONFIG` environment
+variable. If the variable is not set, drun starts with defaults — which means
+`session_fetch` is blocked entirely.
+
+```toml
+# ~/drun-config.toml
+
+[fetch]
+# URL prefixes permitted for session_fetch calls.
+# Use ["*"] to allow all URLs, or list specific prefixes to restrict access.
+allowlist = [
+    "https://data.sec.gov/",
+    "https://efts.sec.gov/",
+    "https://query1.finance.yahoo.com/",
+]
+```
+
+Point drun at this file when registering it as an MCP server:
+
+```json
+// ~/.claude.json
+{
+  "mcpServers": {
+    "drun": {
+      "command": "/path/to/drun-mcp",
+      "env": {
+        "DRUN_CONFIG": "/Users/you/drun-config.toml"
+      }
+    }
+  }
+}
+```
+
+The allowlist is enforced by the server process — the agent cannot modify it or
+grant itself access to unlisted URLs.
 
 ---
 
@@ -186,6 +228,19 @@ session_mount(/path/to/script.py)
 session_execute(refactor the code)
 session_diff                 ← review changes before writing back
 session_commit               ← writes only changed mounted files to host
+```
+
+**Fetching external data and producing a report:**
+
+```
+create_session(network: "none")
+session_fetch(https://data.sec.gov/submissions/CIK....json)
+                             ← host makes the request; WASM boundary not involved
+session_write_file(filing.json, <response body>)
+session_install_package(pandas)
+session_execute(parse filings, compute metrics, write report.md)
+session_read_file(report.md)
+session_export               ← writes report.md to ./drun-export/<session>/
 ```
 
 **Recovering from a mistake:**
@@ -256,6 +311,8 @@ Always use drun MCP tools for code execution:
 - Use `session_fork` to explore alternative approaches in parallel
 - Use `session_rollback` to recover from mistakes
 - Use `session_commit` to write changes back to host files after review
+- Use `session_fetch` to retrieve data from external URLs (requires server
+  allowlist)
 - Never run code directly on the host machine
 ```
 
