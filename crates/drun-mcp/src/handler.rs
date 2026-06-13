@@ -57,16 +57,14 @@ impl DrunHandler {
     }
 
     pub(crate) fn build_allowed_hosts(&self, requested: Option<Vec<String>>) -> Vec<String> {
-        if let Some(hosts) = requested {
-            return hosts;
-        }
-        if self.fetch_allowlist.iter().any(|h| h == "*") {
+        let base = requested.unwrap_or_else(|| self.fetch_allowlist.clone());
+        if base.iter().any(|h| h == "*") {
             return vec!["*".to_string()];
         }
         let mut hosts: Vec<String> = PYTHON_PACKAGE_HOSTS.iter().map(|s| s.to_string()).collect();
-        for host in &self.fetch_allowlist {
-            if !hosts.contains(host) {
-                hosts.push(host.clone());
+        for host in base {
+            if !hosts.contains(&host) {
+                hosts.push(host);
             }
         }
         hosts
