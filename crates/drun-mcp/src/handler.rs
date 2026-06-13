@@ -15,6 +15,9 @@ pub struct DrunHandler {
     pub(crate) fetch_timeout_ms: Option<u64>,
     pub(crate) export_root: Option<PathBuf>,
     pub(crate) snapshots_dir: Option<PathBuf>,
+    pub(crate) auto_snapshot: bool,
+    pub(crate) env_allowlist: Vec<String>,
+    pub(crate) allowed_packages: Vec<String>,
 }
 
 impl DrunHandler {
@@ -35,6 +38,9 @@ impl DrunHandler {
             fetch_timeout_ms: config.fetch.timeout_ms,
             export_root: config.session.export_root.map(PathBuf::from),
             snapshots_dir: config.session.snapshots_dir.map(PathBuf::from),
+            auto_snapshot: config.session.auto_snapshot,
+            env_allowlist: config.session.env_allowlist,
+            allowed_packages: config.session.allowed_packages,
         }
     }
 

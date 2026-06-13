@@ -24,6 +24,8 @@ use std::{
 };
 use uuid::Uuid;
 
+const DEFAULT_SNAPSHOTS_FOLDER: &str = "drun-snapshots";
+
 #[async_trait]
 impl ServerHandler for DrunHandler {
     async fn handle_list_tools_request(
@@ -92,14 +94,28 @@ impl ServerHandler for DrunHandler {
             }
 
             DrunTools::SessionCloseTool(t) => {
-                if self
+                let session = self
                     .sessions
                     .lock()
                     .unwrap()
                     .remove(&t.session_id)
-                    .is_none()
-                {
-                    return Err(err(format!("session '{}' not found", t.session_id)));
+                    .ok_or_else(|| err(format!("session '{}' not found", t.session_id)))?;
+                if self.auto_snapshot {
+                    let output_path = self
+                        .snapshots_dir
+                        .clone()
+                        .unwrap_or_else(|| {
+                            std::env::current_dir()
+                                .unwrap_or_default()
+                                .join(DEFAULT_SNAPSHOTS_FOLDER)
+                        })
+                        .join(format!("{}.drun", t.session_id));
+                    if let Some(parent_dir) = output_path.parent() {
+                        let _ = std::fs::create_dir_all(parent_dir);
+                    }
+                    if let Ok(bytes) = session.lock().unwrap().snapshot().encode() {
+                        let _ = std::fs::write(output_path, bytes);
+                    }
                 }
                 Ok(text(format!("closed {}", t.session_id)))
             }
@@ -118,6 +134,13 @@ impl ServerHandler for DrunHandler {
             }),
 
             DrunTools::SessionInstallPackageTool(t) => {
+                if !self.allowed_packages.is_empty() && !self.allowed_packages.contains(&t.package)
+                {
+                    return Err(err(format!(
+                        "package '{}' is not in the server's allowed_packages list",
+                        t.package
+                    )));
+                }
                 self.with_session_mut(&t.session_id, |session| {
                     session.install(&t.package).map_err(err)?;
                     Ok(text(build_session_state(
@@ -370,7 +393,6 @@ impl ServerHandler for DrunHandler {
             }
 
             DrunTools::SessionSnapshotTool(t) => {
-                static DEFAULT_SNAPSHOTS_FOLDER: &str = "drun-snapshots";
                 let output_path = match t.path {
                     Some(p) => PathBuf::from(p),
                     None => self
@@ -396,6 +418,22 @@ impl ServerHandler for DrunHandler {
                         .to_string(),
                     ))
                 })
+            }
+
+            DrunTools::SessionGetEnvTool(t) => {
+                if !self.sessions.lock().unwrap().contains_key(&t.session_id) {
+                    return Err(err(format!("session '{}' not found", t.session_id)));
+                }
+                if !self.env_allowlist.contains(&t.name) {
+                    return Err(err(format!(
+                        "'{}' is not in the server's env_allowlist",
+                        t.name
+                    )));
+                }
+                let value = std::env::var(&t.name).unwrap_or_default();
+                Ok(text(
+                    serde_json::json!({ "name": t.name, "value": value }).to_string(),
+                ))
             }
 
             DrunTools::SessionRestoreTool(t) => {

@@ -36,3 +36,15 @@ export_root = "/tmp/drun-reports"
 # Directory where session_snapshot writes .drun files.
 # Unset means snapshots default to ./drun-snapshots/<session_id>.drun.
 # snapshots_dir = "/tmp/drun-snapshots"
+
+# Automatically write a .drun snapshot whenever session_close is called.
+# Snapshots land in snapshots_dir (or ./drun-snapshots if unset).
+# auto_snapshot = true
+
+# Host environment variables the agent may read via session_get_env.
+# Empty (default) means none are accessible.
+# env_allowlist = ["OPENAI_API_KEY", "ANTHROPIC_API_KEY"]
+
+# PyPI packages the agent is permitted to install via session_install_package.
+# Empty (default) means all packages are allowed.
+# allowed_packages = ["pandas", "numpy", "matplotlib", "pdfplumber", "yfinance"]

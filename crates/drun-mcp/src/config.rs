@@ -29,6 +29,15 @@ pub struct SessionConfig {
     pub export_root: Option<String>,
     /// Directory where session_snapshot writes .drun files. Unset means no restriction.
     pub snapshots_dir: Option<String>,
+    /// Automatically write a .drun snapshot when session_close is called.
+    #[serde(default)]
+    pub auto_snapshot: bool,
+    /// Environment variable names the host exposes to agents via session_get_env. Empty means none.
+    #[serde(default)]
+    pub env_allowlist: Vec<String>,
+    /// Package names permitted for session_install_package. Empty means all packages are allowed.
+    #[serde(default)]
+    pub allowed_packages: Vec<String>,
 }
 
 impl Config {

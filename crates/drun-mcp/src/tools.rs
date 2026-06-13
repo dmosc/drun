@@ -322,6 +322,21 @@ pub struct SessionRestoreTool {
     pub path: String,
 }
 
+#[mcp_tool(
+    name = "session_get_env",
+    description = "Read a host environment variable by name. Only variables listed in the server's env_allowlist may be read. Use this to pass secrets (API keys, tokens) into a session without hardcoding them.",
+    idempotent_hint = true,
+    destructive_hint = false,
+    read_only_hint = true
+)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct SessionGetEnvTool {
+    /// Session ID from create_session.
+    pub session_id: String,
+    /// Name of the environment variable to read.
+    pub name: String,
+}
+
 tool_box!(
     DrunTools,
     [
@@ -346,5 +361,6 @@ tool_box!(
         GetFetchAllowlistTool,
         SessionSnapshotTool,
         SessionRestoreTool,
+        SessionGetEnvTool,
     ]
 );
