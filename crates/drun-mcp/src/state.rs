@@ -131,7 +131,7 @@ pub(crate) fn build_session_list(sessions: &HashMap<String, Arc<Mutex<Session>>>
             }
         })
         .collect();
-    serde_json::to_string(&summaries).unwrap()
+    serde_json::to_string(&summaries).unwrap_or_else(|_| "[]".into())
 }
 
 pub(crate) fn build_session_state(
@@ -164,7 +164,7 @@ pub(crate) fn build_session_state(
         files_removed,
         committed_files,
     })
-    .unwrap()
+    .unwrap_or_else(|_| "{}".into())
 }
 
 pub(crate) fn build_checkpoint_history(session: &Session) -> String {
@@ -191,7 +191,7 @@ pub(crate) fn build_checkpoint_history(session: &Session) -> String {
             }
         })
         .collect();
-    serde_json::to_string(&summaries).unwrap()
+    serde_json::to_string(&summaries).unwrap_or_else(|_| "[]".into())
 }
 
 fn build_session_node(
@@ -259,5 +259,5 @@ pub(crate) fn build_session_tree(sessions: &HashMap<String, Arc<Mutex<Session>>>
         .map(|(id, session)| build_session_node(id, session, &children))
         .collect();
 
-    serde_json::to_string(&tree).unwrap()
+    serde_json::to_string(&tree).unwrap_or_else(|_| "[]".into())
 }

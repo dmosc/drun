@@ -58,6 +58,12 @@ impl Session {
             anyhow::bail!("checkpoint {} does not exist", checkpoint_idx);
         }
         let files = source.checkpoints[checkpoint_idx].files.clone();
+        let origins: HashMap<String, PathBuf> = source
+            .origins
+            .iter()
+            .filter(|(k, _)| files.contains_key(k.as_str()))
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
         let mut session = Self::new(
             engine,
             source.allowed_hosts.clone(),
@@ -67,6 +73,7 @@ impl Session {
             session.install(package)?;
         }
         session.checkpoints[0].files = files;
+        session.origins = origins;
         session.parent = Some(CheckpointRef {
             session_id: source_session_id.to_string(),
             checkpoint_id: checkpoint_idx,
@@ -339,7 +346,9 @@ impl Session {
             last_activity: Instant::now(),
         };
         for package in &packages_to_install {
-            session.install(package)?;
+            session
+                .install(package)
+                .map_err(|e| anyhow::anyhow!("failed to reinstall '{package}': {e}"))?;
         }
         Ok(session)
     }
