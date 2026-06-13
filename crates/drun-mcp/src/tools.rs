@@ -77,7 +77,11 @@ pub struct SessionInstallPackageTool {
 
 #[mcp_tool(
     name = "session_read_file",
-    description = "Read the contents of a file from the current session checkpoint. Works for any file type including text, JSON, images, and other binary formats.",
+    description = "Read a file from the current session checkpoint. \
+                   For small files or images, omit offset and limit to get the full content. \
+                   For large files (fetched data, CSVs, reports), use offset + limit to page \
+                   through the content without flooding context. The response includes total_bytes \
+                   and has_more so you know when you have reached the end.",
     idempotent_hint = true,
     destructive_hint = false,
     read_only_hint = true
@@ -88,6 +92,10 @@ pub struct SessionReadFileTool {
     pub session_id: String,
     /// File path relative to /workspace.
     pub path: String,
+    /// Byte offset to start reading from. Omit to start from the beginning.
+    pub offset: Option<u64>,
+    /// Maximum number of bytes to return. Omit to return all remaining bytes.
+    pub limit: Option<u64>,
 }
 
 #[mcp_tool(
@@ -262,7 +270,11 @@ pub struct GetFetchAllowlistTool {}
 
 #[mcp_tool(
     name = "session_fetch",
-    description = "Make an HTTP request from the host and return the response. The target URL's domain must be in the server's fetch allowlist configured via DRUN_CONFIG. Use get_fetch_allowlist to see permitted domains.",
+    description = "Make an HTTP request from the host and save the response body as a workspace file. \
+                   The body is never returned inline — it is always written to the workspace so large \
+                   payloads never flood your context. Returns metadata: status, bytes, content_type, and \
+                   the workspace path where the body was saved. Use session_read_file with offset + limit \
+                   to read the file in chunks. The target URL's domain must be in the server's fetch allowlist.",
     idempotent_hint = false,
     destructive_hint = false,
     read_only_hint = false
@@ -279,6 +291,8 @@ pub struct SessionFetchTool {
     pub headers: Option<Vec<HttpHeader>>,
     /// Request body for POST/PUT/PATCH.
     pub body: Option<String>,
+    /// Workspace-relative path where the response body will be saved.
+    pub save_to: Option<String>,
 }
 
 #[mcp_tool(

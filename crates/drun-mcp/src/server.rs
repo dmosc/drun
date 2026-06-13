@@ -16,9 +16,7 @@ use rust_mcp_sdk::{
         ProgressNotificationParams, RpcError, schema_utils::CallToolError,
     },
 };
-use serde::Serialize;
 use std::{
-    collections::HashMap,
     path::PathBuf,
     sync::{Arc, Mutex},
     time::Duration,
@@ -210,12 +208,36 @@ impl ServerHandler for DrunHandler {
             }),
 
             DrunTools::SessionReadFileTool(t) => self.with_session(&t.session_id, |session| {
-                let bytes = session
+                let all_bytes = session
                     .current()
                     .files
                     .get(&t.path)
                     .ok_or_else(|| DrunError::file_not_found(&t.path).into_tool_err())?;
-                Ok(file_content(&t.path, bytes))
+                if t.offset.is_none() && t.limit.is_none() {
+                    return Ok(file_content(&t.path, all_bytes));
+                }
+                let total = all_bytes.len();
+                let start = (t.offset.unwrap_or(0) as usize).min(total);
+                let end = t
+                    .limit
+                    .map(|l| (start + l as usize).min(total))
+                    .unwrap_or(total);
+                let slice = &all_bytes[start..end];
+                let (content, encoding) = match std::str::from_utf8(slice) {
+                    Ok(s) => (s.to_string(), "text"),
+                    Err(_) => (BASE64.encode(slice), "base64"),
+                };
+                Ok(text(
+                    serde_json::json!({
+                        "offset": start,
+                        "length": slice.len(),
+                        "total_bytes": total,
+                        "has_more": end < total,
+                        "encoding": encoding,
+                        "content": content,
+                    })
+                    .to_string(),
+                ))
             }),
 
             DrunTools::SessionWriteFileTool(t) => self.with_session_mut(&t.session_id, |session| {
@@ -387,29 +409,33 @@ impl ServerHandler for DrunHandler {
                     .await
                     .map_err(|e| DrunError::internal(e).into_tool_err())?;
                 let status = response.status().as_u16();
-                let response_headers: HashMap<String, String> = response
+                let content_type = response
                     .headers()
-                    .iter()
-                    .filter_map(|(k, v)| v.to_str().ok().map(|v| (k.to_string(), v.to_string())))
-                    .collect();
+                    .get("content-type")
+                    .and_then(|v| v.to_str().ok())
+                    .unwrap_or("")
+                    .to_string();
                 let body_bytes = response
                     .bytes()
                     .await
                     .map_err(|e| DrunError::internal(e).into_tool_err())?;
-                let (body, body_encoding) = match std::str::from_utf8(&body_bytes) {
-                    Ok(t) => (t.to_string(), None),
-                    Err(_) => (BASE64.encode(&body_bytes), Some("base64")),
-                };
 
-                Ok(text(
-                    serde_json::to_string(&FetchResponse {
-                        status,
-                        headers: response_headers,
-                        body,
-                        body_encoding,
-                    })
-                    .unwrap(),
-                ))
+                let save_path = t.save_to.unwrap_or_else(|| download_path_from_url(&t.url));
+                let bytes_len = body_bytes.len();
+                self.with_session_mut(&t.session_id, |session| {
+                    session
+                        .write_file(&save_path, body_bytes.to_vec())
+                        .map_err(|e| DrunError::internal(e).into_tool_err())?;
+                    Ok(text(
+                        serde_json::json!({
+                            "status": status,
+                            "bytes": bytes_len,
+                            "content_type": content_type,
+                            "saved_to": save_path,
+                        })
+                        .to_string(),
+                    ))
+                })
             }
 
             DrunTools::GetFetchAllowlistTool(_) => {
@@ -517,11 +543,12 @@ fn host_from_url(url: &str) -> Option<String> {
     Some(host)
 }
 
-#[derive(Serialize)]
-struct FetchResponse {
-    status: u16,
-    headers: HashMap<String, String>,
-    body: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    body_encoding: Option<&'static str>,
+fn download_path_from_url(url: &str) -> String {
+    let without_query = url.split('?').next().unwrap_or(url).trim_end_matches('/');
+    let name = without_query
+        .rsplit('/')
+        .next()
+        .filter(|s| !s.is_empty())
+        .unwrap_or("fetch");
+    format!("downloads/{name}")
 }
