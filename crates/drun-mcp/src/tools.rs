@@ -291,6 +291,37 @@ pub struct SessionFetchTool {
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct SessionTreeTool {}
 
+#[mcp_tool(
+    name = "session_snapshot",
+    description = "Serialize a session's full checkpoint history to a .drun file on the host. \
+                   Captures all checkpoints, installed packages, and session config. \
+                   Returns the path the file was written to. Use session_restore to reload it.",
+    idempotent_hint = true,
+    destructive_hint = false,
+    read_only_hint = false
+)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct SessionSnapshotTool {
+    /// Session ID from create_session.
+    pub session_id: String,
+    /// Absolute path for the output .drun file. Defaults to ./drun-snapshots/<session_id>.drun.
+    pub path: Option<String>,
+}
+
+#[mcp_tool(
+    name = "session_restore",
+    description = "Load a session from a .drun snapshot file. Reinstalls packages and restores \
+                   all checkpoint history. Returns a new session_id ready for use.",
+    idempotent_hint = false,
+    destructive_hint = false,
+    read_only_hint = false
+)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct SessionRestoreTool {
+    /// Absolute path to the .drun snapshot file to load.
+    pub path: String,
+}
+
 tool_box!(
     DrunTools,
     [
@@ -313,5 +344,7 @@ tool_box!(
         SessionTreeTool,
         SessionFetchTool,
         GetFetchAllowlistTool,
+        SessionSnapshotTool,
+        SessionRestoreTool,
     ]
 );

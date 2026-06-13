@@ -27,6 +27,8 @@ pub struct SessionConfig {
     pub mount_allowlist: Vec<String>,
     /// Directory that session exports must be written to. Unset means no restriction.
     pub export_root: Option<String>,
+    /// Directory where session_snapshot writes .drun files. Unset means no restriction.
+    pub snapshots_dir: Option<String>,
 }
 
 impl Config {

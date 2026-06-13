@@ -6,7 +6,7 @@ use crate::state::{
 use crate::tools::DrunTools;
 use async_trait::async_trait;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
-use drun_core::Session;
+use drun_core::{Session, SessionSnapshot};
 use rust_mcp_sdk::{
     McpServer,
     mcp_server::ServerHandler,
@@ -367,6 +367,48 @@ impl ServerHandler for DrunHandler {
 
             DrunTools::GetFetchAllowlistTool(_) => {
                 Ok(text(serde_json::to_string(&self.fetch_allowlist).unwrap()))
+            }
+
+            DrunTools::SessionSnapshotTool(t) => {
+                static DEFAULT_SNAPSHOTS_FOLDER: &str = "drun-snapshots";
+                let output_path = match t.path {
+                    Some(p) => PathBuf::from(p),
+                    None => self
+                        .snapshots_dir
+                        .clone()
+                        .unwrap_or_else(|| {
+                            std::env::current_dir()
+                                .unwrap_or_default()
+                                .join(DEFAULT_SNAPSHOTS_FOLDER)
+                        })
+                        .join(format!("{}.drun", t.session_id)),
+                };
+                if let Some(parent_dir) = output_path.parent() {
+                    std::fs::create_dir_all(parent_dir).map_err(|e| err(e.to_string()))?;
+                }
+                self.with_session(&t.session_id, |session| {
+                    let encoded = session.snapshot().encode().map_err(err)?;
+                    std::fs::write(&output_path, encoded).map_err(|e| err(e.to_string()))?;
+                    Ok(text(
+                        serde_json::json!({
+                            "snapshot_path": output_path.to_string_lossy(),
+                        })
+                        .to_string(),
+                    ))
+                })
+            }
+
+            DrunTools::SessionRestoreTool(t) => {
+                let bytes = std::fs::read(&t.path).map_err(|e| err(e.to_string()))?;
+                let snapshot = SessionSnapshot::decode(&bytes).map_err(err)?;
+                let restored = Session::from_snapshot(&self.engine, snapshot).map_err(err)?;
+                let session_id = Uuid::new_v4().to_string();
+                let state = build_session_state(&session_id, &restored, None, vec![]);
+                self.sessions
+                    .lock()
+                    .unwrap()
+                    .insert(session_id, Arc::new(Mutex::new(restored)));
+                Ok(text(state))
             }
         }
     }

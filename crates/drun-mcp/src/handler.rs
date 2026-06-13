@@ -14,6 +14,7 @@ pub struct DrunHandler {
     pub(crate) fetch_allowlist: Vec<String>,
     pub(crate) fetch_timeout_ms: Option<u64>,
     pub(crate) export_root: Option<PathBuf>,
+    pub(crate) snapshots_dir: Option<PathBuf>,
 }
 
 impl DrunHandler {
@@ -21,13 +22,19 @@ impl DrunHandler {
         Self {
             engine: DrunEngine::new(DrunEngineConfig {
                 max_workspace_bytes: config.session.max_workspace_mb.map(|mb| mb * 1024 * 1024),
-                mount_allowlist: config.session.mount_allowlist.iter().map(PathBuf::from).collect(),
+                mount_allowlist: config
+                    .session
+                    .mount_allowlist
+                    .iter()
+                    .map(PathBuf::from)
+                    .collect(),
             })
             .expect("failed to initialize drun engine"),
             sessions: Mutex::new(HashMap::new()),
             fetch_allowlist: config.fetch.allowlist,
             fetch_timeout_ms: config.fetch.timeout_ms,
             export_root: config.session.export_root.map(PathBuf::from),
+            snapshots_dir: config.session.snapshots_dir.map(PathBuf::from),
         }
     }
 

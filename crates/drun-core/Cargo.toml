@@ -17,3 +17,4 @@ fs_extra.workspace = true
 walkdir.workspace = true
 which = "7"
 similar = "2"
+zstd.workspace = true

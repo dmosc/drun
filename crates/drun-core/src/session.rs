@@ -1,4 +1,5 @@
 use crate::runner::{ExecSuccess, Runner};
+use crate::snapshot::{CheckpointSnapshot, SessionSnapshot};
 use crate::{Checkpoint, CheckpointRef, DrunEngine, FileMap};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -252,6 +253,48 @@ impl Session {
             }
         }
         Ok(output)
+    }
+
+    pub fn snapshot(&self) -> SessionSnapshot {
+        SessionSnapshot {
+            allowed_hosts: self.allowed_hosts.clone(),
+            timeout_ms: self.timeout_ms,
+            max_workspace_bytes: self.max_workspace_bytes,
+            checkpoint_idx: self.checkpoint_idx,
+            packages: self.packages.clone(),
+            parent: self.parent.clone(),
+            checkpoints: self.checkpoints.iter().map(|c| CheckpointSnapshot {
+                id: c.id,
+                stdout: c.stdout.clone(),
+                stderr: c.stderr.clone(),
+                files: c.files.clone(),
+            }).collect(),
+        }
+    }
+
+    pub fn from_snapshot(engine: &DrunEngine, snapshot: SessionSnapshot) -> anyhow::Result<Self> {
+        let packages_to_install = snapshot.packages.clone();
+        let mut session = Self {
+            runner: Runner::new(engine, &snapshot.allowed_hosts)?,
+            max_workspace_bytes: snapshot.max_workspace_bytes,
+            engine: engine.clone(),
+            checkpoints: snapshot.checkpoints.into_iter().map(|s| Checkpoint {
+                id: s.id,
+                stdout: s.stdout,
+                stderr: s.stderr,
+                files: s.files,
+            }).collect(),
+            checkpoint_idx: snapshot.checkpoint_idx,
+            origins: HashMap::new(),
+            packages: Vec::new(),
+            allowed_hosts: snapshot.allowed_hosts,
+            timeout_ms: snapshot.timeout_ms,
+            parent: snapshot.parent,
+        };
+        for package in &packages_to_install {
+            session.install(package)?;
+        }
+        Ok(session)
     }
 
     pub fn packages(&self) -> &[String] {
