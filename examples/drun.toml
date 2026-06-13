@@ -24,6 +24,10 @@ allowlist = [
 # Raw price history + charts + the generated PDF comfortably fit under 200 MB.
 max_workspace_mb = 200
 
+# Safety harnesses — prevent runaway memory and abandoned sessions.
+# max_checkpoints = 100
+# session_idle_timeout_secs = 3600
+
 # Restrict session_mount to a single input directory so the agent can only
 # read files you explicitly place there (e.g. a watchlist CSV).
 # Adjust or remove if you do not use session_mount.

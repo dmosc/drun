@@ -15,6 +15,7 @@ pub struct DrunHandler {
     pub(crate) fetch_timeout_ms: Option<u64>,
     pub(crate) export_root: Option<PathBuf>,
     pub(crate) snapshots_dir: Option<PathBuf>,
+    pub(crate) session_idle_timeout_secs: Option<u64>,
     pub(crate) auto_snapshot: bool,
     pub(crate) env_allowlist: Vec<String>,
     pub(crate) allowed_packages: Vec<String>,
@@ -25,6 +26,7 @@ impl DrunHandler {
         Self {
             engine: DrunEngine::new(DrunEngineConfig {
                 max_workspace_bytes: config.session.max_workspace_mb.map(|mb| mb * 1024 * 1024),
+                max_checkpoints: config.session.max_checkpoints,
                 mount_allowlist: config
                     .session
                     .mount_allowlist
@@ -38,6 +40,7 @@ impl DrunHandler {
             fetch_timeout_ms: config.fetch.timeout_ms,
             export_root: config.session.export_root.map(PathBuf::from),
             snapshots_dir: config.session.snapshots_dir.map(PathBuf::from),
+            session_idle_timeout_secs: config.session.session_idle_timeout_secs,
             auto_snapshot: config.session.auto_snapshot,
             env_allowlist: config.session.env_allowlist,
             allowed_packages: config.session.allowed_packages,
@@ -72,7 +75,9 @@ impl DrunHandler {
             .get(session_id)
             .ok_or_else(|| err(format!("session '{}' not found", session_id)))?
             .clone();
-        f(&session.lock().unwrap())
+        let guard = session.lock().unwrap();
+        self.check_idle(session_id, &guard)?;
+        f(&guard)
     }
 
     pub(crate) fn with_session_mut(
@@ -87,6 +92,21 @@ impl DrunHandler {
             .get(session_id)
             .ok_or_else(|| err(format!("session '{}' not found", session_id)))?
             .clone();
-        f(&mut session.lock().unwrap())
+        let mut guard = session.lock().unwrap();
+        self.check_idle(session_id, &guard)?;
+        guard.last_activity = std::time::Instant::now();
+        f(&mut guard)
+    }
+
+    fn check_idle(&self, session_id: &str, session: &Session) -> Result<(), CallToolError> {
+        if let Some(timeout) = self.session_idle_timeout_secs {
+            if session.last_activity.elapsed().as_secs() > timeout {
+                return Err(err(format!(
+                    "session '{}' has been idle for over {}s; close it and start a new one",
+                    session_id, timeout
+                )));
+            }
+        }
+        Ok(())
     }
 }

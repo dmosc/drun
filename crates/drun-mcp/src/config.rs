@@ -32,6 +32,10 @@ pub struct SessionConfig {
     /// Automatically write a .drun snapshot when session_close is called.
     #[serde(default)]
     pub auto_snapshot: bool,
+    /// Maximum number of checkpoints per session. Unset means no limit.
+    pub max_checkpoints: Option<usize>,
+    /// Seconds of inactivity after which a session is considered abandoned. Tool calls on idle sessions return an error. Unset means no limit.
+    pub session_idle_timeout_secs: Option<u64>,
     /// Environment variable names the host exposes to agents via session_get_env. Empty means none.
     #[serde(default)]
     pub env_allowlist: Vec<String>,

@@ -3,6 +3,7 @@ use crate::snapshot::{CheckpointSnapshot, SessionSnapshot};
 use crate::{Checkpoint, CheckpointRef, DrunEngine, FileMap};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
 pub struct Session {
     runner: Runner,
@@ -13,8 +14,11 @@ pub struct Session {
     packages: Vec<String>,
     allowed_hosts: Vec<String>,
     max_workspace_bytes: Option<u64>,
+    max_checkpoints: Option<usize>,
     pub timeout_ms: u64,
     pub parent: Option<CheckpointRef>,
+    pub created_at: Instant,
+    pub last_activity: Instant,
 }
 
 impl Session {
@@ -26,6 +30,7 @@ impl Session {
         Ok(Self {
             runner: Runner::new(engine, &allowed_hosts)?,
             max_workspace_bytes: engine.max_workspace_bytes,
+            max_checkpoints: engine.max_checkpoints,
             engine: engine.clone(),
             checkpoints: vec![Self::empty_checkpoint(0, HashMap::new())],
             checkpoint_idx: 0,
@@ -34,6 +39,8 @@ impl Session {
             allowed_hosts,
             timeout_ms: timeout_ms.unwrap_or(60_000),
             parent: None,
+            created_at: Instant::now(),
+            last_activity: Instant::now(),
         })
     }
 
@@ -101,7 +108,7 @@ impl Session {
         let mut files = self.checkpoints[self.checkpoint_idx].files.clone();
         files.insert(path.to_string(), content);
         self.check_workspace_size(&files)?;
-        self.push_files_as_checkpoint(files);
+        self.push_files_as_checkpoint(files)?;
         Ok(())
     }
 
@@ -110,7 +117,7 @@ impl Session {
         if files.remove(path).is_none() {
             anyhow::bail!("'{}' not in current checkpoint", path);
         }
-        Ok(self.push_files_as_checkpoint(files))
+        self.push_files_as_checkpoint(files)
     }
 
     pub fn install(&mut self, package: &str) -> anyhow::Result<()> {
@@ -147,6 +154,7 @@ impl Session {
                 files,
             })) => {
                 self.check_workspace_size(&files)?;
+                self.check_checkpoint_limit()?;
                 let id = self.checkpoints.len();
                 self.checkpoints.push(Checkpoint {
                     id,
@@ -281,6 +289,7 @@ impl Session {
         let mut session = Self {
             runner: Runner::new(engine, &snapshot.allowed_hosts)?,
             max_workspace_bytes: snapshot.max_workspace_bytes,
+            max_checkpoints: engine.max_checkpoints,
             engine: engine.clone(),
             checkpoints: snapshot
                 .checkpoints
@@ -298,6 +307,8 @@ impl Session {
             allowed_hosts: snapshot.allowed_hosts,
             timeout_ms: snapshot.timeout_ms,
             parent: snapshot.parent,
+            created_at: Instant::now(),
+            last_activity: Instant::now(),
         };
         for package in &packages_to_install {
             session.install(package)?;
@@ -344,12 +355,25 @@ impl Session {
         }
     }
 
-    fn push_files_as_checkpoint(&mut self, files: FileMap) -> &Checkpoint {
+    fn push_files_as_checkpoint(&mut self, files: FileMap) -> anyhow::Result<&Checkpoint> {
+        self.check_checkpoint_limit()?;
         self.checkpoints.truncate(self.checkpoint_idx + 1);
         let id = self.checkpoints.len();
         self.checkpoints.push(Self::empty_checkpoint(id, files));
         self.checkpoint_idx = id;
-        self.checkpoints.last().unwrap()
+        Ok(self.checkpoints.last().unwrap())
+    }
+
+    fn check_checkpoint_limit(&self) -> anyhow::Result<()> {
+        if let Some(max) = self.max_checkpoints {
+            if self.checkpoints.len() >= max {
+                anyhow::bail!(
+                    "checkpoint limit of {} reached; close or snapshot this session and start a new one",
+                    max
+                );
+            }
+        }
+        Ok(())
     }
 
     fn check_workspace_size(&self, files: &FileMap) -> anyhow::Result<()> {

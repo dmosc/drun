@@ -7,6 +7,7 @@ pub const PYTHON_PACKAGE_HOSTS: &[&str] =
 #[derive(Default)]
 pub struct DrunEngineConfig {
     pub max_workspace_bytes: Option<u64>,
+    pub max_checkpoints: Option<usize>,
     /// Host path prefixes that may be mounted into a session. Empty means all paths are permitted.
     pub mount_allowlist: Vec<PathBuf>,
 }
@@ -16,6 +17,7 @@ pub struct DrunEngine {
     pub(crate) deno_path: PathBuf,
     pub(crate) runner_path: PathBuf,
     pub(crate) max_workspace_bytes: Option<u64>,
+    pub(crate) max_checkpoints: Option<usize>,
     pub(crate) mount_allowlist: Vec<PathBuf>,
 }
 
@@ -29,6 +31,7 @@ impl DrunEngine {
             deno_path,
             runner_path,
             max_workspace_bytes: config.max_workspace_bytes,
+            max_checkpoints: config.max_checkpoints,
             mount_allowlist: config.mount_allowlist,
         })
     }
