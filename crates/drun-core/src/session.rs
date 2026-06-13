@@ -11,6 +11,7 @@ pub struct Session {
     origins: HashMap<String, PathBuf>,
     packages: Vec<String>,
     allowed_hosts: Vec<String>,
+    max_workspace_bytes: Option<u64>,
     pub timeout_ms: u64,
     pub parent: Option<CheckpointRef>,
 }
@@ -23,13 +24,14 @@ impl Session {
     ) -> anyhow::Result<Self> {
         Ok(Self {
             runner: Runner::new(engine, &allowed_hosts)?,
+            max_workspace_bytes: engine.max_workspace_bytes,
             engine: engine.clone(),
             checkpoints: vec![Self::empty_checkpoint(0, HashMap::new())],
             checkpoint_idx: 0,
             origins: HashMap::new(),
             packages: Vec::new(),
             allowed_hosts,
-            timeout_ms: timeout_ms.unwrap_or(10_000),
+            timeout_ms: timeout_ms.unwrap_or(60_000),
             parent: None,
         })
     }
@@ -75,10 +77,12 @@ impl Session {
         Ok(keys)
     }
 
-    pub fn write_file(&mut self, path: &str, content: Vec<u8>) -> &Checkpoint {
+    pub fn write_file(&mut self, path: &str, content: Vec<u8>) -> anyhow::Result<()> {
         let mut files = self.checkpoints[self.checkpoint_idx].files.clone();
         files.insert(path.to_string(), content);
-        self.push_files_as_checkpoint(files)
+        self.check_workspace_size(&files)?;
+        self.push_files_as_checkpoint(files);
+        Ok(())
     }
 
     pub fn delete_file(&mut self, path: &str) -> anyhow::Result<&Checkpoint> {
@@ -90,7 +94,15 @@ impl Session {
     }
 
     pub fn install(&mut self, package: &str) -> anyhow::Result<()> {
-        self.runner.install(package)?;
+        let result = self.runner.install(package);
+        if result.is_err() {
+            self.runner = Runner::new_from_timeout_recovery(
+                &self.engine,
+                &self.allowed_hosts,
+                &self.packages,
+            )?;
+        }
+        result?;
         self.packages.push(package.to_string());
         Ok(())
     }
@@ -110,6 +122,7 @@ impl Session {
                 stderr,
                 files,
             })) => {
+                self.check_workspace_size(&files)?;
                 let id = self.checkpoints.len();
                 self.checkpoints.push(Checkpoint {
                     id,
@@ -263,6 +276,20 @@ impl Session {
         self.checkpoints.push(Self::empty_checkpoint(id, files));
         self.checkpoint_idx = id;
         self.checkpoints.last().unwrap()
+    }
+
+    fn check_workspace_size(&self, files: &FileMap) -> anyhow::Result<()> {
+        if let Some(limit) = self.max_workspace_bytes {
+            let total: u64 = files.values().map(|v| v.len() as u64).sum();
+            if total > limit {
+                anyhow::bail!(
+                    "workspace size {} bytes exceeds limit of {} bytes",
+                    total,
+                    limit
+                );
+            }
+        }
+        Ok(())
     }
 
     fn rebuild_runner_after_timeout(&mut self) -> anyhow::Result<()> {

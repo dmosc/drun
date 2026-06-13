@@ -31,7 +31,8 @@ pub struct DrunHandler {
 impl DrunHandler {
     pub fn new(config: Config) -> Self {
         Self {
-            engine: DrunEngine::new().expect("failed to initialize drun engine"),
+            engine: DrunEngine::new(config.session.max_workspace_mb.map(|mb| mb * 1024 * 1024))
+                .expect("failed to initialize drun engine"),
             sessions: Mutex::new(HashMap::new()),
             fetch_allowlist: config.fetch.allowlist,
         }
@@ -224,7 +225,7 @@ impl ServerHandler for DrunHandler {
                     t.content.into_bytes()
                 };
                 let previous_files = session.current().files.clone();
-                session.write_file(&t.path, bytes);
+                session.write_file(&t.path, bytes).map_err(err)?;
                 Ok(text(build_session_state(
                     &t.session_id,
                     session,
@@ -321,8 +322,7 @@ impl ServerHandler for DrunHandler {
                     return Err(err(format!("session '{}' not found", t.session_id)));
                 }
                 let url_is_allowed = self.fetch_allowlist.iter().any(|h| h == "*")
-                    || host_from_url(&t.url)
-                        .map_or(false, |h| self.fetch_allowlist.contains(&h));
+                    || host_from_url(&t.url).map_or(false, |h| self.fetch_allowlist.contains(&h));
                 if !url_is_allowed {
                     return Err(err(format!(
                         "'{}' is not permitted by the server's fetch allowlist",
@@ -384,8 +384,15 @@ fn host_from_url(url: &str) -> Option<String> {
     let s = url
         .strip_prefix("https://")
         .or_else(|| url.strip_prefix("http://"))?;
-    let host = s.split('/').next().filter(|h| !h.is_empty())?;
-    Some(host.to_string())
+    let authority = s.split('/').next().filter(|h| !h.is_empty())?;
+    let host = if authority.starts_with('[') {
+        // IPv6 literal — do not attempt to strip port
+        authority.to_string()
+    } else {
+        // Strip port if present (domain:port or IPv4:port)
+        authority.split(':').next()?.to_string()
+    };
+    Some(host)
 }
 
 #[derive(Serialize)]

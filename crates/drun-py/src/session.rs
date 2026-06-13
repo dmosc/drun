@@ -13,7 +13,7 @@ impl DrunSession {
     #[new]
     #[pyo3(signature = (allowed_hosts=None, timeout_ms=None))]
     pub fn new(allowed_hosts: Option<Vec<String>>, timeout_ms: Option<u64>) -> PyResult<Self> {
-        let engine = DrunEngine::new().map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let engine = DrunEngine::new(None).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
         let hosts = allowed_hosts
             .unwrap_or_else(|| PYTHON_PACKAGE_HOSTS.iter().map(|s| s.to_string()).collect());
         let session = Session::new(&engine, hosts, timeout_ms)

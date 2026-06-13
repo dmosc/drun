@@ -18,6 +18,7 @@ pub fn file_content(path: &str, bytes: &[u8]) -> CallToolResult {
         "gif" => Some("image/gif"),
         "webp" => Some("image/webp"),
         "svg" => Some("image/svg+xml"),
+        "pdf" => Some("application/pdf"),
         _ => None,
     };
     if let Some(mime_type) = mime {

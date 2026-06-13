@@ -5,6 +5,8 @@ use std::process::{Child, ChildStdin, ChildStdout};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+const INSTALL_TIMEOUT_MS: u64 = 120_000;
+
 #[derive(Serialize)]
 struct ExecRequest<'a> {
     code: &'a str,
@@ -112,8 +114,26 @@ impl Runner {
         let request = serde_json::to_string(&PackageInstallRequest { package })?;
         writeln!(self.stdin, "{}", request)?;
         self.stdin.flush()?;
+
         let mut response_line = String::new();
-        self.stdout.read_line(&mut response_line)?;
+        let child_handle = Arc::clone(&self.child);
+        let timeout = Duration::from_millis(INSTALL_TIMEOUT_MS);
+        let (cancel_tx, cancel_rx) = std::sync::mpsc::channel::<()>();
+        std::thread::spawn(move || {
+            if cancel_rx.recv_timeout(timeout).is_err() {
+                let _ = child_handle.lock().unwrap().kill();
+            }
+        });
+        let read_result = self.stdout.read_line(&mut response_line);
+        let _ = cancel_tx.send(());
+
+        match read_result {
+            Ok(0) | Err(_) => {
+                anyhow::bail!("package install timed out after {}ms", INSTALL_TIMEOUT_MS)
+            }
+            Ok(_) => {}
+        }
+
         match serde_json::from_str::<RunnerResponse>(&response_line)? {
             RunnerResponse::Ok { .. } => Ok(()),
             RunnerResponse::Err { error } => anyhow::bail!(error),

@@ -84,10 +84,13 @@ while (true) {
 
   if ("package" in message) {
     try {
-      await pyodide.runPythonAsync(`import micropip\nawait micropip.install('${message.package}')`);
+      pyodide.globals.set("_drun_pkg", String(message.package));
+      await pyodide.runPythonAsync(`import micropip\nawait micropip.install(_drun_pkg)`);
       Deno.stdout.writeSync(enc.encode(JSON.stringify({ stdout: "", stderr: "", files: {} }) + "\n"));
     } catch (e) {
       Deno.stdout.writeSync(enc.encode(JSON.stringify({ error: String(e) }) + "\n"));
+    } finally {
+      pyodide.globals.delete("_drun_pkg");
     }
   } else {
     const { code, files } = message as { code: string; files: Record<string, number[]> };

@@ -5,13 +5,21 @@ use std::path::PathBuf;
 pub struct Config {
     #[serde(default)]
     pub fetch: FetchConfig,
+    #[serde(default)]
+    pub session: SessionConfig,
 }
 
 #[derive(Deserialize, Default)]
 pub struct FetchConfig {
-    /// URL prefixes allowed for session_fetch. Use ["*"] to allow all URLs.
+    /// Domains permitted for session_fetch calls. Use ["*"] to allow all.
     #[serde(default)]
     pub allowlist: Vec<String>,
+}
+
+#[derive(Deserialize, Default)]
+pub struct SessionConfig {
+    /// Maximum workspace size in megabytes per session. Unset means no limit.
+    pub max_workspace_mb: Option<u64>,
 }
 
 impl Config {

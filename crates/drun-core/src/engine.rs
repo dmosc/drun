@@ -7,10 +7,11 @@ pub const PYTHON_PACKAGE_HOSTS: &[&str] =
 pub struct DrunEngine {
     pub(crate) deno_path: std::path::PathBuf,
     pub(crate) runner_path: std::path::PathBuf,
+    pub max_workspace_bytes: Option<u64>,
 }
 
 impl DrunEngine {
-    pub fn new() -> anyhow::Result<Self> {
+    pub fn new(max_workspace_bytes: Option<u64>) -> anyhow::Result<Self> {
         let deno_path = which::which("deno")
             .map_err(|_| anyhow::anyhow!("deno not found; install from https://deno.land"))?;
         let runner_path = std::env::temp_dir().join("drun_runner.ts");
@@ -18,6 +19,7 @@ impl DrunEngine {
         Ok(Self {
             deno_path,
             runner_path,
+            max_workspace_bytes,
         })
     }
 

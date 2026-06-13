@@ -104,12 +104,12 @@ below by function.
 
 ### Session lifecycle
 
-| Tool             | Description                                                                                                                                                         |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `create_session` | Start a new sandbox session. Accepts `network` (`"packages"` / `"full"` / `"none"`) and `timeout_ms`. Returns a `session_id`.                                       |
-| `session_list`   | List all active sessions with checkpoint count, installed packages, and resource limits.                                                                            |
-| `session_close`  | Terminate a session and free all associated resources.                                                                                                              |
-| `session_tree`   | Return the full session-and-fork tree in one call. Shows which checkpoint every session currently heads, with forks nested under the checkpoint they branched from. |
+| Tool             | Description                                                                                                                                                                                                                                 |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `create_session` | Start a new sandbox session. Accepts `allowed_hosts` (list of hostnames the sandbox may reach — omit to inherit the server's fetch allowlist) and `timeout_ms` (per-execution wall-clock limit, default 60 000 ms). Returns a `session_id`. |
+| `session_list`   | List all active sessions with checkpoint count, installed packages, and resource limits.                                                                                                                                                    |
+| `session_close`  | Terminate a session and free all associated resources.                                                                                                                                                                                      |
+| `session_tree`   | Return the full session-and-fork tree in one call. Shows which checkpoint every session currently heads, with forks nested under the checkpoint they branched from.                                                                         |
 
 ### Execution
 
@@ -139,12 +139,12 @@ below by function.
 
 ### Export & host I/O
 
-| Tool             | Description                                                                                                                                                                                                                                    |
-| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `session_export` | Write sandbox-generated files to the host filesystem. Exports only files created inside the sandbox (not mounted ones) unless specific keys are given.                                                                                         |
-| `session_commit` | Write changed mounted files back to their original host paths. Only files that were mounted and have changed are written.                                                                                                                      |
-| `session_fetch`         | Make an HTTP request from the host and return the response body. Bypasses the WASM networking boundary so agents can reach external APIs. Requires the target URL to match the server's fetch allowlist — see [Configuration](#configuration). |
-| `get_fetch_allowlist`   | Return the list of domains the server permits for `session_fetch` calls. Read-only — the agent cannot modify the allowlist.                                                                                                                   |
+| Tool                  | Description                                                                                                                                                                                                                                    |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `session_export`      | Write sandbox-generated files to the host filesystem. Exports only files created inside the sandbox (not mounted ones) unless specific keys are given.                                                                                         |
+| `session_commit`      | Write changed mounted files back to their original host paths. Only files that were mounted and have changed are written.                                                                                                                      |
+| `session_fetch`       | Make an HTTP request from the host and return the response body. Bypasses the WASM networking boundary so agents can reach external APIs. Requires the target URL to match the server's fetch allowlist — see [Configuration](#configuration). |
+| `get_fetch_allowlist` | Return the list of domains the server permits for `session_fetch` calls. Read-only — the agent cannot modify the allowlist.                                                                                                                    |
 
 ---
 
@@ -165,6 +165,10 @@ allowlist = [
     "efts.sec.gov",
     "query1.finance.yahoo.com",
 ]
+
+[session]
+# Maximum workspace size in megabytes per session. Unset means no limit.
+# max_workspace_mb = 512
 ```
 
 Point drun at this file when registering it as an MCP server:
