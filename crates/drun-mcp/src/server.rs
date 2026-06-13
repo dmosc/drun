@@ -49,6 +49,14 @@ impl ServerHandler for DrunHandler {
         let tool = DrunTools::try_from(params)?;
         match tool {
             DrunTools::CreateSessionTool(t) => {
+                if let Some(max) = self.max_sessions {
+                    if self.sessions.lock().unwrap().len() >= max {
+                        return Err(err(format!(
+                            "session limit of {} reached; close an existing session to create a new one",
+                            max
+                        )));
+                    }
+                }
                 let session_id = Uuid::new_v4().to_string();
                 let allowed_hosts = self.build_allowed_hosts(t.allowed_hosts);
                 let session =

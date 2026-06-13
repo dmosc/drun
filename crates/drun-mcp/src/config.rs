@@ -32,6 +32,8 @@ pub struct SessionConfig {
     /// Automatically write a .drun snapshot when session_close is called.
     #[serde(default)]
     pub auto_snapshot: bool,
+    /// Maximum number of concurrent sessions. Unset means no limit.
+    pub max_sessions: Option<usize>,
     /// Maximum number of checkpoints per session. Unset means no limit.
     pub max_checkpoints: Option<usize>,
     /// Seconds of inactivity after which a session is considered abandoned. Tool calls on idle sessions return an error. Unset means no limit.

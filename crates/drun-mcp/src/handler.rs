@@ -1,4 +1,5 @@
 use crate::config::Config;
+use crate::reaper::{self, SessionMap};
 use crate::response::err;
 use drun_core::{DrunEngine, DrunEngineConfig, PYTHON_PACKAGE_HOSTS, Session};
 use rust_mcp_sdk::schema::{CallToolResult, schema_utils::CallToolError};
@@ -10,12 +11,13 @@ use std::{
 
 pub struct DrunHandler {
     pub(crate) engine: DrunEngine,
-    pub(crate) sessions: Mutex<HashMap<String, Arc<Mutex<Session>>>>,
+    pub(crate) sessions: SessionMap,
     pub(crate) fetch_allowlist: Vec<String>,
     pub(crate) fetch_timeout_ms: Option<u64>,
     pub(crate) export_root: Option<PathBuf>,
     pub(crate) snapshots_dir: Option<PathBuf>,
     pub(crate) session_idle_timeout_secs: Option<u64>,
+    pub(crate) max_sessions: Option<usize>,
     pub(crate) auto_snapshot: bool,
     pub(crate) env_allowlist: Vec<String>,
     pub(crate) allowed_packages: Vec<String>,
@@ -35,15 +37,22 @@ impl DrunHandler {
                     .collect(),
             })
             .expect("failed to initialize drun engine"),
-            sessions: Mutex::new(HashMap::new()),
+            sessions: Arc::new(Mutex::new(HashMap::new())),
             fetch_allowlist: config.fetch.allowlist,
             fetch_timeout_ms: config.fetch.timeout_ms,
             export_root: config.session.export_root.map(PathBuf::from),
             snapshots_dir: config.session.snapshots_dir.map(PathBuf::from),
             session_idle_timeout_secs: config.session.session_idle_timeout_secs,
+            max_sessions: config.session.max_sessions,
             auto_snapshot: config.session.auto_snapshot,
             env_allowlist: config.session.env_allowlist,
             allowed_packages: config.session.allowed_packages,
+        }
+    }
+
+    pub fn start_idle_reaper(&self) {
+        if let Some(timeout_secs) = self.session_idle_timeout_secs {
+            reaper::spawn(Arc::clone(&self.sessions), timeout_secs);
         }
     }
 

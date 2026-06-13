@@ -25,6 +25,7 @@ allowlist = [
 max_workspace_mb = 200
 
 # Safety harnesses — prevent runaway memory and abandoned sessions.
+# max_sessions = 20
 # max_checkpoints = 100
 # session_idle_timeout_secs = 3600
 

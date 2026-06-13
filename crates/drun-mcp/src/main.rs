@@ -3,6 +3,7 @@
 
 mod config;
 mod handler;
+mod reaper;
 mod response;
 mod server;
 mod state;
@@ -22,7 +23,9 @@ use rust_mcp_sdk::{
 
 #[tokio::main]
 async fn main() -> SdkResult<()> {
-    let handler = DrunHandler::new(Config::load()).to_mcp_server_handler();
+    let handler = DrunHandler::new(Config::load());
+    handler.start_idle_reaper();
+    let handler = handler.to_mcp_server_handler();
 
     let server = server_runtime::create_server(McpServerOptions {
         server_details: InitializeResult {
