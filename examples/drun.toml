@@ -1,7 +1,34 @@
+# drun configuration for stock financial analysis
+# Produces PDF reports from live market data and SEC filings.
+#
+# Usage:
+#   DRUN_CONFIG=/path/to/drun.toml drun-mcp
+
 [fetch]
+# Hosts the agent is allowed to reach. Python package CDNs (PyPI, jsDelivr)
+# are always permitted and do not need to be listed here.
 allowlist = [
+    # Yahoo Finance — price history, fundamentals, earnings
+    "query1.finance.yahoo.com",
+    "query2.finance.yahoo.com",
+    # SEC EDGAR — 10-K / 10-Q filings and full-text search
     "data.sec.gov",
     "efts.sec.gov",
-    "query1.finance.yahoo.com",
-    "api.github.com",
+    "www.sec.gov",
 ]
+# No overall timeout; financial API payloads (e.g. full 10-K XBRL) can be large.
+# Uncomment to add a hard ceiling if needed:
+# timeout_ms = 120000
+
+[session]
+# Raw price history + charts + the generated PDF comfortably fit under 200 MB.
+max_workspace_mb = 200
+
+# Restrict session_mount to a single input directory so the agent can only
+# read files you explicitly place there (e.g. a watchlist CSV).
+# Adjust or remove if you do not use session_mount.
+mount_allowlist = ["/tmp/drun-inputs"]
+
+# All session_export calls must write under this directory.
+# The agent cannot scatter files across the host filesystem.
+export_root = "/tmp/drun-reports"
