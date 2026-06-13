@@ -67,6 +67,25 @@ impl Session {
         let abs = path
             .canonicalize()
             .map_err(|_| anyhow::anyhow!("path does not exist: {}", path.display()))?;
+        if !self.engine.mount_allowlist.is_empty() {
+            let allowed = self
+                .engine
+                .mount_allowlist
+                .iter()
+                .any(|prefix| abs.starts_with(prefix));
+            if !allowed {
+                anyhow::bail!(
+                    "'{}' is not in the mount allowlist; permitted prefixes: {}",
+                    abs.display(),
+                    self.engine
+                        .mount_allowlist
+                        .iter()
+                        .map(|p| p.display().to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                );
+            }
+        }
         let entries = Self::read_host_entries(&abs)?;
         let keys: Vec<String> = entries.iter().map(|(key, _, _)| key.clone()).collect();
         let checkpoint = &mut self.checkpoints[self.checkpoint_idx];
@@ -107,10 +126,14 @@ impl Session {
         Ok(())
     }
 
-    pub fn execute(&mut self, code: &str) -> anyhow::Result<&Checkpoint> {
+    pub fn execute(
+        &mut self,
+        code: &str,
+        on_stdout: &mut dyn FnMut(String),
+    ) -> anyhow::Result<&Checkpoint> {
         self.checkpoints.truncate(self.checkpoint_idx + 1);
         let files = &self.checkpoints[self.checkpoint_idx].files;
-        let exec_result = self.runner.execute(code, files, self.timeout_ms);
+        let exec_result = self.runner.execute(code, files, self.timeout_ms, on_stdout);
         match exec_result {
             Err(timeout_error) => {
                 self.rebuild_runner_after_timeout()?;

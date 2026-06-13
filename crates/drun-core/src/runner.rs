@@ -31,6 +31,11 @@ enum RunnerResponse {
     },
 }
 
+#[derive(Deserialize)]
+struct ProgressLine {
+    progress: String,
+}
+
 pub(crate) struct ExecSuccess {
     pub stdout: String,
     pub stderr: String,
@@ -74,12 +79,17 @@ impl Runner {
         Ok(runner)
     }
 
-    pub fn execute(&mut self, code: &str, files: &FileMap, timeout_ms: u64) -> ExecResult {
+    pub fn execute(
+        &mut self,
+        code: &str,
+        files: &FileMap,
+        timeout_ms: u64,
+        on_progress: &mut dyn FnMut(String),
+    ) -> ExecResult {
         let request = serde_json::to_string(&ExecRequest { code, files })?;
         writeln!(self.stdin, "{}", request)?;
         self.stdin.flush()?;
 
-        let mut response_line = String::new();
         let child_handle = Arc::clone(&self.child);
         let timeout = Duration::from_millis(timeout_ms);
         let (cancel_tx, cancel_rx) = std::sync::mpsc::channel::<()>();
@@ -88,25 +98,34 @@ impl Runner {
                 let _ = child_handle.lock().unwrap().kill();
             }
         });
-        let read_result = self.stdout.read_line(&mut response_line);
-        let _ = cancel_tx.send(());
 
-        match read_result {
-            Ok(0) | Err(_) => anyhow::bail!("execution timed out after {}ms", timeout_ms),
-            Ok(_) => {}
-        }
-
-        match serde_json::from_str::<RunnerResponse>(&response_line)? {
-            RunnerResponse::Ok {
-                stdout,
-                stderr,
-                files,
-            } => Ok(Ok(ExecSuccess {
-                stdout,
-                stderr,
-                files,
-            })),
-            RunnerResponse::Err { error } => Ok(Err(error)),
+        loop {
+            let mut line = String::new();
+            match self.stdout.read_line(&mut line) {
+                Ok(0) | Err(_) => {
+                    let _ = cancel_tx.send(());
+                    anyhow::bail!("execution timed out after {}ms", timeout_ms);
+                }
+                Ok(_) => {
+                    if let Ok(p) = serde_json::from_str::<ProgressLine>(line.trim()) {
+                        on_progress(p.progress);
+                        continue;
+                    }
+                    let _ = cancel_tx.send(());
+                    return match serde_json::from_str::<RunnerResponse>(&line)? {
+                        RunnerResponse::Ok {
+                            stdout,
+                            stderr,
+                            files,
+                        } => Ok(Ok(ExecSuccess {
+                            stdout,
+                            stderr,
+                            files,
+                        })),
+                        RunnerResponse::Err { error } => Ok(Err(error)),
+                    };
+                }
+            }
         }
     }
 

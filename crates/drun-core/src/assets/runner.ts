@@ -13,7 +13,12 @@ await pyodide.loadPackage("micropip", { messageCallback: toStderr, errorCallback
 
 let capturedStdout = "";
 let capturedStderr = "";
-pyodide.setStdout({ batched: (s: string) => { capturedStdout += s + "\n"; } });
+pyodide.setStdout({
+  batched: (s: string) => {
+    capturedStdout += s + "\n";
+    Deno.stdout.writeSync(enc.encode(JSON.stringify({ progress: s }) + "\n"));
+  }
+});
 pyodide.setStderr({ batched: (s: string) => { capturedStderr += s + "\n"; } });
 
 function clearDir(path: string): void {

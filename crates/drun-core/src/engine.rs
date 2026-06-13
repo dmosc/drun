@@ -1,17 +1,26 @@
+use std::path::PathBuf;
 use std::process::Stdio;
 
 pub const PYTHON_PACKAGE_HOSTS: &[&str] =
     &["cdn.jsdelivr.net", "files.pythonhosted.org", "pypi.org"];
 
+#[derive(Default)]
+pub struct DrunEngineConfig {
+    pub max_workspace_bytes: Option<u64>,
+    /// Host path prefixes that may be mounted into a session. Empty means all paths are permitted.
+    pub mount_allowlist: Vec<PathBuf>,
+}
+
 #[derive(Clone)]
 pub struct DrunEngine {
-    pub(crate) deno_path: std::path::PathBuf,
-    pub(crate) runner_path: std::path::PathBuf,
-    pub max_workspace_bytes: Option<u64>,
+    pub(crate) deno_path: PathBuf,
+    pub(crate) runner_path: PathBuf,
+    pub(crate) max_workspace_bytes: Option<u64>,
+    pub(crate) mount_allowlist: Vec<PathBuf>,
 }
 
 impl DrunEngine {
-    pub fn new(max_workspace_bytes: Option<u64>) -> anyhow::Result<Self> {
+    pub fn new(config: DrunEngineConfig) -> anyhow::Result<Self> {
         let deno_path = which::which("deno")
             .map_err(|_| anyhow::anyhow!("deno not found; install from https://deno.land"))?;
         let runner_path = std::env::temp_dir().join("drun_runner.ts");
@@ -19,7 +28,8 @@ impl DrunEngine {
         Ok(Self {
             deno_path,
             runner_path,
-            max_workspace_bytes,
+            max_workspace_bytes: config.max_workspace_bytes,
+            mount_allowlist: config.mount_allowlist,
         })
     }
 
