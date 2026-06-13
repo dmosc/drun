@@ -1,10 +1,7 @@
-//! Helpers for building `CallToolResult` responses: plain text, file/image
-//! content, and error conversion.
+//! Helpers for building `CallToolResult` responses: plain text and file/image content.
 
 use base64::{Engine, engine::general_purpose::STANDARD};
-use rust_mcp_sdk::schema::{
-    CallToolResult, ContentBlock, ImageContent, TextContent, schema_utils::CallToolError,
-};
+use rust_mcp_sdk::schema::{CallToolResult, ContentBlock, ImageContent, TextContent};
 
 pub fn text(s: impl Into<String>) -> CallToolResult {
     CallToolResult::text_content(vec![TextContent::from(s.into())])
@@ -34,8 +31,4 @@ pub fn file_content(path: &str, bytes: &[u8]) -> CallToolResult {
     } else {
         text(format!("[Unknown format] {}", STANDARD.encode(bytes)))
     }
-}
-
-pub fn err(e: impl ToString) -> CallToolError {
-    CallToolError(e.to_string().into())
 }

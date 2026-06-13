@@ -1,6 +1,6 @@
 use crate::config::Config;
+use crate::errors::DrunError;
 use crate::reaper::{self, SessionMap};
-use crate::response::err;
 use drun_core::{DrunEngine, DrunEngineConfig, PYTHON_PACKAGE_HOSTS, Session};
 use rust_mcp_sdk::schema::{CallToolResult, schema_utils::CallToolError};
 use std::{
@@ -80,7 +80,7 @@ impl DrunHandler {
             .lock()
             .unwrap()
             .get(session_id)
-            .ok_or_else(|| err(format!("session '{}' not found", session_id)))?
+            .ok_or_else(|| CallToolError::from(DrunError::session_not_found(session_id)))?
             .clone();
         let guard = session.lock().unwrap();
         self.check_idle(session_id, &guard)?;
@@ -97,7 +97,7 @@ impl DrunHandler {
             .lock()
             .unwrap()
             .get(session_id)
-            .ok_or_else(|| err(format!("session '{}' not found", session_id)))?
+            .ok_or_else(|| CallToolError::from(DrunError::session_not_found(session_id)))?
             .clone();
         let mut guard = session.lock().unwrap();
         self.check_idle(session_id, &guard)?;
@@ -106,12 +106,12 @@ impl DrunHandler {
     }
 
     fn check_idle(&self, session_id: &str, session: &Session) -> Result<(), CallToolError> {
-        if let Some(timeout) = self.session_idle_timeout_secs {
-            if session.last_activity.elapsed().as_secs() > timeout {
-                return Err(err(format!(
-                    "session '{}' has been idle for over {}s; close it and start a new one",
-                    session_id, timeout
-                )));
+        if let Some(limit_secs) = self.session_idle_timeout_secs {
+            let idle_secs = session.last_activity.elapsed().as_secs();
+            if idle_secs > limit_secs {
+                return Err(
+                    DrunError::session_idle(session_id, idle_secs, limit_secs).into_tool_err()
+                );
             }
         }
         Ok(())

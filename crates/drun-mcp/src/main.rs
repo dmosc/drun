@@ -2,6 +2,7 @@
 //! handler, then starts the stdio loop.
 
 mod config;
+mod errors;
 mod handler;
 mod reaper;
 mod response;

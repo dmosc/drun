@@ -1,3 +1,4 @@
+use crate::error::RunnerError;
 use crate::runner::{ExecSuccess, Runner};
 use crate::snapshot::{CheckpointSnapshot, SessionSnapshot};
 use crate::{Checkpoint, CheckpointRef, DrunEngine, FileMap};
@@ -143,18 +144,12 @@ impl Session {
     ) -> anyhow::Result<&Checkpoint> {
         self.checkpoints.truncate(self.checkpoint_idx + 1);
         let files = &self.checkpoints[self.checkpoint_idx].files;
-        let exec_result = self.runner.execute(code, files, self.timeout_ms, on_stdout);
-        match exec_result {
-            Err(timeout_error) => {
-                self.rebuild_runner_after_timeout()?;
-                Err(timeout_error)
-            }
-            Ok(Err(python_error)) => anyhow::bail!(python_error),
-            Ok(Ok(ExecSuccess {
+        match self.runner.execute(code, files, self.timeout_ms, on_stdout) {
+            Ok(ExecSuccess {
                 stdout,
                 stderr,
                 files,
-            })) => {
+            }) => {
                 self.check_workspace_size(&files)?;
                 self.check_checkpoint_limit()?;
                 let id = self.checkpoints.len();
@@ -167,6 +162,15 @@ impl Session {
                 });
                 self.checkpoint_idx = id;
                 Ok(self.checkpoints.last().unwrap())
+            }
+            Err(e) => {
+                let runner_died = e
+                    .downcast_ref::<RunnerError>()
+                    .map_or(false, |r| !matches!(r, RunnerError::Application(_)));
+                if runner_died {
+                    self.rebuild_runner_after_timeout()?;
+                }
+                Err(e)
             }
         }
     }
