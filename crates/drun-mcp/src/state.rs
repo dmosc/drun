@@ -6,6 +6,8 @@ use std::sync::{Arc, Mutex};
 #[derive(Serialize)]
 struct SessionSummary {
     session_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    label: Option<String>,
     checkpoint_id: usize,
     checkpoint_count: usize,
     packages: Vec<String>,
@@ -20,6 +22,8 @@ struct SessionSummary {
 struct CheckpointTreeNode {
     checkpoint_id: usize,
     is_current: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    label: Option<String>,
     #[serde(skip_serializing_if = "String::is_empty")]
     stdout: String,
     file_count: usize,
@@ -30,12 +34,16 @@ struct CheckpointTreeNode {
 #[derive(Serialize)]
 struct SessionTreeNode {
     session_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    label: Option<String>,
     checkpoints: Vec<CheckpointTreeNode>,
 }
 
 #[derive(Serialize)]
 pub(crate) struct SessionState {
     pub session_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
     pub checkpoint_id: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parent_session_id: Option<String>,
@@ -61,6 +69,8 @@ pub(crate) struct SessionState {
 #[derive(Serialize)]
 pub(crate) struct CheckpointSummary {
     pub checkpoint_id: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
     #[serde(skip_serializing_if = "String::is_empty")]
     pub stdout: String,
     pub file_count: usize,
@@ -111,6 +121,7 @@ pub(crate) fn build_session_list(sessions: &HashMap<String, Arc<Mutex<Session>>>
             };
             SessionSummary {
                 session_id: id.clone(),
+                label: session.label.clone(),
                 checkpoint_id: session.current().id,
                 checkpoint_count: session.history().len(),
                 packages: session.packages().to_vec(),
@@ -139,6 +150,7 @@ pub(crate) fn build_session_state(
     };
     serde_json::to_string(&SessionState {
         session_id: session_id.to_string(),
+        label: session.label.clone(),
         checkpoint_id: current.id,
         parent_session_id,
         parent_checkpoint_id,
@@ -170,6 +182,7 @@ pub(crate) fn build_checkpoint_history(session: &Session) -> String {
                 file_delta(previous_files, &checkpoint.files);
             CheckpointSummary {
                 checkpoint_id: checkpoint.id,
+                label: checkpoint.label.clone(),
                 stdout: checkpoint.stdout.clone(),
                 file_count: checkpoint.files.len(),
                 files_added,
@@ -202,6 +215,7 @@ fn build_session_node(
             CheckpointTreeNode {
                 checkpoint_id: cp.id,
                 is_current: cp.id == current_id,
+                label: cp.label.clone(),
                 stdout: cp.stdout.clone(),
                 file_count: cp.files.len(),
                 forks,
@@ -210,6 +224,7 @@ fn build_session_node(
         .collect();
     SessionTreeNode {
         session_id: session_id.to_string(),
+        label: session.label.clone(),
         checkpoints,
     }
 }

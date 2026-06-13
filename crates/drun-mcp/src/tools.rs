@@ -337,6 +337,38 @@ pub struct SessionGetEnvTool {
     pub name: String,
 }
 
+#[mcp_tool(
+    name = "session_label",
+    description = "Attach a human-readable label to a session. The label appears in session_list, session_state, and session_tree to make it easy to identify what a session is for. Pass an empty string to clear the label.",
+    idempotent_hint = false,
+    destructive_hint = false,
+    read_only_hint = false
+)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct SessionLabelTool {
+    /// Session ID from create_session.
+    pub session_id: String,
+    /// Human-readable label for the session. Empty string clears the label.
+    pub label: String,
+}
+
+#[mcp_tool(
+    name = "session_checkpoint_label",
+    description = "Attach a human-readable label to a checkpoint. Labels appear in session_history and session_tree. Useful for marking milestones like 'data loaded', 'model trained', or 'baseline'. Omit checkpoint_id to label the current checkpoint. Pass an empty string to clear the label.",
+    idempotent_hint = false,
+    destructive_hint = false,
+    read_only_hint = false
+)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct SessionCheckpointLabelTool {
+    /// Session ID from create_session.
+    pub session_id: String,
+    /// Checkpoint to label. Defaults to the current checkpoint.
+    pub checkpoint_id: Option<u64>,
+    /// Human-readable label for the checkpoint. Empty string clears the label.
+    pub label: String,
+}
+
 tool_box!(
     DrunTools,
     [
@@ -362,5 +394,7 @@ tool_box!(
         SessionSnapshotTool,
         SessionRestoreTool,
         SessionGetEnvTool,
+        SessionLabelTool,
+        SessionCheckpointLabelTool,
     ]
 );

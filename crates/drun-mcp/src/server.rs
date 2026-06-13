@@ -448,6 +448,29 @@ impl ServerHandler for DrunHandler {
                     .insert(session_id, Arc::new(Mutex::new(restored)));
                 Ok(text(state))
             }
+
+            DrunTools::SessionLabelTool(t) => self.with_session_mut(&t.session_id, |session| {
+                session.set_label(t.label);
+                Ok(text(build_session_state(
+                    &t.session_id,
+                    session,
+                    None,
+                    vec![],
+                )))
+            }),
+
+            DrunTools::SessionCheckpointLabelTool(t) => {
+                self.with_session_mut(&t.session_id, |session| {
+                    let checkpoint_id = t
+                        .checkpoint_id
+                        .map(|id| id as usize)
+                        .unwrap_or_else(|| session.current().id);
+                    session
+                        .set_checkpoint_label(checkpoint_id, t.label)
+                        .map_err(err)?;
+                    Ok(text(build_checkpoint_history(session)))
+                })
+            }
         }
     }
 }

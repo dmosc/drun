@@ -8,6 +8,7 @@ pub struct Checkpoint {
     pub stdout: String,
     pub stderr: String,
     pub files: FileMap,
+    pub label: Option<String>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]

@@ -15,6 +15,7 @@ pub struct Session {
     allowed_hosts: Vec<String>,
     max_workspace_bytes: Option<u64>,
     max_checkpoints: Option<usize>,
+    pub label: Option<String>,
     pub timeout_ms: u64,
     pub parent: Option<CheckpointRef>,
     pub created_at: Instant,
@@ -37,6 +38,7 @@ impl Session {
             origins: HashMap::new(),
             packages: Vec::new(),
             allowed_hosts,
+            label: None,
             timeout_ms: timeout_ms.unwrap_or(60_000),
             parent: None,
             created_at: Instant::now(),
@@ -161,6 +163,7 @@ impl Session {
                     stdout,
                     stderr,
                     files,
+                    label: None,
                 });
                 self.checkpoint_idx = id;
                 Ok(self.checkpoints.last().unwrap())
@@ -173,6 +176,23 @@ impl Session {
             anyhow::bail!("checkpoint {} does not exist", checkpoint_idx);
         }
         self.checkpoint_idx = checkpoint_idx;
+        Ok(())
+    }
+
+    pub fn set_label(&mut self, label: String) {
+        self.label = if label.is_empty() { None } else { Some(label) };
+    }
+
+    pub fn set_checkpoint_label(
+        &mut self,
+        checkpoint_id: usize,
+        label: String,
+    ) -> anyhow::Result<()> {
+        let cp = self
+            .checkpoints
+            .get_mut(checkpoint_id)
+            .ok_or_else(|| anyhow::anyhow!("checkpoint {} does not exist", checkpoint_id))?;
+        cp.label = if label.is_empty() { None } else { Some(label) };
         Ok(())
     }
 
@@ -271,6 +291,7 @@ impl Session {
             checkpoint_idx: self.checkpoint_idx,
             packages: self.packages.clone(),
             parent: self.parent.clone(),
+            label: self.label.clone(),
             checkpoints: self
                 .checkpoints
                 .iter()
@@ -279,6 +300,7 @@ impl Session {
                     stdout: c.stdout.clone(),
                     stderr: c.stderr.clone(),
                     files: c.files.clone(),
+                    label: c.label.clone(),
                 })
                 .collect(),
         }
@@ -299,12 +321,14 @@ impl Session {
                     stdout: s.stdout,
                     stderr: s.stderr,
                     files: s.files,
+                    label: s.label,
                 })
                 .collect(),
             checkpoint_idx: snapshot.checkpoint_idx,
             origins: HashMap::new(),
             packages: Vec::new(),
             allowed_hosts: snapshot.allowed_hosts,
+            label: snapshot.label,
             timeout_ms: snapshot.timeout_ms,
             parent: snapshot.parent,
             created_at: Instant::now(),
@@ -402,6 +426,7 @@ impl Session {
             stdout: String::new(),
             stderr: String::new(),
             files,
+            label: None,
         }
     }
 }

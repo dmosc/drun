@@ -11,6 +11,8 @@ pub struct CheckpointSnapshot {
     pub stdout: String,
     pub stderr: String,
     pub files: FileMap,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -22,6 +24,8 @@ pub struct SessionSnapshot {
     pub packages: Vec<String>,
     pub parent: Option<CheckpointRef>,
     pub checkpoints: Vec<CheckpointSnapshot>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
 }
 
 impl SessionSnapshot {
