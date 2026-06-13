@@ -224,12 +224,18 @@ pub(crate) fn build_session_tree(sessions: &HashMap<String, Arc<Mutex<Session>>>
 
     for (id, session) in &locked_sessions {
         let session: &Session = &*session;
-        match &session.parent {
-            Some(r) => children
+        let parent_exists = session
+            .parent
+            .as_ref()
+            .map_or(false, |r| sessions.contains_key(&r.session_id));
+        if parent_exists {
+            let r = session.parent.as_ref().unwrap();
+            children
                 .entry((r.session_id.clone(), r.checkpoint_id))
                 .or_default()
-                .push((id.clone(), session)),
-            None => roots.push((id.as_str(), session)),
+                .push((id.clone(), session));
+        } else {
+            roots.push((id.as_str(), session));
         }
     }
 

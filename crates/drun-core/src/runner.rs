@@ -134,7 +134,6 @@ impl Runner {
         writeln!(self.stdin, "{}", request)?;
         self.stdin.flush()?;
 
-        let mut response_line = String::new();
         let child_handle = Arc::clone(&self.child);
         let timeout = Duration::from_millis(INSTALL_TIMEOUT_MS);
         let (cancel_tx, cancel_rx) = std::sync::mpsc::channel::<()>();
@@ -143,19 +142,25 @@ impl Runner {
                 let _ = child_handle.lock().unwrap().kill();
             }
         });
-        let read_result = self.stdout.read_line(&mut response_line);
-        let _ = cancel_tx.send(());
 
-        match read_result {
-            Ok(0) | Err(_) => {
-                anyhow::bail!("package install timed out after {}ms", INSTALL_TIMEOUT_MS)
+        loop {
+            let mut line = String::new();
+            match self.stdout.read_line(&mut line) {
+                Ok(0) | Err(_) => {
+                    let _ = cancel_tx.send(());
+                    anyhow::bail!("package install timed out after {}ms", INSTALL_TIMEOUT_MS)
+                }
+                Ok(_) => {
+                    if serde_json::from_str::<ProgressLine>(line.trim()).is_ok() {
+                        continue;
+                    }
+                    let _ = cancel_tx.send(());
+                    return match serde_json::from_str::<RunnerResponse>(&line)? {
+                        RunnerResponse::Ok { .. } => Ok(()),
+                        RunnerResponse::Err { error } => anyhow::bail!(error),
+                    };
+                }
             }
-            Ok(_) => {}
-        }
-
-        match serde_json::from_str::<RunnerResponse>(&response_line)? {
-            RunnerResponse::Ok { .. } => Ok(()),
-            RunnerResponse::Err { error } => anyhow::bail!(error),
         }
     }
 }

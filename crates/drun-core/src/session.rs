@@ -263,12 +263,16 @@ impl Session {
             checkpoint_idx: self.checkpoint_idx,
             packages: self.packages.clone(),
             parent: self.parent.clone(),
-            checkpoints: self.checkpoints.iter().map(|c| CheckpointSnapshot {
-                id: c.id,
-                stdout: c.stdout.clone(),
-                stderr: c.stderr.clone(),
-                files: c.files.clone(),
-            }).collect(),
+            checkpoints: self
+                .checkpoints
+                .iter()
+                .map(|c| CheckpointSnapshot {
+                    id: c.id,
+                    stdout: c.stdout.clone(),
+                    stderr: c.stderr.clone(),
+                    files: c.files.clone(),
+                })
+                .collect(),
         }
     }
 
@@ -278,12 +282,16 @@ impl Session {
             runner: Runner::new(engine, &snapshot.allowed_hosts)?,
             max_workspace_bytes: snapshot.max_workspace_bytes,
             engine: engine.clone(),
-            checkpoints: snapshot.checkpoints.into_iter().map(|s| Checkpoint {
-                id: s.id,
-                stdout: s.stdout,
-                stderr: s.stderr,
-                files: s.files,
-            }).collect(),
+            checkpoints: snapshot
+                .checkpoints
+                .into_iter()
+                .map(|s| Checkpoint {
+                    id: s.id,
+                    stdout: s.stdout,
+                    stderr: s.stderr,
+                    files: s.files,
+                })
+                .collect(),
             checkpoint_idx: snapshot.checkpoint_idx,
             origins: HashMap::new(),
             packages: Vec::new(),
