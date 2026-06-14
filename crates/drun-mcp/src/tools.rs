@@ -267,6 +267,19 @@ pub struct SessionCommitTool {
 pub struct GetFetchAllowlistTool {}
 
 #[mcp_tool(
+    name = "get_allowed_packages",
+    description = "Return the list of packages the server permits for session_install_package. \
+                   An empty list means all packages are allowed. A non-empty list means only those \
+                   packages may be installed — calls with any other package name will be rejected. \
+                   Check this before attempting to install a package.",
+    idempotent_hint = true,
+    destructive_hint = false,
+    read_only_hint = true
+)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct GetAllowedPackagesTool {}
+
+#[mcp_tool(
     name = "session_fetch",
     description = "Make an HTTP request from the host and save the response body as a workspace file. \
                    The body is never returned inline — it is always written to the workspace so large \
@@ -403,6 +416,7 @@ tool_box!(
         SessionTreeTool,
         SessionFetchTool,
         GetFetchAllowlistTool,
+        GetAllowedPackagesTool,
         SessionSnapshotTool,
         SessionRestoreTool,
         SessionGetEnvTool,

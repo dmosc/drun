@@ -465,8 +465,12 @@ impl ServerHandler for DrunHandler {
                 })
             }
 
-            DrunTools::GetFetchAllowlistTool(_) => {
-                Ok(text(serde_json::to_string(&self.domain_allowlist).unwrap()))
+            DrunTools::GetFetchAllowlistTool(_) => Ok(text(
+                serde_json::to_string(&self.get_domain_allowlist()).unwrap(),
+            )),
+
+            DrunTools::GetAllowedPackagesTool(_) => {
+                Ok(text(serde_json::to_string(&self.allowed_packages).unwrap()))
             }
 
             DrunTools::SessionSnapshotTool(t) => {
