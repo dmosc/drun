@@ -384,12 +384,11 @@ impl ServerHandler for DrunHandler {
                     DrunError::internal(format!("invalid HTTP method: {method}")).into_tool_err()
                 })?;
 
-                // 30 s connect guard is hardcoded; overall timeout only if operator configured it.
-                let mut builder =
-                    reqwest::Client::builder().connect_timeout(Duration::from_secs(30));
-                if let Some(ms) = self.fetch_timeout_ms {
-                    builder = builder.timeout(Duration::from_millis(ms));
-                }
+                let builder = reqwest::Client::builder()
+                    .connect_timeout(Duration::from_secs(30))
+                    .timeout(Duration::from_millis(
+                        self.fetch_timeout_ms.unwrap_or(60_000),
+                    ));
                 let client = builder
                     .build()
                     .map_err(|e| DrunError::internal(e).into_tool_err())?;
@@ -404,7 +403,7 @@ impl ServerHandler for DrunHandler {
                     req = req.body(body);
                 }
 
-                let response = req
+                let mut response = req
                     .send()
                     .await
                     .map_err(|e| DrunError::internal(e).into_tool_err())?;
@@ -415,10 +414,31 @@ impl ServerHandler for DrunHandler {
                     .and_then(|v| v.to_str().ok())
                     .unwrap_or("")
                     .to_string();
-                let body_bytes = response
-                    .bytes()
-                    .await
-                    .map_err(|e| DrunError::internal(e).into_tool_err())?;
+
+                // Stream the body with a size cap so a large response cannot
+                // OOM the server process.
+                let max_body = self.engine.max_workspace_bytes.unwrap_or(256 * 1024 * 1024);
+                let mut body_bytes: Vec<u8> = Vec::new();
+                loop {
+                    match response
+                        .chunk()
+                        .await
+                        .map_err(|e| DrunError::internal(e).into_tool_err())?
+                    {
+                        Some(chunk) => {
+                            body_bytes.extend_from_slice(&chunk);
+                            if body_bytes.len() as u64 > max_body {
+                                return Err(DrunError::internal(format!(
+                                    "response body exceeds the {} MB limit; use a smaller download \
+                                     or raise max_workspace_mb in server config",
+                                    max_body / 1024 / 1024
+                                ))
+                                .into_tool_err());
+                            }
+                        }
+                        None => break,
+                    }
+                }
 
                 let save_path = t.save_to.unwrap_or_else(|| download_path_from_url(&t.url));
                 let bytes_len = body_bytes.len();
