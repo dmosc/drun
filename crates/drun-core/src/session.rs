@@ -115,6 +115,7 @@ impl Session {
     }
 
     pub fn write_file(&mut self, path: &str, content: Vec<u8>) -> anyhow::Result<()> {
+        self.validate_file_path(path)?;
         let mut files = self.checkpoints[self.checkpoint_idx].files.clone();
         files.insert(path.to_string(), content);
         self.check_workspace_size(&files)?;
@@ -222,6 +223,7 @@ impl Session {
         };
         let mut exported_files = Vec::new();
         for key in keys_to_export {
+            self.validate_file_path(key)?;
             let bytes = current
                 .get(key)
                 .ok_or_else(|| anyhow::anyhow!("'{}' not in current checkpoint", key))?;
@@ -441,5 +443,24 @@ impl Session {
             files,
             label: None,
         }
+    }
+
+    fn validate_file_path(&self, key: &str) -> anyhow::Result<()> {
+        if key.is_empty() {
+            anyhow::bail!("workspace key must not be empty");
+        }
+        use std::path::Component;
+        for component in std::path::Path::new(key).components() {
+            match component {
+                Component::Normal(_) | Component::CurDir => {}
+                Component::ParentDir => {
+                    anyhow::bail!("workspace key must not contain '..': '{key}'");
+                }
+                Component::RootDir | Component::Prefix(_) => {
+                    anyhow::bail!("workspace key must be a relative path: '{key}'");
+                }
+            }
+        }
+        Ok(())
     }
 }
