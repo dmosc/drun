@@ -48,6 +48,7 @@ pub(crate) struct Runner {
     child: Arc<Mutex<Child>>,
     stdin: BufWriter<ChildStdin>,
     stdout: BufReader<ChildStdout>,
+    engine: DrunEngine,
 }
 
 impl Runner {
@@ -59,6 +60,7 @@ impl Runner {
             child: Arc::new(Mutex::new(child)),
             stdin,
             stdout,
+            engine: engine.clone(),
         })
     }
 
@@ -68,7 +70,7 @@ impl Runner {
     ) -> anyhow::Result<Self> {
         let mut runner = Self::new(engine)?;
         for package in packages {
-            let _ = runner.install(package, engine.config.install_timeout_ms);
+            let _ = runner.install(package);
         }
         Ok(runner)
     }
@@ -77,13 +79,13 @@ impl Runner {
         &mut self,
         code: &str,
         files: &FileMap,
-        timeout_ms: u64,
         on_progress: &mut dyn FnMut(String),
     ) -> anyhow::Result<ExecSuccess> {
         let request = serde_json::to_string(&ExecRequest { code, files })?;
         writeln!(self.stdin, "{}", request)?;
         self.stdin.flush()?;
 
+        let timeout_ms = self.engine.config.exec_timeout_ms;
         let timed_out = Arc::new(AtomicBool::new(false));
         let child_handle = Arc::clone(&self.child);
         let timed_out_flag = Arc::clone(&timed_out);
@@ -130,11 +132,12 @@ impl Runner {
         }
     }
 
-    pub fn install(&mut self, package: &str, timeout_ms: u64) -> anyhow::Result<()> {
+    pub fn install(&mut self, package: &str) -> anyhow::Result<()> {
         let request = serde_json::to_string(&PackageInstallRequest { package })?;
         writeln!(self.stdin, "{}", request)?;
         self.stdin.flush()?;
 
+        let timeout_ms = self.engine.config.install_timeout_ms;
         let timed_out = Arc::new(AtomicBool::new(false));
         let child_handle = Arc::clone(&self.child);
         let timed_out_flag = Arc::clone(&timed_out);

@@ -11,12 +11,10 @@ pub struct DrunSession {
 #[pymethods]
 impl DrunSession {
     #[new]
-    #[pyo3(signature = (timeout_ms=None))]
-    pub fn new(timeout_ms: Option<u64>) -> PyResult<Self> {
+    pub fn new() -> PyResult<Self> {
         let engine = DrunEngine::new(Config::default())
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
-        let session = Session::new(&engine, timeout_ms)
-            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let session = Session::new(&engine).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
         Ok(Self {
             inner: Mutex::new(session),
         })

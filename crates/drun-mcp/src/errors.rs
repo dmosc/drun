@@ -65,7 +65,7 @@ impl DrunError {
     pub fn execution_timeout(timeout_ms: u64) -> Self {
         Self::new(
             "execution_timeout",
-            format!("execution exceeded the {timeout_ms}ms timeout; simplify the code or increase timeout_ms on create_session"),
+            format!("execution exceeded the {timeout_ms}ms timeout; simplify the code or increase exec_timeout_ms in server config"),
         )
         .with_detail(serde_json::json!({ "timeout_ms": timeout_ms }))
     }

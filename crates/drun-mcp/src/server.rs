@@ -45,14 +45,14 @@ impl ServerHandler for DrunHandler {
         let progress_token = params.meta.as_ref().and_then(|m| m.progress_token.clone());
         let tool = DrunTools::try_from(params)?;
         match tool {
-            DrunTools::CreateSessionTool(t) => {
+            DrunTools::CreateSessionTool(_) => {
                 if let Some(max) = self.engine.config.max_sessions {
                     if self.sessions.lock().unwrap().len() >= max {
                         return Err(DrunError::session_limit_reached(max).into_tool_err());
                     }
                 }
                 let session_id = Uuid::new_v4().to_string();
-                let session = Session::new(&self.engine, t.timeout_ms)
+                let session = Session::new(&self.engine)
                     .map_err(|e| DrunError::internal(e).into_tool_err())?;
                 let state = build_session_state(&session_id, &session, None, vec![]);
                 self.sessions

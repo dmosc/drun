@@ -11,7 +11,6 @@ struct SessionSummary {
     checkpoint_id: usize,
     checkpoint_count: usize,
     packages: Vec<String>,
-    timeout_ms: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     parent_session_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -55,7 +54,6 @@ pub(crate) struct SessionState {
     pub stderr: String,
     pub workspace: Vec<String>,
     pub packages: Vec<String>,
-    pub timeout_ms: u64,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub files_added: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -125,7 +123,6 @@ pub(crate) fn build_session_list(sessions: &HashMap<String, Arc<Mutex<Session>>>
                 checkpoint_id: session.current().id,
                 checkpoint_count: session.history().len(),
                 packages: session.packages().to_vec(),
-                timeout_ms: session.timeout_ms,
                 parent_session_id,
                 parent_checkpoint_id,
             }
@@ -158,7 +155,6 @@ pub(crate) fn build_session_state(
         stderr: current.stderr.clone(),
         workspace,
         packages: session.packages().to_vec(),
-        timeout_ms: session.timeout_ms,
         files_added,
         files_modified,
         files_removed,

@@ -14,14 +14,13 @@ pub struct Session {
     origins: HashMap<String, PathBuf>,
     packages: Vec<String>,
     pub label: Option<String>,
-    pub timeout_ms: u64,
     pub parent: Option<CheckpointRef>,
     pub created_at: Instant,
     pub last_activity: Instant,
 }
 
 impl Session {
-    pub fn new(engine: &DrunEngine, timeout_ms: Option<u64>) -> anyhow::Result<Self> {
+    pub fn new(engine: &DrunEngine) -> anyhow::Result<Self> {
         Ok(Self {
             runner: Runner::new(engine)?,
             engine: engine.clone(),
@@ -30,7 +29,6 @@ impl Session {
             origins: HashMap::new(),
             packages: Vec::new(),
             label: None,
-            timeout_ms: timeout_ms.unwrap_or(engine.config.exec_timeout_ms),
             parent: None,
             created_at: Instant::now(),
             last_activity: Instant::now(),
@@ -54,7 +52,7 @@ impl Session {
             .filter(|(k, _)| files.contains_key(k.as_str()))
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
-        let mut session = Self::new(engine, Some(source.timeout_ms))?;
+        let mut session = Self::new(engine)?;
         for package in &source.packages {
             session.install(package)?;
         }
@@ -120,9 +118,7 @@ impl Session {
     }
 
     pub fn install(&mut self, package: &str) -> anyhow::Result<()> {
-        let result = self
-            .runner
-            .install(package, self.engine.config.install_timeout_ms);
+        let result = self.runner.install(package);
         if result.is_err() {
             self.runner = Runner::new_from_timeout_recovery(&self.engine, &self.packages)?;
         }
@@ -138,7 +134,7 @@ impl Session {
     ) -> anyhow::Result<&Checkpoint> {
         self.checkpoints.truncate(self.checkpoint_idx + 1);
         let files = &self.checkpoints[self.checkpoint_idx].files;
-        match self.runner.execute(code, files, self.timeout_ms, on_stdout) {
+        match self.runner.execute(code, files, on_stdout) {
             Ok(ExecSuccess {
                 stdout,
                 stderr,
@@ -284,7 +280,6 @@ impl Session {
 
     pub fn snapshot(&self) -> SessionSnapshot {
         SessionSnapshot {
-            timeout_ms: self.timeout_ms,
             checkpoint_idx: self.checkpoint_idx,
             packages: self.packages.clone(),
             parent: self.parent.clone(),
@@ -323,7 +318,6 @@ impl Session {
             origins: HashMap::new(),
             packages: Vec::new(),
             label: snapshot.label,
-            timeout_ms: snapshot.timeout_ms,
             parent: snapshot.parent,
             created_at: Instant::now(),
             last_activity: Instant::now(),

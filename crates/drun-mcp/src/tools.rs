@@ -21,12 +21,7 @@ pub struct HttpHeader {
     read_only_hint = false
 )]
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct CreateSessionTool {
-    /// Wall-clock timeout in milliseconds applied to every session_execute
-    /// call. Triggers a KeyboardInterrupt in the running Python code when
-    /// exceeded.
-    pub timeout_ms: Option<u64>,
-}
+pub struct CreateSessionTool {}
 
 #[mcp_tool(
     name = "session_execute",

@@ -17,7 +17,6 @@ pub struct CheckpointSnapshot {
 
 #[derive(Serialize, Deserialize)]
 pub struct SessionSnapshot {
-    pub timeout_ms: u64,
     pub checkpoint_idx: usize,
     pub packages: Vec<String>,
     pub parent: Option<CheckpointRef>,
