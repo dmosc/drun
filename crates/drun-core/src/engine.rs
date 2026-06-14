@@ -1,3 +1,4 @@
+use crate::config::Config;
 use std::path::PathBuf;
 use std::process::Stdio;
 
@@ -5,31 +6,14 @@ pub const PYTHON_PACKAGE_HOSTS: &[&str] =
     &["cdn.jsdelivr.net", "files.pythonhosted.org", "pypi.org"];
 
 #[derive(Clone)]
-pub struct DrunEngineConfig {
-    pub max_workspace_bytes: Option<u64>,
-    pub max_checkpoints: Option<usize>,
-    pub mount_allowlist: Vec<PathBuf>,
-}
-
-impl Default for DrunEngineConfig {
-    fn default() -> Self {
-        Self {
-            max_workspace_bytes: Some(512 * 1024 * 1024), // 512 MB
-            max_checkpoints: Some(200),
-            mount_allowlist: vec![],
-        }
-    }
-}
-
-#[derive(Clone)]
 pub struct DrunEngine {
     pub(crate) deno_path: PathBuf,
     pub(crate) runner_path: PathBuf,
-    pub(crate) config: DrunEngineConfig,
+    pub config: Config,
 }
 
 impl DrunEngine {
-    pub fn new(config: DrunEngineConfig) -> anyhow::Result<Self> {
+    pub fn new(config: Config) -> anyhow::Result<Self> {
         let deno_path = which::which("deno")
             .map_err(|_| anyhow::anyhow!("deno not found; install from https://deno.land"))?;
         // Use a per-process unique filename to avoid TOCTOU race conditions.

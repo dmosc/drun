@@ -1,7 +1,6 @@
 //! MCP server entry point. Wires up the transport, server metadata, and
 //! handler, then starts the stdio loop.
 
-mod config;
 mod errors;
 mod handler;
 mod reaper;
@@ -10,7 +9,7 @@ mod server;
 mod state;
 mod tools;
 
-use config::Config;
+use drun_core::Config;
 use handler::DrunHandler;
 use rust_mcp_sdk::{
     McpServer, StdioTransport, ToMcpServerHandler, TransportOptions,

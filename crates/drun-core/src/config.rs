@@ -1,8 +1,7 @@
-use drun_core::DrunEngineConfig;
 use serde::Deserialize;
 use std::path::PathBuf;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 #[serde(default)]
 pub struct Config {
     /// Domains permitted for session_fetch calls. Use ["*"] to allow all.
@@ -12,11 +11,11 @@ pub struct Config {
     /// Maximum workspace size in megabytes per session.
     pub max_workspace_mb: Option<u64>,
     /// Host path prefixes that may be mounted into a session. Empty means all paths are permitted.
-    pub mount_allowlist: Vec<String>,
+    pub mount_allowlist: Vec<PathBuf>,
     /// Directory that session exports must be written to. Unset means no restriction.
-    pub export_root: Option<String>,
+    pub export_root: Option<PathBuf>,
     /// Directory where session_snapshot writes .drun files. Unset means no restriction.
-    pub snapshots_dir: Option<String>,
+    pub snapshots_dir: Option<PathBuf>,
     /// Automatically write a .drun snapshot when session_close is called.
     pub auto_snapshot: bool,
     /// Maximum number of concurrent sessions.
@@ -65,14 +64,6 @@ impl Config {
                 eprintln!("drun: failed to read config at {}: {e}", path.display());
                 Self::default()
             }
-        }
-    }
-
-    pub fn engine_config(&self) -> DrunEngineConfig {
-        DrunEngineConfig {
-            max_workspace_bytes: self.max_workspace_mb.map(|mb| mb * 1024 * 1024),
-            max_checkpoints: self.max_checkpoints,
-            mount_allowlist: self.mount_allowlist.iter().map(PathBuf::from).collect(),
         }
     }
 }

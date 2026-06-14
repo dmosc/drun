@@ -48,7 +48,7 @@ impl ServerHandler for DrunHandler {
         let tool = DrunTools::try_from(params)?;
         match tool {
             DrunTools::CreateSessionTool(t) => {
-                if let Some(max) = self.config.max_sessions {
+                if let Some(max) = self.engine.config.max_sessions {
                     if self.sessions.lock().unwrap().len() >= max {
                         return Err(DrunError::session_limit_reached(max).into_tool_err());
                     }
@@ -104,12 +104,12 @@ impl ServerHandler for DrunHandler {
                     .unwrap()
                     .remove(&t.session_id)
                     .ok_or_else(|| DrunError::session_not_found(&t.session_id).into_tool_err())?;
-                if self.config.auto_snapshot {
+                if self.engine.config.auto_snapshot {
                     let output_path = self
+                        .engine
                         .config
                         .snapshots_dir
-                        .as_deref()
-                        .map(PathBuf::from)
+                        .clone()
                         .unwrap_or_else(|| {
                             std::env::current_dir()
                                 .unwrap_or_default()
@@ -140,8 +140,8 @@ impl ServerHandler for DrunHandler {
             }),
 
             DrunTools::SessionInstallPackageTool(t) => {
-                if !self.config.package_allowlist.is_empty()
-                    && !self.config.package_allowlist.contains(&t.package)
+                if !self.engine.config.package_allowlist.is_empty()
+                    && !self.engine.config.package_allowlist.contains(&t.package)
                 {
                     return Err(DrunError::package_denied(&t.package).into_tool_err());
                 }
@@ -330,7 +330,7 @@ impl ServerHandler for DrunHandler {
 
             DrunTools::SessionExportTool(t) => {
                 static DEFAULT_EXPORT_FOLDER: &str = "drun-export";
-                let export_root = self.config.export_root.as_deref().map(PathBuf::from);
+                let export_root = self.engine.config.export_root.clone();
                 let output_dir = match &t.output_dir {
                     Some(dir) => {
                         let p = PathBuf::from(dir);
@@ -382,9 +382,9 @@ impl ServerHandler for DrunHandler {
                 if !self.sessions.lock().unwrap().contains_key(&t.session_id) {
                     return Err(DrunError::session_not_found(&t.session_id).into_tool_err());
                 }
-                let url_is_allowed = self.config.domain_allowlist.iter().any(|h| h == "*")
+                let url_is_allowed = self.engine.config.domain_allowlist.iter().any(|h| h == "*")
                     || host_from_url(&t.url)
-                        .map_or(false, |h| self.config.domain_allowlist.contains(&h));
+                        .map_or(false, |h| self.engine.config.domain_allowlist.contains(&h));
                 if !url_is_allowed {
                     return Err(DrunError::fetch_denied(&t.url).into_tool_err());
                 }
@@ -397,7 +397,7 @@ impl ServerHandler for DrunHandler {
                 let builder = reqwest::Client::builder()
                     .connect_timeout(Duration::from_secs(30))
                     .timeout(Duration::from_millis(
-                        self.config.fetch_timeout_ms.unwrap_or(60_000),
+                        self.engine.config.fetch_timeout_ms.unwrap_or(60_000),
                     ));
                 let client = builder
                     .build()
@@ -428,6 +428,7 @@ impl ServerHandler for DrunHandler {
                 // Stream the body with a size cap so a large response cannot
                 // OOM the server process.
                 let max_body = self
+                    .engine
                     .config
                     .max_workspace_mb
                     .map(|mb| mb * 1024 * 1024)
@@ -477,11 +478,11 @@ impl ServerHandler for DrunHandler {
             )),
 
             DrunTools::GetAllowedPackagesTool(_) => Ok(text(
-                serde_json::to_string(&self.config.package_allowlist).unwrap(),
+                serde_json::to_string(&self.engine.config.package_allowlist).unwrap(),
             )),
 
             DrunTools::SessionSnapshotTool(t) => {
-                let snapshots_dir = self.config.snapshots_dir.as_deref().map(PathBuf::from);
+                let snapshots_dir = self.engine.config.snapshots_dir.clone();
                 let output_path = match t.path {
                     Some(p) => {
                         let p = PathBuf::from(p);
@@ -535,7 +536,7 @@ impl ServerHandler for DrunHandler {
                 if !self.sessions.lock().unwrap().contains_key(&t.session_id) {
                     return Err(DrunError::session_not_found(&t.session_id).into_tool_err());
                 }
-                if !self.config.env_allowlist.contains(&t.name) {
+                if !self.engine.config.env_allowlist.contains(&t.name) {
                     return Err(DrunError::env_var_denied(&t.name).into_tool_err());
                 }
                 let value = std::env::var(&t.name).unwrap_or_default();

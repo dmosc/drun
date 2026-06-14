@@ -298,7 +298,11 @@ impl Session {
         SessionSnapshot {
             allowed_hosts: self.allowed_hosts.clone(),
             timeout_ms: self.timeout_ms,
-            max_workspace_bytes: self.engine.config.max_workspace_bytes,
+            max_workspace_bytes: self
+                .engine
+                .config
+                .max_workspace_mb
+                .map(|mb| mb * 1024 * 1024),
             checkpoint_idx: self.checkpoint_idx,
             packages: self.packages.clone(),
             parent: self.parent.clone(),
@@ -412,7 +416,12 @@ impl Session {
     }
 
     fn check_workspace_size(&self, files: &FileMap) -> anyhow::Result<()> {
-        if let Some(limit) = self.engine.config.max_workspace_bytes {
+        if let Some(limit) = self
+            .engine
+            .config
+            .max_workspace_mb
+            .map(|mb| mb * 1024 * 1024)
+        {
             let total: u64 = files.values().map(|v| v.len() as u64).sum();
             if total > limit {
                 anyhow::bail!(

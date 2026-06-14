@@ -16,5 +16,6 @@ tempfile.workspace = true
 fs_extra.workspace = true
 walkdir.workspace = true
 which = "7"
+toml = "0.8"
 similar = "2"
 zstd.workspace = true

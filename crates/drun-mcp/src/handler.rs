@@ -1,7 +1,6 @@
-use crate::config::Config;
 use crate::errors::DrunError;
 use crate::reaper::{self, SessionMap};
-use drun_core::{DrunEngine, PYTHON_PACKAGE_HOSTS, Session};
+use drun_core::{Config, DrunEngine, PYTHON_PACKAGE_HOSTS, Session};
 use rust_mcp_sdk::schema::{CallToolResult, schema_utils::CallToolError};
 use std::{
     collections::HashMap,
@@ -11,33 +10,30 @@ use std::{
 pub struct DrunHandler {
     pub(crate) engine: DrunEngine,
     pub(crate) sessions: SessionMap,
-    pub(crate) config: Config,
 }
 
 impl DrunHandler {
     pub fn new(config: Config) -> Self {
-        let engine =
-            DrunEngine::new(config.engine_config()).expect("failed to initialize drun engine");
+        let engine = DrunEngine::new(config).expect("failed to initialize drun engine");
         Self {
             engine,
             sessions: Arc::new(Mutex::new(HashMap::new())),
-            config,
         }
     }
 
     pub fn start_idle_reaper(&self) {
-        if let Some(timeout_secs) = self.config.session_idle_timeout_secs {
+        if let Some(timeout_secs) = self.engine.config.session_idle_timeout_secs {
             reaper::spawn(Arc::clone(&self.sessions), timeout_secs);
         }
     }
 
     pub(crate) fn get_domain_allowlist(&self) -> Vec<String> {
-        if self.config.domain_allowlist.iter().any(|h| h == "*") {
+        if self.engine.config.domain_allowlist.iter().any(|h| h == "*") {
             return vec!["*".to_string()];
         }
         let mut allowed_domains: Vec<String> =
             PYTHON_PACKAGE_HOSTS.iter().map(|s| s.to_string()).collect();
-        for domain in &self.config.domain_allowlist {
+        for domain in &self.engine.config.domain_allowlist {
             if !allowed_domains.contains(domain) {
                 allowed_domains.push(domain.clone());
             }
@@ -85,7 +81,7 @@ impl DrunHandler {
     }
 
     fn check_idle(&self, session_id: &str, session: &Session) -> Result<(), CallToolError> {
-        if let Some(limit_secs) = self.config.session_idle_timeout_secs {
+        if let Some(limit_secs) = self.engine.config.session_idle_timeout_secs {
             let idle_secs = session.last_activity.elapsed().as_secs();
             if idle_secs > limit_secs {
                 return Err(

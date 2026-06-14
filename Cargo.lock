@@ -340,6 +340,7 @@ dependencies = [
  "serde_json",
  "similar",
  "tempfile",
+ "toml",
  "walkdir",
  "which",
  "zstd",

@@ -1,5 +1,5 @@
 use crate::types::{DrunCheckpoint, checkpoint_to_py};
-use drun_core::{DrunEngine, DrunEngineConfig, PYTHON_PACKAGE_HOSTS, Session};
+use drun_core::{Config, DrunEngine, PYTHON_PACKAGE_HOSTS, Session};
 use pyo3::{exceptions::PyRuntimeError, prelude::*};
 use std::sync::Mutex;
 
@@ -13,7 +13,7 @@ impl DrunSession {
     #[new]
     #[pyo3(signature = (allowed_hosts=None, timeout_ms=None))]
     pub fn new(allowed_hosts: Option<Vec<String>>, timeout_ms: Option<u64>) -> PyResult<Self> {
-        let engine = DrunEngine::new(DrunEngineConfig::default())
+        let engine = DrunEngine::new(Config::default())
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
         let hosts = allowed_hosts
             .unwrap_or_else(|| PYTHON_PACKAGE_HOSTS.iter().map(|s| s.to_string()).collect());
