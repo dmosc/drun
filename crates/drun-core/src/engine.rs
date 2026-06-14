@@ -4,19 +4,27 @@ use std::process::Stdio;
 pub const PYTHON_PACKAGE_HOSTS: &[&str] =
     &["cdn.jsdelivr.net", "files.pythonhosted.org", "pypi.org"];
 
-#[derive(Default)]
 pub struct DrunEngineConfig {
     pub max_workspace_bytes: Option<u64>,
     pub max_checkpoints: Option<usize>,
-    /// Host path prefixes that may be mounted into a session. Empty means all paths are permitted.
     pub mount_allowlist: Vec<PathBuf>,
+}
+
+impl Default for DrunEngineConfig {
+    fn default() -> Self {
+        Self {
+            max_workspace_bytes: Some(512 * 1024 * 1024), // 512 MB
+            max_checkpoints: Some(200),
+            mount_allowlist: vec![],
+        }
+    }
 }
 
 #[derive(Clone)]
 pub struct DrunEngine {
     pub(crate) deno_path: PathBuf,
     pub(crate) runner_path: PathBuf,
-    pub(crate) max_workspace_bytes: Option<u64>,
+    pub max_workspace_bytes: Option<u64>,
     pub(crate) max_checkpoints: Option<usize>,
     pub(crate) mount_allowlist: Vec<PathBuf>,
 }
@@ -25,7 +33,9 @@ impl DrunEngine {
     pub fn new(config: DrunEngineConfig) -> anyhow::Result<Self> {
         let deno_path = which::which("deno")
             .map_err(|_| anyhow::anyhow!("deno not found; install from https://deno.land"))?;
-        let runner_path = std::env::temp_dir().join("drun_runner.ts");
+        // Use a per-process unique filename to avoid TOCTOU race conditions.
+        let runner_path =
+            std::env::temp_dir().join(format!("drun_runner_{}.ts", std::process::id()));
         std::fs::write(&runner_path, include_str!("assets/runner.ts"))?;
         Ok(Self {
             deno_path,
@@ -59,5 +69,11 @@ impl DrunEngine {
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
             .spawn()?)
+    }
+}
+
+impl Drop for DrunEngine {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.runner_path);
     }
 }
