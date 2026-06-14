@@ -1,6 +1,6 @@
 import drun
 
-session = drun.Session(network="none")
+session = drun.Session(allowed_hosts=[])
 
 result = session.execute("""
 from pyodide.http import pyfetch
@@ -13,7 +13,7 @@ except Exception as e:
 
 print(result.stdout)
 
-session = drun.Session(network="full")
+session = drun.Session(allowed_hosts=["*"])
 
 result = session.execute("""
 from pyodide.http import pyfetch
