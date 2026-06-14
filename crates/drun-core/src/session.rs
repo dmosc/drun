@@ -13,7 +13,6 @@ pub struct Session {
     checkpoint_idx: usize,
     origins: HashMap<String, PathBuf>,
     packages: Vec<String>,
-    allowed_hosts: Vec<String>,
     pub label: Option<String>,
     pub timeout_ms: u64,
     pub parent: Option<CheckpointRef>,
@@ -23,15 +22,13 @@ pub struct Session {
 
 impl Session {
     pub fn new(engine: &DrunEngine, timeout_ms: Option<u64>) -> anyhow::Result<Self> {
-        let allowed_hosts = engine.config.domain_allowlist.clone();
         Ok(Self {
-            runner: Runner::new(engine, &allowed_hosts)?,
+            runner: Runner::new(engine)?,
             engine: engine.clone(),
             checkpoints: vec![Self::empty_checkpoint(0, HashMap::new())],
             checkpoint_idx: 0,
             origins: HashMap::new(),
             packages: Vec::new(),
-            allowed_hosts,
             label: None,
             timeout_ms: timeout_ms.unwrap_or(engine.config.exec_timeout_ms),
             parent: None,
@@ -287,13 +284,7 @@ impl Session {
 
     pub fn snapshot(&self) -> SessionSnapshot {
         SessionSnapshot {
-            allowed_hosts: self.allowed_hosts.clone(),
             timeout_ms: self.timeout_ms,
-            max_workspace_bytes: self
-                .engine
-                .config
-                .max_workspace_mb
-                .map(|mb| mb * 1024 * 1024),
             checkpoint_idx: self.checkpoint_idx,
             packages: self.packages.clone(),
             parent: self.parent.clone(),
@@ -315,7 +306,7 @@ impl Session {
     pub fn from_snapshot(engine: &DrunEngine, snapshot: SessionSnapshot) -> anyhow::Result<Self> {
         let packages_to_install = snapshot.packages.clone();
         let mut session = Self {
-            runner: Runner::new(engine, &snapshot.allowed_hosts)?,
+            runner: Runner::new(engine)?,
             engine: engine.clone(),
             checkpoints: snapshot
                 .checkpoints
@@ -331,7 +322,6 @@ impl Session {
             checkpoint_idx: snapshot.checkpoint_idx,
             origins: HashMap::new(),
             packages: Vec::new(),
-            allowed_hosts: snapshot.allowed_hosts,
             label: snapshot.label,
             timeout_ms: snapshot.timeout_ms,
             parent: snapshot.parent,

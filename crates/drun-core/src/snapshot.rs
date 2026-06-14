@@ -17,9 +17,7 @@ pub struct CheckpointSnapshot {
 
 #[derive(Serialize, Deserialize)]
 pub struct SessionSnapshot {
-    pub allowed_hosts: Vec<String>,
     pub timeout_ms: u64,
-    pub max_workspace_bytes: Option<u64>,
     pub checkpoint_idx: usize,
     pub packages: Vec<String>,
     pub parent: Option<CheckpointRef>,

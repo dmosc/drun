@@ -520,9 +520,8 @@ impl ServerHandler for DrunHandler {
             DrunTools::SessionRestoreTool(t) => {
                 let bytes =
                     std::fs::read(&t.path).map_err(|e| DrunError::internal(e).into_tool_err())?;
-                let mut snapshot = SessionSnapshot::decode(&bytes)
+                let snapshot = SessionSnapshot::decode(&bytes)
                     .map_err(|e| DrunError::internal(e).into_tool_err())?;
-                snapshot.allowed_hosts = self.engine.config.domain_allowlist.clone();
                 let restored = Session::from_snapshot(&self.engine, snapshot)
                     .map_err(|e| DrunError::internal(e).into_tool_err())?;
                 let session_id = Uuid::new_v4().to_string();

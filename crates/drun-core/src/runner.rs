@@ -51,8 +51,8 @@ pub(crate) struct Runner {
 }
 
 impl Runner {
-    pub fn new(engine: &DrunEngine, allowed_hosts: &[String]) -> anyhow::Result<Self> {
-        let mut child = engine.spawn_runner(allowed_hosts)?;
+    pub fn new(engine: &DrunEngine) -> anyhow::Result<Self> {
+        let mut child = engine.spawn_runner(&engine.config.domain_allowlist)?;
         let stdin = BufWriter::new(child.stdin.take().unwrap());
         let stdout = BufReader::new(child.stdout.take().unwrap());
         Ok(Self {
@@ -66,7 +66,7 @@ impl Runner {
         engine: &DrunEngine,
         packages: &[String],
     ) -> anyhow::Result<Self> {
-        let mut runner = Self::new(engine, &engine.config.domain_allowlist)?;
+        let mut runner = Self::new(engine)?;
         for package in packages {
             let _ = runner.install(package, engine.config.install_timeout_ms);
         }
