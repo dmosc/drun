@@ -99,10 +99,14 @@ impl DrunHandler {
             .get(session_id)
             .ok_or_else(|| CallToolError::from(DrunError::session_not_found(session_id)))?
             .clone();
-        let mut guard = session.lock().unwrap();
-        self.check_idle(session_id, &guard)?;
-        guard.last_activity = std::time::Instant::now();
-        f(&mut guard)
+        match session.try_lock() {
+            Ok(mut guard) => {
+                self.check_idle(session_id, &guard)?;
+                guard.last_activity = std::time::Instant::now();
+                f(&mut guard)
+            }
+            Err(_) => Err(DrunError::session_busy(session_id).into_tool_err()),
+        }
     }
 
     fn check_idle(&self, session_id: &str, session: &Session) -> Result<(), CallToolError> {

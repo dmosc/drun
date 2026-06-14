@@ -33,6 +33,15 @@ impl DrunError {
         )
     }
 
+    pub fn session_busy(session_id: &str) -> Self {
+        Self::new(
+            "session_busy",
+            format!(
+                "session '{session_id}' is currently executing; wait for it to complete and retry"
+            ),
+        )
+    }
+
     pub fn session_idle(session_id: &str, idle_secs: u64, limit_secs: u64) -> Self {
         Self::new(
             "session_idle",
