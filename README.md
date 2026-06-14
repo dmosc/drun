@@ -32,29 +32,42 @@ it can only operate within what the operator pre-approved.
 
 ## Installation
 
+**Requires [Deno](https://deno.land).** The one-liner installs it automatically;
+all other paths assume it is already on your `PATH`.
+
+**One-liner (recommended)** — detects your platform, installs Deno if needed,
+downloads the binary to `/usr/local/bin`, and registers drun with Claude Code:
+
 ```bash
-# One-liner: installs Deno if needed, downloads the binary, registers with Claude Code
 curl -fsSL https://raw.githubusercontent.com/dmosc/drun/main/install.sh | bash
 ```
 
-Manual install:
+**Manual binary download:**
 
 ```bash
 # macOS Apple Silicon
-curl -L https://github.com/dmosc/drun/releases/latest/download/drun-mcp-macos-arm64 -o drun-mcp
-chmod +x drun-mcp
-claude mcp add drun -- /path/to/drun-mcp
+curl -fsSL https://github.com/dmosc/drun/releases/latest/download/drun-mcp-macos-arm64 \
+  -o /usr/local/bin/drun-mcp && chmod +x /usr/local/bin/drun-mcp
+
+# macOS Intel
+curl -fsSL https://github.com/dmosc/drun/releases/latest/download/drun-mcp-macos-x86_64 \
+  -o /usr/local/bin/drun-mcp && chmod +x /usr/local/bin/drun-mcp
+
+# Linux x86-64
+curl -fsSL https://github.com/dmosc/drun/releases/latest/download/drun-mcp-linux-x86_64 \
+  -o /usr/local/bin/drun-mcp && chmod +x /usr/local/bin/drun-mcp
+
+# Then register with Claude Code:
+claude mcp add drun -- /usr/local/bin/drun-mcp
 ```
 
-Or via Cargo:
+**Build from source:**
 
 ```bash
-cargo install drun-mcp
-claude mcp add drun -- $(which drun-mcp)
+git clone https://github.com/dmosc/drun.git && cd drun
+cargo build --release -p drun-mcp
+claude mcp add drun -- "$(pwd)/target/release/drun-mcp"
 ```
-
-**Dependency:** [Deno](https://deno.land) — installed automatically by the
-one-liner.
 
 ---
 
