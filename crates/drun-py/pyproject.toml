@@ -6,7 +6,7 @@ build-backend = "maturin"
 name = "drun-sandbox"
 version = "0.1.0"
 description = "Sandboxed Python execution for agentic loops"
-license = { text = "MIT" }
+license = { text = "PolyForm-Noncommercial-1.0.0" }
 requires-python = ">=3.9"
 keywords = ["sandbox", "python", "execution", "agent", "ai"]
 classifiers = [
