@@ -377,7 +377,7 @@ impl ServerHandler for DrunHandler {
                 })?;
 
                 let builder = reqwest::Client::builder()
-                    .connect_timeout(Duration::from_secs(30))
+                    .connect_timeout(Duration::from_millis(self.engine.config.connect_timeout_ms))
                     .timeout(Duration::from_millis(self.engine.config.fetch_timeout_ms));
                 let client = builder
                     .build()

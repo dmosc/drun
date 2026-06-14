@@ -6,15 +6,19 @@ use std::path::PathBuf;
 pub struct Config {
     /// Domains permitted for session_fetch calls. Use ["*"] to allow all.
     pub domain_allowlist: Vec<String>,
-    /// Timeout for session_fetch HTTP requests in milliseconds.
+    /// Timeout for session_fetch HTTP requests in milliseconds (full response).
     pub fetch_timeout_ms: u64,
+    /// Timeout for establishing a TCP connection during session_fetch in
+    /// milliseconds.
+    pub connect_timeout_ms: u64,
     /// Timeout for Python code execution in milliseconds.
     pub exec_timeout_ms: u64,
     /// Timeout for session_install_package calls in milliseconds.
     pub install_timeout_ms: u64,
     /// Maximum workspace size in megabytes per session.
     pub max_workspace_mb: Option<u64>,
-    /// Host path prefixes that may be mounted into a session. Empty means all paths are permitted.
+    /// Host path prefixes that may be mounted into a session. Empty means all
+    /// paths are permitted.
     pub mount_allowlist: Vec<PathBuf>,
     /// Directory that session exports must be written to.
     pub export_root: PathBuf,
@@ -28,9 +32,11 @@ pub struct Config {
     pub max_checkpoints: Option<usize>,
     /// Seconds of inactivity after which a session is considered abandoned.
     pub session_idle_timeout_secs: Option<u64>,
-    /// Environment variable names the host exposes to agents via session_get_env.
+    /// Environment variable names the host exposes to agents via
+    /// session_get_env.
     pub env_allowlist: Vec<String>,
-    /// Package names permitted for session_install_package. Empty means all packages are allowed.
+    /// Package names permitted for session_install_package. Empty means all
+    /// packages are allowed.
     pub package_allowlist: Vec<String>,
 }
 
@@ -43,6 +49,7 @@ impl Default for Config {
                 "pypi.org".to_string(),
             ],
             fetch_timeout_ms: 60_000,
+            connect_timeout_ms: 30_000,
             exec_timeout_ms: 60_000,
             install_timeout_ms: 120_000,
             max_workspace_mb: Some(512),

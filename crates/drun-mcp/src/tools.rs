@@ -223,7 +223,7 @@ pub struct SessionExportTool {
 
 #[mcp_tool(
     name = "session_fork",
-    description = "Create a new session branching from an existing session at a given checkpoint. The fork inherits the workspace files, installed packages, network policy, and timeout from the source. Returns a new session_id independent of the original.",
+    description = "Create a new session branching from an existing session at a given checkpoint. The fork inherits the workspace files and installed packages from the source. All runtime limits (timeouts, network policy, etc.) are governed by server config and are identical across all sessions. Returns a new session_id independent of the original.",
     idempotent_hint = false,
     destructive_hint = false,
     read_only_hint = false
