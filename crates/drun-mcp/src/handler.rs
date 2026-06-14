@@ -12,7 +12,7 @@ use std::{
 pub struct DrunHandler {
     pub(crate) engine: DrunEngine,
     pub(crate) sessions: SessionMap,
-    pub(crate) fetch_allowlist: Vec<String>,
+    pub(crate) domain_allowlist: Vec<String>,
     pub(crate) fetch_timeout_ms: Option<u64>,
     pub(crate) export_root: Option<PathBuf>,
     pub(crate) snapshots_dir: Option<PathBuf>,
@@ -38,7 +38,7 @@ impl DrunHandler {
             })
             .expect("failed to initialize drun engine"),
             sessions: Arc::new(Mutex::new(HashMap::new())),
-            fetch_allowlist: config.fetch.allowlist,
+            domain_allowlist: config.fetch.allowlist,
             fetch_timeout_ms: config.fetch.timeout_ms,
             export_root: config.session.export_root.map(PathBuf::from),
             snapshots_dir: config.session.snapshots_dir.map(PathBuf::from),
@@ -56,18 +56,18 @@ impl DrunHandler {
         }
     }
 
-    pub(crate) fn build_allowed_hosts(&self, requested: Option<Vec<String>>) -> Vec<String> {
-        let base = requested.unwrap_or_else(|| self.fetch_allowlist.clone());
-        if base.iter().any(|h| h == "*") {
+    pub(crate) fn get_domain_allowlist(&self) -> Vec<String> {
+        if self.domain_allowlist.iter().any(|h| h == "*") {
             return vec!["*".to_string()];
         }
-        let mut hosts: Vec<String> = PYTHON_PACKAGE_HOSTS.iter().map(|s| s.to_string()).collect();
-        for host in base {
-            if !hosts.contains(&host) {
-                hosts.push(host);
+        let mut allowed_domains: Vec<String> =
+            PYTHON_PACKAGE_HOSTS.iter().map(|s| s.to_string()).collect();
+        for domain in &self.domain_allowlist {
+            if !allowed_domains.contains(domain) {
+                allowed_domains.push(domain.clone());
             }
         }
-        hosts
+        allowed_domains
     }
 
     pub(crate) fn with_session(

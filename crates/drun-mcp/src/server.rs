@@ -54,7 +54,7 @@ impl ServerHandler for DrunHandler {
                     }
                 }
                 let session_id = Uuid::new_v4().to_string();
-                let allowed_hosts = self.build_allowed_hosts(t.allowed_hosts);
+                let allowed_hosts = self.get_domain_allowlist();
                 let session = Session::new(&self.engine, allowed_hosts, t.timeout_ms)
                     .map_err(|e| DrunError::internal(e).into_tool_err())?;
                 let state = build_session_state(&session_id, &session, None, vec![]);
@@ -373,8 +373,8 @@ impl ServerHandler for DrunHandler {
                 if !self.sessions.lock().unwrap().contains_key(&t.session_id) {
                     return Err(DrunError::session_not_found(&t.session_id).into_tool_err());
                 }
-                let url_is_allowed = self.fetch_allowlist.iter().any(|h| h == "*")
-                    || host_from_url(&t.url).map_or(false, |h| self.fetch_allowlist.contains(&h));
+                let url_is_allowed = self.domain_allowlist.iter().any(|h| h == "*")
+                    || host_from_url(&t.url).map_or(false, |h| self.domain_allowlist.contains(&h));
                 if !url_is_allowed {
                     return Err(DrunError::fetch_denied(&t.url).into_tool_err());
                 }
