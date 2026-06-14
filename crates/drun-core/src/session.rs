@@ -22,11 +22,8 @@ pub struct Session {
 }
 
 impl Session {
-    pub fn new(
-        engine: &DrunEngine,
-        allowed_hosts: Vec<String>,
-        timeout_ms: Option<u64>,
-    ) -> anyhow::Result<Self> {
+    pub fn new(engine: &DrunEngine, timeout_ms: Option<u64>) -> anyhow::Result<Self> {
+        let allowed_hosts = engine.config.domain_allowlist.clone();
         Ok(Self {
             runner: Runner::new(engine, &allowed_hosts)?,
             engine: engine.clone(),
@@ -60,11 +57,7 @@ impl Session {
             .filter(|(k, _)| files.contains_key(k.as_str()))
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
-        let mut session = Self::new(
-            engine,
-            source.allowed_hosts.clone(),
-            Some(source.timeout_ms),
-        )?;
+        let mut session = Self::new(engine, Some(source.timeout_ms))?;
         for package in &source.packages {
             session.install(package)?;
         }

@@ -1,6 +1,6 @@
 use crate::errors::DrunError;
 use crate::reaper::{self, SessionMap};
-use drun_core::{Config, DrunEngine, PYTHON_PACKAGE_HOSTS, Session};
+use drun_core::{Config, DrunEngine, Session};
 use rust_mcp_sdk::schema::{CallToolResult, schema_utils::CallToolError};
 use std::{
     collections::HashMap,
@@ -25,20 +25,6 @@ impl DrunHandler {
         if let Some(timeout_secs) = self.engine.config.session_idle_timeout_secs {
             reaper::spawn(Arc::clone(&self.sessions), timeout_secs);
         }
-    }
-
-    pub(crate) fn get_domain_allowlist(&self) -> Vec<String> {
-        if self.engine.config.domain_allowlist.iter().any(|h| h == "*") {
-            return vec!["*".to_string()];
-        }
-        let mut allowed_domains: Vec<String> =
-            PYTHON_PACKAGE_HOSTS.iter().map(|s| s.to_string()).collect();
-        for domain in &self.engine.config.domain_allowlist {
-            if !allowed_domains.contains(domain) {
-                allowed_domains.push(domain.clone());
-            }
-        }
-        allowed_domains
     }
 
     pub(crate) fn with_session(

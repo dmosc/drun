@@ -54,8 +54,7 @@ impl ServerHandler for DrunHandler {
                     }
                 }
                 let session_id = Uuid::new_v4().to_string();
-                let allowed_hosts = self.get_domain_allowlist();
-                let session = Session::new(&self.engine, allowed_hosts, t.timeout_ms)
+                let session = Session::new(&self.engine, t.timeout_ms)
                     .map_err(|e| DrunError::internal(e).into_tool_err())?;
                 let state = build_session_state(&session_id, &session, None, vec![]);
                 self.sessions
@@ -474,7 +473,7 @@ impl ServerHandler for DrunHandler {
             }
 
             DrunTools::GetFetchAllowlistTool(_) => Ok(text(
-                serde_json::to_string(&self.get_domain_allowlist()).unwrap(),
+                serde_json::to_string(&self.engine.config.domain_allowlist).unwrap(),
             )),
 
             DrunTools::GetAllowedPackagesTool(_) => Ok(text(
@@ -550,7 +549,7 @@ impl ServerHandler for DrunHandler {
                     std::fs::read(&t.path).map_err(|e| DrunError::internal(e).into_tool_err())?;
                 let mut snapshot = SessionSnapshot::decode(&bytes)
                     .map_err(|e| DrunError::internal(e).into_tool_err())?;
-                snapshot.allowed_hosts = self.get_domain_allowlist();
+                snapshot.allowed_hosts = self.engine.config.domain_allowlist.clone();
                 let restored = Session::from_snapshot(&self.engine, snapshot)
                     .map_err(|e| DrunError::internal(e).into_tool_err())?;
                 let session_id = Uuid::new_v4().to_string();

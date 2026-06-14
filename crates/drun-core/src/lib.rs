@@ -8,7 +8,7 @@ mod snapshot;
 
 pub use checkpoint::{Checkpoint, CheckpointRef, FileMap};
 pub use config::Config;
-pub use engine::{DrunEngine, PYTHON_PACKAGE_HOSTS};
+pub use engine::DrunEngine;
 pub use error::RunnerError;
 pub use session::Session;
 pub use snapshot::{CheckpointSnapshot, SessionSnapshot};

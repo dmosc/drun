@@ -2,9 +2,6 @@ use crate::config::Config;
 use std::path::PathBuf;
 use std::process::Stdio;
 
-pub const PYTHON_PACKAGE_HOSTS: &[&str] =
-    &["cdn.jsdelivr.net", "files.pythonhosted.org", "pypi.org"];
-
 #[derive(Clone)]
 pub struct DrunEngine {
     pub(crate) deno_path: PathBuf,

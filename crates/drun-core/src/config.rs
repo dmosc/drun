@@ -33,7 +33,11 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            domain_allowlist: vec![],
+            domain_allowlist: vec![
+                "cdn.jsdelivr.net".to_string(),
+                "files.pythonhosted.org".to_string(),
+                "pypi.org".to_string(),
+            ],
             fetch_timeout_ms: Some(60_000),
             max_workspace_mb: Some(512),
             max_sessions: Some(50),
