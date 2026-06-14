@@ -330,6 +330,13 @@ impl ServerHandler for DrunHandler {
                 let output_dir = match &t.output_dir {
                     Some(dir) => {
                         let p = PathBuf::from(dir);
+                        if p.components().any(|c| c == std::path::Component::ParentDir) {
+                            return Err(DrunError::export_denied(
+                                &p.display().to_string(),
+                                "path must not contain '..'",
+                            )
+                            .into());
+                        }
                         if let Some(ref root) = self.export_root {
                             if !p.starts_with(root) {
                                 return Err(DrunError::export_denied(
@@ -466,6 +473,13 @@ impl ServerHandler for DrunHandler {
                 let output_path = match t.path {
                     Some(p) => {
                         let p = PathBuf::from(p);
+                        if p.components().any(|c| c == std::path::Component::ParentDir) {
+                            return Err(DrunError::snapshot_denied(
+                                &p.display().to_string(),
+                                "path must not contain '..'",
+                            )
+                            .into_tool_err());
+                        }
                         if let Some(ref root) = self.snapshots_dir {
                             if !p.starts_with(root) {
                                 return Err(DrunError::snapshot_denied(
