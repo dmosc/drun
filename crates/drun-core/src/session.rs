@@ -33,7 +33,7 @@ impl Session {
             packages: Vec::new(),
             allowed_hosts,
             label: None,
-            timeout_ms: timeout_ms.unwrap_or(60_000),
+            timeout_ms: timeout_ms.unwrap_or(engine.config.exec_timeout_ms),
             parent: None,
             created_at: Instant::now(),
             last_activity: Instant::now(),
@@ -123,13 +123,11 @@ impl Session {
     }
 
     pub fn install(&mut self, package: &str) -> anyhow::Result<()> {
-        let result = self.runner.install(package);
+        let result = self
+            .runner
+            .install(package, self.engine.config.install_timeout_ms);
         if result.is_err() {
-            self.runner = Runner::new_from_timeout_recovery(
-                &self.engine,
-                &self.allowed_hosts,
-                &self.packages,
-            )?;
+            self.runner = Runner::new_from_timeout_recovery(&self.engine, &self.packages)?;
         }
         result?;
         self.packages.push(package.to_string());
@@ -428,8 +426,7 @@ impl Session {
     }
 
     fn rebuild_runner_after_timeout(&mut self) -> anyhow::Result<()> {
-        self.runner =
-            Runner::new_from_timeout_recovery(&self.engine, &self.allowed_hosts, &self.packages)?;
+        self.runner = Runner::new_from_timeout_recovery(&self.engine, &self.packages)?;
         Ok(())
     }
 

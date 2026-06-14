@@ -23,8 +23,6 @@ use std::{
 };
 use uuid::Uuid;
 
-const DEFAULT_SNAPSHOTS_FOLDER: &str = "drun-snapshots";
-
 #[async_trait]
 impl ServerHandler for DrunHandler {
     async fn handle_list_tools_request(
@@ -108,12 +106,6 @@ impl ServerHandler for DrunHandler {
                         .engine
                         .config
                         .snapshots_dir
-                        .clone()
-                        .unwrap_or_else(|| {
-                            std::env::current_dir()
-                                .unwrap_or_default()
-                                .join(DEFAULT_SNAPSHOTS_FOLDER)
-                        })
                         .join(format!("{}.drun", t.session_id));
                     if let Some(parent_dir) = output_path.parent() {
                         let _ = std::fs::create_dir_all(parent_dir);
@@ -328,8 +320,7 @@ impl ServerHandler for DrunHandler {
             }
 
             DrunTools::SessionExportTool(t) => {
-                static DEFAULT_EXPORT_FOLDER: &str = "drun-export";
-                let export_root = self.engine.config.export_root.clone();
+                let export_root = &self.engine.config.export_root;
                 let output_dir = match &t.output_dir {
                     Some(dir) => {
                         let p = PathBuf::from(dir);
@@ -340,24 +331,16 @@ impl ServerHandler for DrunHandler {
                             )
                             .into());
                         }
-                        if let Some(ref root) = export_root {
-                            if !p.starts_with(root) {
-                                return Err(DrunError::export_denied(
-                                    &p.display().to_string(),
-                                    &root.display().to_string(),
-                                )
-                                .into());
-                            }
+                        if !p.starts_with(export_root) {
+                            return Err(DrunError::export_denied(
+                                &p.display().to_string(),
+                                &export_root.display().to_string(),
+                            )
+                            .into());
                         }
                         p
                     }
-                    None => export_root
-                        .unwrap_or_else(|| {
-                            std::env::current_dir()
-                                .unwrap_or_default()
-                                .join(DEFAULT_EXPORT_FOLDER)
-                        })
-                        .join(&t.session_id),
+                    None => export_root.join(&t.session_id),
                 };
                 self.with_session(&t.session_id, |session| {
                     let exported = session
@@ -395,9 +378,7 @@ impl ServerHandler for DrunHandler {
 
                 let builder = reqwest::Client::builder()
                     .connect_timeout(Duration::from_secs(30))
-                    .timeout(Duration::from_millis(
-                        self.engine.config.fetch_timeout_ms.unwrap_or(60_000),
-                    ));
+                    .timeout(Duration::from_millis(self.engine.config.fetch_timeout_ms));
                 let client = builder
                     .build()
                     .map_err(|e| DrunError::internal(e).into_tool_err())?;
@@ -481,7 +462,7 @@ impl ServerHandler for DrunHandler {
             )),
 
             DrunTools::SessionSnapshotTool(t) => {
-                let snapshots_dir = self.engine.config.snapshots_dir.clone();
+                let snapshots_dir = &self.engine.config.snapshots_dir;
                 let output_path = match t.path {
                     Some(p) => {
                         let p = PathBuf::from(p);
@@ -492,24 +473,16 @@ impl ServerHandler for DrunHandler {
                             )
                             .into_tool_err());
                         }
-                        if let Some(ref root) = snapshots_dir {
-                            if !p.starts_with(root) {
-                                return Err(DrunError::snapshot_denied(
-                                    &p.display().to_string(),
-                                    &root.display().to_string(),
-                                )
-                                .into_tool_err());
-                            }
+                        if !p.starts_with(snapshots_dir) {
+                            return Err(DrunError::snapshot_denied(
+                                &p.display().to_string(),
+                                &snapshots_dir.display().to_string(),
+                            )
+                            .into_tool_err());
                         }
                         p
                     }
-                    None => snapshots_dir
-                        .unwrap_or_else(|| {
-                            std::env::current_dir()
-                                .unwrap_or_default()
-                                .join(DEFAULT_SNAPSHOTS_FOLDER)
-                        })
-                        .join(format!("{}.drun", t.session_id)),
+                    None => snapshots_dir.join(format!("{}.drun", t.session_id)),
                 };
                 if let Some(parent_dir) = output_path.parent() {
                     std::fs::create_dir_all(parent_dir)

@@ -9,8 +9,6 @@ use std::sync::{
 };
 use std::time::Duration;
 
-const INSTALL_TIMEOUT_MS: u64 = 120_000;
-
 #[derive(Serialize)]
 struct ExecRequest<'a> {
     code: &'a str,
@@ -66,12 +64,11 @@ impl Runner {
 
     pub fn new_from_timeout_recovery(
         engine: &DrunEngine,
-        allowed_hosts: &[String],
         packages: &[String],
     ) -> anyhow::Result<Self> {
-        let mut runner = Self::new(engine, allowed_hosts)?;
+        let mut runner = Self::new(engine, &engine.config.domain_allowlist)?;
         for package in packages {
-            let _ = runner.install(package);
+            let _ = runner.install(package, engine.config.install_timeout_ms);
         }
         Ok(runner)
     }
@@ -133,7 +130,7 @@ impl Runner {
         }
     }
 
-    pub fn install(&mut self, package: &str) -> anyhow::Result<()> {
+    pub fn install(&mut self, package: &str, timeout_ms: u64) -> anyhow::Result<()> {
         let request = serde_json::to_string(&PackageInstallRequest { package })?;
         writeln!(self.stdin, "{}", request)?;
         self.stdin.flush()?;
@@ -144,7 +141,7 @@ impl Runner {
         let (cancel_tx, cancel_rx) = std::sync::mpsc::channel::<()>();
         std::thread::spawn(move || {
             if cancel_rx
-                .recv_timeout(Duration::from_millis(INSTALL_TIMEOUT_MS))
+                .recv_timeout(Duration::from_millis(timeout_ms))
                 .is_err()
             {
                 timed_out_flag.store(true, Ordering::Relaxed);
@@ -157,9 +154,7 @@ impl Runner {
             match self.stdout.read_line(&mut line) {
                 Ok(0) | Err(_) => {
                     let _ = cancel_tx.send(());
-                    return Err(
-                        self.classify_eof(timed_out.load(Ordering::Relaxed), INSTALL_TIMEOUT_MS)
-                    );
+                    return Err(self.classify_eof(timed_out.load(Ordering::Relaxed), timeout_ms));
                 }
                 Ok(_) => {
                     if serde_json::from_str::<ProgressLine>(line.trim()).is_ok() {
