@@ -85,7 +85,7 @@ mount_allowlist = ["/tmp/drun-inputs", "/Users/you/projects/data"]
 
 ## `package_denied`: package not in allowlist
 
-If the server is configured with `allowed_packages`, `session_install_package`
+If the server is configured with `package_allowlist`, `session_install_package`
 will reject any package not in the list.
 
 **Error:** `package_denied` with a message naming the rejected package
@@ -95,7 +95,7 @@ it), or update `DRUN_CONFIG`:
 
 ```toml
 [session]
-allowed_packages = ["pandas", "numpy", "matplotlib", "your-package"]
+package_allowlist = ["pandas", "numpy", "matplotlib", "your-package"]
 ```
 
 ---
@@ -111,7 +111,7 @@ allowlist. By default, only PyPI CDNs are reachable (for package installs).
 
 ```toml
 [fetch]
-allowlist = ["api.example.com", "data.sec.gov"]
+domain_allowlist = ["api.example.com", "data.sec.gov"]
 ```
 
 Call `get_fetch_allowlist` to see the current effective list.

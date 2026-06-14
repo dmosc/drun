@@ -14,8 +14,6 @@ pub struct Session {
     origins: HashMap<String, PathBuf>,
     packages: Vec<String>,
     allowed_hosts: Vec<String>,
-    max_workspace_bytes: Option<u64>,
-    max_checkpoints: Option<usize>,
     pub label: Option<String>,
     pub timeout_ms: u64,
     pub parent: Option<CheckpointRef>,
@@ -31,8 +29,6 @@ impl Session {
     ) -> anyhow::Result<Self> {
         Ok(Self {
             runner: Runner::new(engine, &allowed_hosts)?,
-            max_workspace_bytes: engine.max_workspace_bytes,
-            max_checkpoints: engine.max_checkpoints,
             engine: engine.clone(),
             checkpoints: vec![Self::empty_checkpoint(0, HashMap::new())],
             checkpoint_idx: 0,
@@ -300,7 +296,7 @@ impl Session {
         SessionSnapshot {
             allowed_hosts: self.allowed_hosts.clone(),
             timeout_ms: self.timeout_ms,
-            max_workspace_bytes: self.max_workspace_bytes,
+            max_workspace_bytes: self.engine.max_workspace_bytes,
             checkpoint_idx: self.checkpoint_idx,
             packages: self.packages.clone(),
             parent: self.parent.clone(),
@@ -323,8 +319,6 @@ impl Session {
         let packages_to_install = snapshot.packages.clone();
         let mut session = Self {
             runner: Runner::new(engine, &snapshot.allowed_hosts)?,
-            max_workspace_bytes: snapshot.max_workspace_bytes,
-            max_checkpoints: engine.max_checkpoints,
             engine: engine.clone(),
             checkpoints: snapshot
                 .checkpoints
@@ -404,7 +398,7 @@ impl Session {
     }
 
     fn check_checkpoint_limit(&self) -> anyhow::Result<()> {
-        if let Some(max) = self.max_checkpoints {
+        if let Some(max) = self.engine.max_checkpoints {
             if self.checkpoints.len() >= max {
                 anyhow::bail!(
                     "checkpoint limit of {} reached; close or snapshot this session and start a new one",
@@ -416,7 +410,7 @@ impl Session {
     }
 
     fn check_workspace_size(&self, files: &FileMap) -> anyhow::Result<()> {
-        if let Some(limit) = self.max_workspace_bytes {
+        if let Some(limit) = self.engine.max_workspace_bytes {
             let total: u64 = files.values().map(|v| v.len() as u64).sum();
             if total > limit {
                 anyhow::bail!(

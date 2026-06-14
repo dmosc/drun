@@ -90,7 +90,7 @@ impl DrunError {
     pub fn package_denied(package: &str) -> Self {
         Self::new(
             "package_denied",
-            format!("'{package}' is not in the server's allowed_packages list"),
+            format!("'{package}' is not in the server's package_allowlist"),
         )
     }
 

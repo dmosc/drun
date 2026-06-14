@@ -209,7 +209,7 @@ access and no restrictions on workspace size or session count.
 [fetch]
 # Domains reachable via session_fetch and Python outbound HTTP.
 # Python package CDNs (PyPI, jsDelivr) are always included regardless of this list.
-allowlist = ["api.example.com", "data.sec.gov"]
+domain_allowlist = ["api.example.com", "data.sec.gov"]
 
 [session]
 max_workspace_mb = 512
@@ -217,10 +217,10 @@ max_sessions = 20
 max_checkpoints = 100
 session_idle_timeout_secs = 3600
 
-# mount_allowlist = ["/tmp/drun-inputs"]     # restrict session_mount source paths
-# export_root = "/tmp/drun-outputs"          # restrict session_export destination
-# env_allowlist = ["OPENAI_API_KEY"]         # env vars readable via session_get_env
-# allowed_packages = ["pandas", "numpy"]     # restrict installable packages
+# mount_allowlist = ["/tmp/drun-inputs"]       # restrict session_mount source paths
+# export_root = "/tmp/drun-outputs"            # restrict session_export destination
+# env_allowlist = ["OPENAI_API_KEY"]           # env vars readable via session_get_env
+# package_allowlist = ["pandas", "numpy"]      # restrict installable packages
 # auto_snapshot = true
 # snapshots_dir = "/tmp/drun-snapshots"
 ```

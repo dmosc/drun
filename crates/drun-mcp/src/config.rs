@@ -1,3 +1,4 @@
+use drun_core::DrunEngineConfig;
 use serde::Deserialize;
 use std::path::PathBuf;
 
@@ -13,7 +14,7 @@ pub struct Config {
 #[serde(default)]
 pub struct FetchConfig {
     /// Domains permitted for session_fetch calls. Use ["*"] to allow all.
-    pub allowlist: Vec<String>,
+    pub domain_allowlist: Vec<String>,
     /// Overall request timeout in milliseconds.
     pub timeout_ms: Option<u64>,
 }
@@ -21,7 +22,7 @@ pub struct FetchConfig {
 impl Default for FetchConfig {
     fn default() -> Self {
         Self {
-            allowlist: vec![],
+            domain_allowlist: vec![],
             timeout_ms: Some(60_000),
         }
     }
@@ -49,7 +50,7 @@ pub struct SessionConfig {
     /// Environment variable names the host exposes to agents via session_get_env.
     pub env_allowlist: Vec<String>,
     /// Package names permitted for session_install_package. Empty means all packages are allowed.
-    pub allowed_packages: Vec<String>,
+    pub package_allowlist: Vec<String>,
 }
 
 impl Default for SessionConfig {
@@ -64,7 +65,17 @@ impl Default for SessionConfig {
             snapshots_dir: None,
             auto_snapshot: false,
             env_allowlist: vec![],
-            allowed_packages: vec![],
+            package_allowlist: vec![],
+        }
+    }
+}
+
+impl SessionConfig {
+    pub fn engine_config(&self) -> DrunEngineConfig {
+        DrunEngineConfig {
+            max_workspace_bytes: self.max_workspace_mb.map(|mb| mb * 1024 * 1024),
+            max_checkpoints: self.max_checkpoints,
+            mount_allowlist: self.mount_allowlist.iter().map(PathBuf::from).collect(),
         }
     }
 }

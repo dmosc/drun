@@ -7,7 +7,7 @@
 [fetch]
 # Hosts the agent is allowed to reach. Python package CDNs (PyPI, jsDelivr)
 # are always permitted and do not need to be listed here.
-allowlist = [
+domain_allowlist = [
     # Yahoo Finance — price history, fundamentals, earnings
     "query1.finance.yahoo.com",
     "query2.finance.yahoo.com",
@@ -52,4 +52,4 @@ export_root = "/tmp/drun-reports"
 
 # PyPI packages the agent is permitted to install via session_install_package.
 # Empty (default) means all packages are allowed.
-# allowed_packages = ["pandas", "numpy", "matplotlib", "pdfplumber", "yfinance"]
+# package_allowlist = ["pandas", "numpy", "matplotlib", "pdfplumber", "yfinance"]
