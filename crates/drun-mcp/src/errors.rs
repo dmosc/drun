@@ -126,6 +126,13 @@ impl DrunError {
         )
     }
 
+    pub fn snapshot_denied(path: &str, allowed_root: &str) -> Self {
+        Self::new(
+            "snapshot_denied",
+            format!("snapshot to '{path}' is not permitted; must be under '{allowed_root}'"),
+        )
+    }
+
     // --- Operator allowlists ---
 
     pub fn env_var_denied(name: &str) -> Self {
