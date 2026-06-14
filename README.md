@@ -71,6 +71,28 @@ claude mcp add drun -- "$(pwd)/target/release/drun-mcp"
 
 ---
 
+## Updating
+
+```bash
+# Update to the latest release
+curl -fsSL https://raw.githubusercontent.com/dmosc/drun/main/update.sh | bash
+
+# Update to a specific version
+curl -fsSL https://raw.githubusercontent.com/dmosc/drun/main/update.sh | bash -s -- v0.1.1
+```
+
+No re-registration needed — Claude Code keeps pointing to the same binary path.
+
+## Uninstalling
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/dmosc/drun/main/uninstall.sh | bash
+```
+
+Removes the binary and deregisters drun from Claude Code.
+
+---
+
 ## Typical flows
 
 **Data analysis with rollback:**
