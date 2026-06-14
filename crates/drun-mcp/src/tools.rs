@@ -22,8 +22,6 @@ pub struct HttpHeader {
 )]
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct CreateSessionTool {
-    /// Hostnames the sandbox may reach.
-    pub allowed_hosts: Option<Vec<String>>,
     /// Wall-clock timeout in milliseconds applied to every session_execute
     /// call. Triggers a KeyboardInterrupt in the running Python code when
     /// exceeded.
