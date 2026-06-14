@@ -103,6 +103,8 @@ while (true) {
     capturedStdout = "";
     capturedStderr = "";
     try {
+      // Always reset cwd to /workspace so user code can use relative paths.
+      await pyodide.runPythonAsync("import os; os.chdir('/workspace')");
       await pyodide.runPythonAsync(code);
       Deno.stdout.writeSync(enc.encode(JSON.stringify({
         stdout: capturedStdout.trimEnd(),
