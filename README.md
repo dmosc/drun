@@ -226,3 +226,13 @@ session_idle_timeout_secs = 3600
 ```
 
 See [`examples/drun.toml`](examples/drun.toml) for a fully annotated example.
+
+---
+
+## Further reading
+
+- [Security model](docs/security.md) — isolation layers, threat model, known
+  limitations
+- [Troubleshooting](docs/troubleshooting.md) — common errors and how to resolve
+  them
+- [Changelog](CHANGELOG.md)
