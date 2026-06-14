@@ -4,7 +4,6 @@
 # Usage:
 #   DRUN_CONFIG=/path/to/drun.toml drun-mcp
 
-[fetch]
 # Hosts the agent is allowed to reach. Python package CDNs (PyPI, jsDelivr)
 # are always permitted and do not need to be listed here.
 domain_allowlist = [
@@ -18,9 +17,8 @@ domain_allowlist = [
 ]
 # No overall timeout; financial API payloads (e.g. full 10-K XBRL) can be large.
 # Uncomment to add a hard ceiling if needed:
-# timeout_ms = 120000
+# fetch_timeout_ms = 120000
 
-[session]
 # Raw price history + charts + the generated PDF comfortably fit under 200 MB.
 max_workspace_mb = 200
 

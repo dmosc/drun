@@ -41,13 +41,13 @@ The Deno subprocess is spawned with explicit permission flags:
 
 The server enforces a second set of restrictions on top of Deno's flags:
 
-| Config key                  | What it restricts                                                                                                                   |
-| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `fetch.domain_allowlist`    | Domains reachable via `session_fetch` and Python outbound HTTP. PyPI CDNs are always included.                                      |
-| `session.mount_allowlist`   | Host paths that may be mounted. Checked against the canonicalized path; symlinks that point outside an allowed prefix are rejected. |
-| `session.export_root`       | Directory that `session_export` and `session_snapshot` may write into.                                                              |
-| `session.env_allowlist`     | Host environment variable names readable via `session_get_env`.                                                                     |
-| `session.package_allowlist` | If set, `session_install_package` rejects any package not in the list.                                                              |
+| Config key          | What it restricts                                                                                                                   |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `domain_allowlist`  | Domains reachable via `session_fetch` and Python outbound HTTP. PyPI CDNs are always included.                                      |
+| `mount_allowlist`   | Host paths that may be mounted. Checked against the canonicalized path; symlinks that point outside an allowed prefix are rejected. |
+| `export_root`       | Directory that `session_export` and `session_snapshot` may write into.                                                              |
+| `env_allowlist`     | Host environment variable names readable via `session_get_env`.                                                                     |
+| `package_allowlist` | If set, `session_install_package` rejects any package not in the list.                                                              |
 
 Agents operate within whatever the operator configured. They cannot expand their
 own permissions at runtime.

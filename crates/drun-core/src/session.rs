@@ -81,9 +81,10 @@ impl Session {
         let abs = path
             .canonicalize()
             .map_err(|_| anyhow::anyhow!("path does not exist: {}", path.display()))?;
-        if !self.engine.mount_allowlist.is_empty() {
+        if !self.engine.config.mount_allowlist.is_empty() {
             let allowed = self
                 .engine
+                .config
                 .mount_allowlist
                 .iter()
                 .any(|prefix| abs.starts_with(prefix));
@@ -92,6 +93,7 @@ impl Session {
                     "'{}' is not in the mount allowlist; permitted prefixes: {}",
                     abs.display(),
                     self.engine
+                        .config
                         .mount_allowlist
                         .iter()
                         .map(|p| p.display().to_string())
@@ -296,7 +298,7 @@ impl Session {
         SessionSnapshot {
             allowed_hosts: self.allowed_hosts.clone(),
             timeout_ms: self.timeout_ms,
-            max_workspace_bytes: self.engine.max_workspace_bytes,
+            max_workspace_bytes: self.engine.config.max_workspace_bytes,
             checkpoint_idx: self.checkpoint_idx,
             packages: self.packages.clone(),
             parent: self.parent.clone(),
@@ -398,7 +400,7 @@ impl Session {
     }
 
     fn check_checkpoint_limit(&self) -> anyhow::Result<()> {
-        if let Some(max) = self.engine.max_checkpoints {
+        if let Some(max) = self.engine.config.max_checkpoints {
             if self.checkpoints.len() >= max {
                 anyhow::bail!(
                     "checkpoint limit of {} reached; close or snapshot this session and start a new one",
@@ -410,7 +412,7 @@ impl Session {
     }
 
     fn check_workspace_size(&self, files: &FileMap) -> anyhow::Result<()> {
-        if let Some(limit) = self.engine.max_workspace_bytes {
+        if let Some(limit) = self.engine.config.max_workspace_bytes {
             let total: u64 = files.values().map(|v| v.len() as u64).sum();
             if total > limit {
                 anyhow::bail!(

@@ -110,7 +110,6 @@ allowlist. By default, only PyPI CDNs are reachable (for package installs).
 **Fix:** Add the domain to `DRUN_CONFIG`:
 
 ```toml
-[fetch]
 domain_allowlist = ["api.example.com", "data.sec.gov"]
 ```
 

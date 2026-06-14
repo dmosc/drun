@@ -2,35 +2,13 @@ use drun_core::DrunEngineConfig;
 use serde::Deserialize;
 use std::path::PathBuf;
 
-#[derive(Deserialize, Default)]
-pub struct Config {
-    #[serde(default)]
-    pub fetch: FetchConfig,
-    #[serde(default)]
-    pub session: SessionConfig,
-}
-
 #[derive(Deserialize)]
 #[serde(default)]
-pub struct FetchConfig {
+pub struct Config {
     /// Domains permitted for session_fetch calls. Use ["*"] to allow all.
     pub domain_allowlist: Vec<String>,
-    /// Overall request timeout in milliseconds.
-    pub timeout_ms: Option<u64>,
-}
-
-impl Default for FetchConfig {
-    fn default() -> Self {
-        Self {
-            domain_allowlist: vec![],
-            timeout_ms: Some(60_000),
-        }
-    }
-}
-
-#[derive(Deserialize)]
-#[serde(default)]
-pub struct SessionConfig {
+    /// Overall fetch request timeout in milliseconds.
+    pub fetch_timeout_ms: Option<u64>,
     /// Maximum workspace size in megabytes per session.
     pub max_workspace_mb: Option<u64>,
     /// Host path prefixes that may be mounted into a session. Empty means all paths are permitted.
@@ -53,9 +31,11 @@ pub struct SessionConfig {
     pub package_allowlist: Vec<String>,
 }
 
-impl Default for SessionConfig {
+impl Default for Config {
     fn default() -> Self {
         Self {
+            domain_allowlist: vec![],
+            fetch_timeout_ms: Some(60_000),
             max_workspace_mb: Some(512),
             max_sessions: Some(50),
             max_checkpoints: Some(200),
@@ -66,16 +46,6 @@ impl Default for SessionConfig {
             auto_snapshot: false,
             env_allowlist: vec![],
             package_allowlist: vec![],
-        }
-    }
-}
-
-impl SessionConfig {
-    pub fn engine_config(&self) -> DrunEngineConfig {
-        DrunEngineConfig {
-            max_workspace_bytes: self.max_workspace_mb.map(|mb| mb * 1024 * 1024),
-            max_checkpoints: self.max_checkpoints,
-            mount_allowlist: self.mount_allowlist.iter().map(PathBuf::from).collect(),
         }
     }
 }
@@ -95,6 +65,14 @@ impl Config {
                 eprintln!("drun: failed to read config at {}: {e}", path.display());
                 Self::default()
             }
+        }
+    }
+
+    pub fn engine_config(&self) -> DrunEngineConfig {
+        DrunEngineConfig {
+            max_workspace_bytes: self.max_workspace_mb.map(|mb| mb * 1024 * 1024),
+            max_checkpoints: self.max_checkpoints,
+            mount_allowlist: self.mount_allowlist.iter().map(PathBuf::from).collect(),
         }
     }
 }

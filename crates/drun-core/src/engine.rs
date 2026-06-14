@@ -4,6 +4,7 @@ use std::process::Stdio;
 pub const PYTHON_PACKAGE_HOSTS: &[&str] =
     &["cdn.jsdelivr.net", "files.pythonhosted.org", "pypi.org"];
 
+#[derive(Clone)]
 pub struct DrunEngineConfig {
     pub max_workspace_bytes: Option<u64>,
     pub max_checkpoints: Option<usize>,
@@ -24,9 +25,7 @@ impl Default for DrunEngineConfig {
 pub struct DrunEngine {
     pub(crate) deno_path: PathBuf,
     pub(crate) runner_path: PathBuf,
-    pub max_workspace_bytes: Option<u64>,
-    pub(crate) max_checkpoints: Option<usize>,
-    pub(crate) mount_allowlist: Vec<PathBuf>,
+    pub(crate) config: DrunEngineConfig,
 }
 
 impl DrunEngine {
@@ -40,9 +39,7 @@ impl DrunEngine {
         Ok(Self {
             deno_path,
             runner_path,
-            max_workspace_bytes: config.max_workspace_bytes,
-            max_checkpoints: config.max_checkpoints,
-            mount_allowlist: config.mount_allowlist,
+            config,
         })
     }
 

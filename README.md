@@ -206,12 +206,10 @@ Set `DRUN_CONFIG` to a TOML file path. Without it, drun runs with no network
 access and no restrictions on workspace size or session count.
 
 ```toml
-[fetch]
 # Domains reachable via session_fetch and Python outbound HTTP.
 # Python package CDNs (PyPI, jsDelivr) are always included regardless of this list.
 domain_allowlist = ["api.example.com", "data.sec.gov"]
 
-[session]
 max_workspace_mb = 512
 max_sessions = 20
 max_checkpoints = 100
