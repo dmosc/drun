@@ -13,13 +13,18 @@ await pyodide.loadPackage("micropip", { messageCallback: toStderr, errorCallback
 
 let capturedStdout = "";
 let capturedStderr = "";
+const CAPTURE_LIMIT = 1 * 1024 * 1024; // 1 MB per execution
 pyodide.setStdout({
   batched: (s: string) => {
-    capturedStdout += s + "\n";
     Deno.stdout.writeSync(enc.encode(JSON.stringify({ progress: s }) + "\n"));
+    if (capturedStdout.length < CAPTURE_LIMIT) capturedStdout += s + "\n";
   }
 });
-pyodide.setStderr({ batched: (s: string) => { capturedStderr += s + "\n"; } });
+pyodide.setStderr({
+  batched: (s: string) => {
+    if (capturedStderr.length < CAPTURE_LIMIT) capturedStderr += s + "\n";
+  }
+});
 
 function clearDir(path: string): void {
   for (const name of (pyodide.FS.readdir(path) as string[]).filter((n: string) => n !== "." && n !== "..")) {
