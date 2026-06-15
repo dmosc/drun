@@ -24,8 +24,6 @@ impl DrunError {
         self
     }
 
-    // --- Session lifecycle ---
-
     pub fn session_not_found(session_id: &str) -> Self {
         Self::new(
             "session_not_found",
@@ -60,8 +58,6 @@ impl DrunError {
         .with_detail(serde_json::json!({ "limit": limit }))
     }
 
-    // --- Execution ---
-
     pub fn execution_timeout(timeout_ms: u64) -> Self {
         Self::new(
             "execution_timeout",
@@ -85,7 +81,9 @@ impl DrunError {
         Self::new("application_error", message)
     }
 
-    // --- Packages ---
+    pub fn command_denied(message: impl Into<String>) -> Self {
+        Self::new("command_denied", message)
+    }
 
     pub fn package_denied(package: &str) -> Self {
         Self::new(
@@ -101,16 +99,12 @@ impl DrunError {
         )
     }
 
-    // --- Network ---
-
     pub fn fetch_denied(url: &str) -> Self {
         Self::new(
             "fetch_denied",
             format!("'{url}' is not permitted by the server's fetch allowlist"),
         )
     }
-
-    // --- Files and workspace ---
 
     pub fn file_not_found(path: &str) -> Self {
         Self::new(
@@ -133,8 +127,6 @@ impl DrunError {
         )
     }
 
-    // --- Operator allowlists ---
-
     pub fn env_var_denied(name: &str) -> Self {
         Self::new(
             "env_var_denied",
@@ -142,25 +134,20 @@ impl DrunError {
         )
     }
 
-    // --- Generic fallback ---
-
     pub fn internal(message: impl ToString) -> Self {
         Self::new("internal_error", message.to_string())
     }
 
-    // --- anyhow mappers ---
-
-    /// Map an execution error, downcasting RunnerError variants when present.
     pub fn from_exec(e: anyhow::Error) -> Self {
         match e.downcast_ref::<RunnerError>() {
             Some(RunnerError::Timeout { timeout_ms }) => Self::execution_timeout(*timeout_ms),
             Some(RunnerError::Crash { exit_code }) => Self::runner_crash(*exit_code),
             Some(RunnerError::Application(msg)) => Self::application_error(msg.clone()),
+            Some(RunnerError::CommandDenied(msg)) => Self::command_denied(msg.clone()),
             None => Self::internal(e),
         }
     }
 
-    /// Map a package install error, downcasting RunnerError when present.
     pub fn from_install(package: &str, e: anyhow::Error) -> Self {
         match e.downcast_ref::<RunnerError>() {
             Some(RunnerError::Crash { exit_code }) => Self::runner_crash(*exit_code),

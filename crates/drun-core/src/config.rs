@@ -38,6 +38,13 @@ pub struct Config {
     /// Package names permitted for session_install_package. Empty means all
     /// packages are allowed.
     pub package_allowlist: Vec<String>,
+    /// Timeout for session_bash calls in milliseconds.
+    pub bash_timeout_ms: u64,
+    /// Shell command substrings that are always denied.
+    pub bash_command_denylist: Vec<String>,
+    /// Shell command substrings that are permitted. Empty means all commands
+    /// are allowed (except for the ones listed in denylist).
+    pub bash_command_allowlist: Vec<String>,
 }
 
 impl Default for Config {
@@ -62,6 +69,9 @@ impl Default for Config {
             auto_snapshot: false,
             env_allowlist: vec![],
             package_allowlist: vec![],
+            bash_timeout_ms: 30_000,
+            bash_command_denylist: vec![],
+            bash_command_allowlist: vec![],
         }
     }
 }

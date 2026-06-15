@@ -1,6 +1,6 @@
 # drun
 
-**Give AI agents the freedom to experiment — because everything is reversible.**
+**Safe-by-design agentic code execution**
 
 Isolated by design. Every execution is a checkpoint: mistakes are undoable,
 experiments are forkable, and nothing reaches your host until you approve it.
@@ -133,56 +133,48 @@ session_commit                              # writes only changed mounted files 
 
 ## Claude Code integration
 
-Add this to `~/.claude/CLAUDE.md` to route all Python execution through drun:
+Add this to `~/.claude/CLAUDE.md` to route all code execution through drun:
 
 ```markdown
 ## Code execution
 
-Always use drun MCP tools for Python execution. Never run Python directly via
-Bash.
+Always use drun MCP tools for all code execution. Never run Python or shell
+commands directly via Bash.
 
 - `create_session` — start every coding task
 - `session_install_package` — before importing third-party packages
-- `session_execute` — run code
+- `session_execute` — run Python code
+- `session_bash` — run shell commands (git, npm, make, etc.)
 - `session_fork` — explore alternative approaches without losing the original
 - `session_rollback` — recover from mistakes
 - `session_read_file` / `session_export` — retrieve outputs
 - `session_commit` — write changes back to host files after review
+
+## Network access
+
+Never use curl, wget, or Python HTTP libraries to fetch external data directly.
+Both session_execute and session_bash have restricted or no network access by
+design. Always use session_fetch to retrieve external data — it saves the
+response as a workspace file that subsequent session_execute and session_bash
+calls can read immediately.
 ```
 
 ### Enforcing drun usage
 
 CLAUDE.md instructions guide but do not hard-constrain — Claude can still choose
-to run Python via `Bash`. Two options to tighten this:
-
-**Disable Bash entirely** (hard constraint):
-
-Pass `--disallowedTools Bash` when launching Claude Code, or add it permanently
-to `~/.claude/settings.json`:
-
-```json
-{
-  "disallowedTools": ["Bash"]
-}
-```
-
-This prevents any direct shell execution. The trade-off: Claude also loses the
-ability to run `git`, `grep`, and other terminal operations it normally uses for
-developer tasks. Best suited for agent-only pipelines where Claude acts as a
-pure coding assistant, not day-to-day development.
-
-**Keep Bash, block Python specifically** (recommended):
-
-Leave `Bash` enabled and add an explicit prohibition to `CLAUDE.md`:
+to use the built-in `Bash` tool. Add explicit prohibitions to steer it toward
+drun:
 
 ```markdown
-Never use Bash to run Python — no `python3 script.py`, no `pip install`, no
-inline Python subprocess calls. Use drun MCP tools for all Python execution.
+Never use Bash to run Python or shell commands that modify files — no
+`python3 script.py`, no `pip install`, no `npm install`, no build tool
+invocations. Use drun MCP tools for all code execution.
 ```
 
-This redirects Python work into drun while keeping git, filesystem tools, and
-shell operations available. Covers the vast majority of cases where Claude would
-otherwise default to Bash for Python work.
+For shell commands that need to run in the workspace, use `session_bash` instead
+of the built-in Bash tool. It executes in the same sandboxed environment,
+produces a checkpoint, and respects the same operator policy (denylist,
+allowlist, timeout) as all other drun tools.
 
 ---
 
@@ -191,7 +183,7 @@ otherwise default to Bash for Python work.
 | Category   | Tools                                                                                              |
 | ---------- | -------------------------------------------------------------------------------------------------- |
 | Lifecycle  | `create_session`, `session_list`, `session_close`, `session_tree`                                  |
-| Execution  | `session_execute`, `session_install_package`, `session_get_env`                                    |
+| Execution  | `session_execute`, `session_bash`, `session_install_package`, `session_get_env`                    |
 | Navigation | `session_rollback`, `session_fork`, `session_history`, `get_session_state`                         |
 | Files      | `session_read_file`, `session_write_file`, `session_delete_file`, `session_mount`, `session_diff`  |
 | Host I/O   | `session_export`, `session_commit`, `session_fetch`, `get_fetch_allowlist`, `get_allowed_packages` |
@@ -207,7 +199,8 @@ access and no restrictions on workspace size or session count.
 
 ```toml
 # Domains reachable via session_fetch and Python outbound HTTP.
-# Python package CDNs (PyPI, jsDelivr) are always included regardless of this list.
+# Default includes PyPI and jsDelivr so packages can be installed out of the
+# box.
 domain_allowlist = ["api.example.com", "data.sec.gov"]
 
 max_workspace_mb = 512
@@ -221,6 +214,10 @@ session_idle_timeout_secs = 3600
 # package_allowlist = ["pandas", "numpy"]      # restrict installable packages
 # auto_snapshot = true
 # snapshots_dir = "/tmp/drun-snapshots"
+
+# bash_timeout_ms = 30000
+# bash_command_denylist = ["rm -rf /"]
+# bash_command_allowlist = ["git", "npm"]
 ```
 
 See [`examples/drun.toml`](examples/drun.toml) for a fully annotated example.

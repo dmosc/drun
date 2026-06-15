@@ -3,8 +3,10 @@ pub mod config;
 mod engine;
 pub mod error;
 mod runner;
+mod sandbox;
 mod session;
 mod snapshot;
+mod workspace;
 
 pub use checkpoint::{Checkpoint, CheckpointRef, FileMap};
 pub use config::Config;

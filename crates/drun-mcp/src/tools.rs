@@ -25,7 +25,11 @@ pub struct CreateSessionTool {}
 
 #[mcp_tool(
     name = "session_execute",
-    description = "Run Python code in an existing session, building on the current checkpoint. Returns stdout and the new checkpoint_id.",
+    description = "Run Python code in an existing session, building on the current checkpoint. \
+                   Returns stdout and the new checkpoint_id. \
+                   Python's outbound HTTP is governed by the server's domain allowlist (same as \
+                   session_fetch). Use session_fetch to retrieve external data into the workspace \
+                   before running code that needs it.",
     idempotent_hint = false,
     destructive_hint = false,
     read_only_hint = false
@@ -36,6 +40,26 @@ pub struct SessionExecuteTool {
     pub session_id: String,
     /// Python source code to run
     pub code: String,
+}
+
+#[mcp_tool(
+    name = "session_bash",
+    description = "Run a shell command in the session workspace. The current checkpoint's files are \
+                   materialized into a temporary directory and the command is executed there via \
+                   sh -c, inheriting the host PATH. File changes are captured as a new checkpoint. \
+                   Command policy (denylist/allowlist patterns) is enforced by server config. \
+                   Network access is blocked in the sandbox — use session_fetch to retrieve \
+                   external data into the workspace before running commands that need it.",
+    idempotent_hint = false,
+    destructive_hint = false,
+    read_only_hint = false
+)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct SessionBashTool {
+    /// Session ID from create_session.
+    pub session_id: String,
+    /// Shell command to run (passed to sh -c).
+    pub command: String,
 }
 
 #[mcp_tool(
@@ -276,11 +300,13 @@ pub struct GetAllowedPackagesTool {}
 
 #[mcp_tool(
     name = "session_fetch",
-    description = "Make an HTTP request from the host and save the response body as a workspace file. \
-                   The body is never returned inline — it is always written to the workspace so large \
-                   payloads never flood your context. Returns metadata: status, bytes, content_type, and \
-                   the workspace path where the body was saved. Use session_read_file with offset + limit \
-                   to read the file in chunks. The target URL's domain must be in the server's fetch allowlist.",
+    description = "The designated gateway for all outbound HTTP. session_execute and session_bash have \
+                   restricted or no network access by design — fetch external data here first, then \
+                   process it with those tools. Makes an HTTP request from the host and saves the \
+                   response body as a workspace file so it is immediately available to subsequent \
+                   session_execute and session_bash calls. The body is never returned inline — use \
+                   session_read_file with offset + limit to read it in chunks. \
+                   The target URL's domain must be in the server's fetch allowlist.",
     idempotent_hint = false,
     destructive_hint = false,
     read_only_hint = false
@@ -400,6 +426,7 @@ tool_box!(
         GetSessionStateTool,
         SessionInstallPackageTool,
         SessionExecuteTool,
+        SessionBashTool,
         SessionRollbackTool,
         SessionReadFileTool,
         SessionWriteFileTool,

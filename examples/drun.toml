@@ -4,13 +4,10 @@
 # Usage:
 #   DRUN_CONFIG=/path/to/drun.toml drun-mcp
 
-# Hosts the agent is allowed to reach. Python package CDNs (PyPI, jsDelivr)
-# are always permitted and do not need to be listed here.
+# Domains the agent may reach via session_fetch.
 domain_allowlist = [
-    # Yahoo Finance — price history, fundamentals, earnings
     "query1.finance.yahoo.com",
     "query2.finance.yahoo.com",
-    # SEC EDGAR — 10-K / 10-Q filings and full-text search
     "data.sec.gov",
     "efts.sec.gov",
     "www.sec.gov",
@@ -51,3 +48,13 @@ export_root = "/tmp/drun-reports"
 # PyPI packages the agent is permitted to install via session_install_package.
 # Empty (default) means all packages are allowed.
 # package_allowlist = ["pandas", "numpy", "matplotlib", "pdfplumber", "yfinance"]
+
+# Controls how long a single command may run (default 30 s).
+# bash_timeout_ms = 30000
+
+# Substrings that, if present in the command, cause immediate rejection.
+# bash_command_denylist = ["rm -rf /", "curl", "wget"]
+
+# If non-empty, the command must contain at least one listed substring to be
+# permitted.
+# bash_command_allowlist = ["git", "npm", "make"]

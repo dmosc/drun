@@ -1,11 +1,9 @@
-/// Typed errors for the cases where the MCP layer needs to distinguish
-/// failure modes. Everything else propagates as anyhow::Error.
-
 #[derive(Debug)]
 pub enum RunnerError {
     Timeout { timeout_ms: u64 },
     Crash { exit_code: Option<i32> },
     Application(String),
+    CommandDenied(String),
 }
 
 impl std::fmt::Display for RunnerError {
@@ -19,6 +17,7 @@ impl std::fmt::Display for RunnerError {
                 )
             }
             Self::Application(msg) => write!(f, "{msg}"),
+            Self::CommandDenied(msg) => write!(f, "{msg}"),
         }
     }
 }

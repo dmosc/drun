@@ -1,10 +1,13 @@
 use crate::error::RunnerError;
 use crate::runner::{ExecSuccess, Runner};
 use crate::snapshot::{CheckpointSnapshot, SessionSnapshot};
-use crate::{Checkpoint, CheckpointRef, DrunEngine, FileMap};
+use crate::{Checkpoint, CheckpointRef, DrunEngine, FileMap, sandbox, workspace};
 use std::collections::HashMap;
+use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
-use std::time::Instant;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 pub struct Session {
     runner: Runner,
@@ -163,6 +166,86 @@ impl Session {
                 Err(e)
             }
         }
+    }
+
+    pub fn execute_bash(
+        &mut self,
+        command: &str,
+        on_stdout: &mut dyn FnMut(String),
+    ) -> anyhow::Result<&Checkpoint> {
+        self.check_command_policy(command)?;
+
+        self.checkpoints.truncate(self.checkpoint_idx + 1);
+        let timeout_ms = self.engine.config.bash_timeout_ms;
+        let workspace_dir = tempfile::TempDir::new()?;
+        workspace::materialize(
+            &self.checkpoints[self.checkpoint_idx].files,
+            workspace_dir.path(),
+        )?;
+
+        let mut child = sandbox::sandboxed_sh(command, workspace_dir.path())?
+            .current_dir(workspace_dir.path())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()?;
+
+        let child_stderr = child.stderr.take().unwrap();
+        let child_stdout = child.stdout.take().unwrap();
+        let child = Arc::new(Mutex::new(child));
+        let child_for_timeout = Arc::clone(&child);
+        let timed_out = Arc::new(AtomicBool::new(false));
+        let timed_out_flag = Arc::clone(&timed_out);
+        let (cancel_tx, cancel_rx) = std::sync::mpsc::channel::<()>();
+        std::thread::spawn(move || {
+            if cancel_rx
+                .recv_timeout(Duration::from_millis(timeout_ms))
+                .is_err()
+            {
+                timed_out_flag.store(true, Ordering::Relaxed);
+                let _ = child_for_timeout.lock().unwrap().kill();
+            }
+        });
+
+        let stderr_thread = std::thread::spawn(move || {
+            let mut buf = String::new();
+            let _ = BufReader::new(child_stderr).read_to_string(&mut buf);
+            buf
+        });
+
+        let mut stdout = String::new();
+        let mut stdout_reader = BufReader::new(child_stdout);
+        loop {
+            let mut line = String::new();
+            match stdout_reader.read_line(&mut line) {
+                Ok(0) | Err(_) => break,
+                Ok(_) => {
+                    on_stdout(line.trim_end_matches('\n').to_string());
+                    stdout.push_str(&line);
+                }
+            }
+        }
+
+        let _ = cancel_tx.send(());
+        let stderr = stderr_thread.join().unwrap_or_default();
+        let _ = child.lock().unwrap().wait();
+
+        if timed_out.load(Ordering::Relaxed) {
+            return Err(anyhow::Error::from(RunnerError::Timeout { timeout_ms }));
+        }
+
+        let files = workspace::collect(workspace_dir.path())?;
+        self.check_workspace_size(&files)?;
+        self.check_checkpoint_limit()?;
+        let id = self.checkpoints.len();
+        self.checkpoints.push(Checkpoint {
+            id,
+            stdout,
+            stderr,
+            files,
+            label: None,
+        });
+        self.checkpoint_idx = id;
+        Ok(self.checkpoints.last().unwrap())
     }
 
     pub fn rollback(&mut self, checkpoint_idx: usize) -> anyhow::Result<()> {
@@ -422,6 +505,30 @@ impl Session {
             files,
             label: None,
         }
+    }
+
+    fn check_command_policy(&self, command: &str) -> anyhow::Result<()> {
+        for denied in &self.engine.config.bash_command_denylist {
+            if command.contains(denied.as_str()) {
+                return Err(anyhow::Error::from(RunnerError::CommandDenied(format!(
+                    "command denied: matches denylist pattern '{denied}'"
+                ))));
+            }
+        }
+        if !self.engine.config.bash_command_allowlist.is_empty()
+            && !self
+                .engine
+                .config
+                .bash_command_allowlist
+                .iter()
+                .any(|a| command.contains(a.as_str()))
+        {
+            return Err(anyhow::Error::from(RunnerError::CommandDenied(format!(
+                "command denied: not matched by any allowlist pattern; permitted: {}",
+                self.engine.config.bash_command_allowlist.join(", ")
+            ))));
+        }
+        Ok(())
     }
 
     fn validate_file_path(&self, key: &str) -> anyhow::Result<()> {

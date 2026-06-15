@@ -13,7 +13,7 @@ use rust_mcp_sdk::{
     mcp_server::ServerHandler,
     schema::{
         CallToolRequestParams, CallToolResult, ListToolsResult, PaginatedRequestParams,
-        ProgressNotificationParams, RpcError, schema_utils::CallToolError,
+        ProgressNotificationParams, ProgressToken, RpcError, schema_utils::CallToolError,
     },
 };
 use std::{
@@ -150,32 +150,29 @@ impl ServerHandler for DrunHandler {
             }
 
             DrunTools::SessionExecuteTool(t) => {
-                let (progress_tx, progress_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
-                {
-                    let rt = runtime.clone();
-                    let token = progress_token.clone();
-                    tokio::spawn(async move {
-                        let Some(tok) = token else {
-                            return;
-                        };
-                        let mut rx = progress_rx;
-                        while let Some(chunk) = rx.recv().await {
-                            let _ = rt
-                                .notify_progress(ProgressNotificationParams {
-                                    progress: 0.0,
-                                    progress_token: tok.clone(),
-                                    message: Some(chunk),
-                                    total: None,
-                                    meta: None,
-                                })
-                                .await;
-                        }
-                    });
-                }
+                let progress_tx = spawn_progress_forwarder(runtime.clone(), progress_token.clone());
                 self.with_session_mut(&t.session_id, |session| {
                     let previous_files = session.current().files.clone();
                     session
                         .execute(&t.code, &mut |chunk| {
+                            let _ = progress_tx.send(chunk);
+                        })
+                        .map_err(|e| DrunError::from_exec(e).into_tool_err())?;
+                    Ok(text(build_session_state(
+                        &t.session_id,
+                        session,
+                        Some(&previous_files),
+                        vec![],
+                    )))
+                })
+            }
+
+            DrunTools::SessionBashTool(t) => {
+                let progress_tx = spawn_progress_forwarder(runtime.clone(), progress_token.clone());
+                self.with_session_mut(&t.session_id, |session| {
+                    let previous_files = session.current().files.clone();
+                    session
+                        .execute_bash(&t.command, &mut |chunk| {
                             let _ = progress_tx.send(chunk);
                         })
                         .map_err(|e| DrunError::from_exec(e).into_tool_err())?;
@@ -405,8 +402,6 @@ impl ServerHandler for DrunHandler {
                     .unwrap_or("")
                     .to_string();
 
-                // Stream the body with a size cap so a large response cannot
-                // OOM the server process.
                 let max_body = self
                     .engine
                     .config
@@ -557,6 +552,29 @@ impl ServerHandler for DrunHandler {
             }
         }
     }
+}
+
+fn spawn_progress_forwarder(
+    mcp_server: Arc<dyn McpServer>,
+    progress_token: Option<ProgressToken>,
+) -> tokio::sync::mpsc::UnboundedSender<String> {
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    if let Some(token) = progress_token {
+        tokio::spawn(async move {
+            while let Some(chunk) = rx.recv().await {
+                let _ = mcp_server
+                    .notify_progress(ProgressNotificationParams {
+                        progress: 0.0,
+                        progress_token: token.clone(),
+                        message: Some(chunk),
+                        total: None,
+                        meta: None,
+                    })
+                    .await;
+            }
+        });
+    }
+    tx
 }
 
 fn host_from_url(url: &str) -> Option<String> {
