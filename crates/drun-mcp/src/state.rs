@@ -105,8 +105,12 @@ fn file_delta(previous_files: Option<&FileMap>, current_files: &FileMap) -> File
     for key in current_files.keys() {
         if !previous.contains_key(key) {
             added.push(key.clone());
-        } else if current_files[key] != previous[key] {
-            modified.push(key.clone());
+        } else {
+            let cur = &current_files[key];
+            let prev = &previous[key];
+            if !Arc::ptr_eq(cur, prev) && cur != prev {
+                modified.push(key.clone());
+            }
         }
     }
     for key in previous.keys() {

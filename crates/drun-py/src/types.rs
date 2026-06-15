@@ -20,6 +20,10 @@ pub fn checkpoint_to_py(c: &drun_core::Checkpoint) -> DrunCheckpoint {
         id: c.id,
         stdout: c.stdout.clone(),
         stderr: c.stderr.clone(),
-        files: c.files.clone(),
+        files: c
+            .files
+            .iter()
+            .map(|(k, arc)| (k.clone(), (**arc).clone()))
+            .collect(),
     }
 }

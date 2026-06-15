@@ -3,6 +3,7 @@
 
 use crate::FileMap;
 use std::path::Path;
+use std::sync::Arc;
 
 pub(crate) fn materialize(files: &FileMap, dir: &Path) -> anyhow::Result<()> {
     for (key, bytes) in files {
@@ -10,7 +11,7 @@ pub(crate) fn materialize(files: &FileMap, dir: &Path) -> anyhow::Result<()> {
         if let Some(parent) = dest.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        std::fs::write(&dest, bytes)?;
+        std::fs::write(&dest, bytes.as_slice())?;
     }
     Ok(())
 }
@@ -28,7 +29,7 @@ pub(crate) fn collect(dir: &Path) -> anyhow::Result<FileMap> {
             .unwrap()
             .to_string_lossy()
             .into_owned();
-        files.insert(key, std::fs::read(entry.path())?);
+        files.insert(key, Arc::new(std::fs::read(entry.path())?));
     }
     Ok(files)
 }

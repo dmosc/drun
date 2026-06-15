@@ -1,15 +1,14 @@
-//! Session: a live execution context holding a Runner, checkpoint history,
-//! mounted file origins, and installed packages.
-
 use crate::error::RunnerError;
 use crate::runner::{ExecSuccess, Runner};
-use crate::snapshot::SessionSnapshot;
+use crate::snapshot::{CheckpointRecord, SessionSnapshot};
 use crate::{Checkpoint, CheckpointRef, DrunEngine, FileMap, sandbox, workspace};
 use std::collections::HashMap;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
 
 pub struct Session {
@@ -19,6 +18,7 @@ pub struct Session {
     checkpoint_idx: usize,
     origins: HashMap<String, PathBuf>,
     packages: Vec<String>,
+    intern_table: HashMap<u64, Weak<Vec<u8>>>,
     pub label: Option<String>,
     pub parent: Option<CheckpointRef>,
     pub created_at: Instant,
@@ -34,6 +34,7 @@ impl Session {
             checkpoint_idx: 0,
             origins: HashMap::new(),
             packages: Vec::new(),
+            intern_table: HashMap::new(),
             label: None,
             parent: None,
             created_at: Instant::now(),
@@ -47,26 +48,34 @@ impl Session {
         source: &Session,
         checkpoint_id: Option<usize>,
     ) -> anyhow::Result<Self> {
-        let checkpoint_idx = checkpoint_id.unwrap_or(source.checkpoint_idx);
-        if checkpoint_idx >= source.checkpoints.len() {
-            anyhow::bail!("checkpoint {} does not exist", checkpoint_idx);
+        let source_checkpoint_idx = checkpoint_id.unwrap_or(source.checkpoint_idx);
+        if source_checkpoint_idx >= source.checkpoints.len() {
+            anyhow::bail!("checkpoint {} does not exist", source_checkpoint_idx);
         }
-        let files = source.checkpoints[checkpoint_idx].files.clone();
-        let origins: HashMap<String, PathBuf> = source
+        let forked_files = source.checkpoints[source_checkpoint_idx].files.clone();
+        let inherited_origins: HashMap<String, PathBuf> = source
             .origins
             .iter()
-            .filter(|(k, _)| files.contains_key(k.as_str()))
+            .filter(|(k, _)| forked_files.contains_key(k.as_str()))
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
+
         let mut session = Self::new(engine)?;
         for package in &source.packages {
             session.install(package)?;
         }
-        session.checkpoints[0].files = files;
-        session.origins = origins;
+        for arc in forked_files.values() {
+            let hash = file_content_hash(arc);
+            session
+                .intern_table
+                .entry(hash)
+                .or_insert_with(|| Arc::downgrade(arc));
+        }
+        session.checkpoints[0].files = forked_files;
+        session.origins = inherited_origins;
         session.parent = Some(CheckpointRef {
             session_id: source_session_id.to_string(),
-            checkpoint_id: checkpoint_idx,
+            checkpoint_id: source_checkpoint_idx,
         });
         Ok(session)
     }
@@ -96,20 +105,26 @@ impl Session {
                 );
             }
         }
-        let entries = read_host_entries(&abs)?;
-        let keys: Vec<String> = entries.iter().map(|(key, _, _)| key.clone()).collect();
+        let host_entries = read_host_entries(&abs)?;
+        let mounted_keys: Vec<String> =
+            host_entries.iter().map(|(key, _, _)| key.clone()).collect();
+        let interned_entries: Vec<(String, Arc<Vec<u8>>, PathBuf)> = host_entries
+            .into_iter()
+            .map(|(key, bytes, host_path)| (key, self.intern_bytes(bytes), host_path))
+            .collect();
         let checkpoint = &mut self.checkpoints[self.checkpoint_idx];
-        for (key, bytes, host_path) in entries {
-            checkpoint.files.insert(key.clone(), bytes);
+        for (key, arc, host_path) in interned_entries {
+            checkpoint.files.insert(key.clone(), arc);
             self.origins.insert(key, host_path);
         }
-        Ok(keys)
+        Ok(mounted_keys)
     }
 
     pub fn write_file(&mut self, path: &str, content: Vec<u8>) -> anyhow::Result<()> {
         self.validate_file_path(path)?;
         let mut files = self.checkpoints[self.checkpoint_idx].files.clone();
-        files.insert(path.to_string(), content);
+        let arc = self.intern_bytes(content);
+        files.insert(path.to_string(), arc);
         self.check_workspace_size(&files)?;
         self.push_files_as_checkpoint(files)?;
         Ok(())
@@ -139,21 +154,22 @@ impl Session {
         on_stdout: &mut dyn FnMut(String),
     ) -> anyhow::Result<&Checkpoint> {
         self.checkpoints.truncate(self.checkpoint_idx + 1);
-        let files = &self.checkpoints[self.checkpoint_idx].files;
-        match self.runner.execute_python(code, files, on_stdout) {
+        let current_files = &self.checkpoints[self.checkpoint_idx].files;
+        match self.runner.execute_python(code, current_files, on_stdout) {
             Ok(ExecSuccess {
                 stdout,
                 stderr,
-                files,
+                files: result_files,
             }) => {
-                self.check_workspace_size(&files)?;
+                let interned_files = self.intern_file_map(result_files);
+                self.check_workspace_size(&interned_files)?;
                 self.check_checkpoint_limit()?;
                 let id = self.checkpoints.len();
                 self.checkpoints.push(Checkpoint {
                     id,
                     stdout,
                     stderr,
-                    files,
+                    files: interned_files,
                     label: None,
                 });
                 self.checkpoint_idx = id;
@@ -189,15 +205,16 @@ impl Session {
             .stderr(std::process::Stdio::piped())
             .spawn()?;
         let BashOutput { stdout, stderr } = self.run_sandboxed_bash_child(child, on_stdout)?;
-        let files = workspace::collect(workspace_dir.path())?;
-        self.check_workspace_size(&files)?;
+        let collected_files = workspace::collect(workspace_dir.path())?;
+        let interned_files = self.intern_file_map(collected_files);
+        self.check_workspace_size(&interned_files)?;
         self.check_checkpoint_limit()?;
         let id = self.checkpoints.len();
         self.checkpoints.push(Checkpoint {
             id,
             stdout,
             stderr,
-            files,
+            files: interned_files,
             label: None,
         });
         self.checkpoint_idx = id;
@@ -252,7 +269,7 @@ impl Session {
             if let Some(parent) = dest_path.parent() {
                 std::fs::create_dir_all(parent)?;
             }
-            std::fs::write(&dest_path, bytes)?;
+            std::fs::write(&dest_path, bytes.as_slice())?;
             exported_files.push(dest_path);
         }
         Ok(exported_files)
@@ -274,11 +291,11 @@ impl Session {
             let current_bytes = current
                 .get(key)
                 .ok_or_else(|| anyhow::anyhow!("'{}' not in current checkpoint", key))?;
-            let mounted_bytes = mounted_files.get(key).map(Vec::as_slice).unwrap_or(&[]);
+            let mounted_bytes = mounted_files.get(key).map(|a| a.as_slice()).unwrap_or(&[]);
             if current_bytes.as_slice() == mounted_bytes {
                 continue;
             }
-            std::fs::write(host_path, current_bytes)?;
+            std::fs::write(host_path, current_bytes.as_slice())?;
             committed.push(host_path.clone());
         }
         Ok(committed)
@@ -296,8 +313,8 @@ impl Session {
         let all_keys: std::collections::BTreeSet<&String> = from.keys().chain(to.keys()).collect();
         let mut output = String::new();
         for key in all_keys {
-            let from_bytes = from.get(key).map(Vec::as_slice).unwrap_or(&[]);
-            let to_bytes = to.get(key).map(Vec::as_slice).unwrap_or(&[]);
+            let from_bytes = from.get(key).map(|a| a.as_slice()).unwrap_or(&[]);
+            let to_bytes = to.get(key).map(|a| a.as_slice()).unwrap_or(&[]);
             if from_bytes == to_bytes {
                 continue;
             }
@@ -318,30 +335,94 @@ impl Session {
     }
 
     pub fn snapshot(&self) -> SessionSnapshot {
+        let mut blob_ptr_to_index: HashMap<usize, usize> = HashMap::new();
+        let mut blobs: Vec<Vec<u8>> = Vec::new();
+
+        let checkpoint_records = self
+            .checkpoints
+            .iter()
+            .map(|cp| {
+                let files = cp
+                    .files
+                    .iter()
+                    .map(|(key, arc)| {
+                        let ptr = Arc::as_ptr(arc) as usize;
+                        let blob_index = *blob_ptr_to_index.entry(ptr).or_insert_with(|| {
+                            let idx = blobs.len();
+                            blobs.push((**arc).clone());
+                            idx
+                        });
+                        (key.clone(), blob_index)
+                    })
+                    .collect();
+                CheckpointRecord {
+                    id: cp.id,
+                    stdout: cp.stdout.clone(),
+                    stderr: cp.stderr.clone(),
+                    label: cp.label.clone(),
+                    files,
+                }
+            })
+            .collect();
+
         SessionSnapshot {
             checkpoint_idx: self.checkpoint_idx,
             packages: self.packages.clone(),
             parent: self.parent.clone(),
             label: self.label.clone(),
-            checkpoints: self.checkpoints.clone(),
             origins: self.origins.clone(),
+            blobs,
+            checkpoints: checkpoint_records,
         }
     }
 
     pub fn from_snapshot(engine: &DrunEngine, snapshot: SessionSnapshot) -> anyhow::Result<Self> {
         let packages_to_install = snapshot.packages.clone();
+
+        let blob_arcs: Vec<Arc<Vec<u8>>> = snapshot.blobs.into_iter().map(Arc::new).collect();
+        let checkpoints: Vec<Checkpoint> = snapshot
+            .checkpoints
+            .into_iter()
+            .map(|record| {
+                let files: FileMap = record
+                    .files
+                    .into_iter()
+                    .map(|(key, blob_index)| (key, Arc::clone(&blob_arcs[blob_index])))
+                    .collect();
+                Checkpoint {
+                    id: record.id,
+                    stdout: record.stdout,
+                    stderr: record.stderr,
+                    label: record.label,
+                    files,
+                }
+            })
+            .collect();
+
+        let mut intern_table: HashMap<u64, Weak<Vec<u8>>> = HashMap::new();
+        for cp in &checkpoints {
+            for arc in cp.files.values() {
+                let hash = file_content_hash(arc);
+                intern_table
+                    .entry(hash)
+                    .or_insert_with(|| Arc::downgrade(arc));
+            }
+        }
+
         let origins = snapshot
             .origins
             .into_iter()
             .filter(|(_, path)| path.exists())
             .collect();
+
         let mut session = Self {
             runner: Runner::new(engine)?,
             engine: engine.clone(),
-            checkpoints: snapshot.checkpoints,
+            checkpoints,
             checkpoint_idx: snapshot.checkpoint_idx,
             origins,
             packages: Vec::new(),
+            intern_table,
             label: snapshot.label,
             parent: snapshot.parent,
             created_at: Instant::now(),
@@ -365,6 +446,46 @@ impl Session {
 
     pub fn history(&self) -> &[Checkpoint] {
         &self.checkpoints
+    }
+
+    fn intern_bytes(&mut self, bytes: Vec<u8>) -> Arc<Vec<u8>> {
+        let hash = file_content_hash(&bytes);
+        if let Some(weak) = self.intern_table.get(&hash) {
+            if let Some(existing_arc) = weak.upgrade() {
+                if existing_arc.as_slice() == bytes.as_slice() {
+                    return existing_arc;
+                }
+            }
+        }
+        let arc = Arc::new(bytes);
+        self.intern_table.insert(hash, Arc::downgrade(&arc));
+        arc
+    }
+
+    fn intern_file_map(&mut self, file_map: FileMap) -> FileMap {
+        let mut result = FileMap::with_capacity(file_map.len());
+        for (key, arc) in file_map {
+            let hash = file_content_hash(&arc);
+            let interned_arc = if let Some(weak) = self.intern_table.get(&hash) {
+                if let Some(existing_arc) = weak.upgrade() {
+                    if Arc::ptr_eq(&existing_arc, &arc) || existing_arc.as_slice() == arc.as_slice()
+                    {
+                        existing_arc
+                    } else {
+                        self.intern_table.insert(hash, Arc::downgrade(&arc));
+                        arc
+                    }
+                } else {
+                    self.intern_table.insert(hash, Arc::downgrade(&arc));
+                    arc
+                }
+            } else {
+                self.intern_table.insert(hash, Arc::downgrade(&arc));
+                arc
+            };
+            result.insert(key, interned_arc);
+        }
+        result
     }
 
     fn push_files_as_checkpoint(&mut self, files: FileMap) -> anyhow::Result<&Checkpoint> {
@@ -507,6 +628,12 @@ impl Session {
 struct BashOutput {
     stdout: String,
     stderr: String,
+}
+
+fn file_content_hash(bytes: &[u8]) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    bytes.hash(&mut hasher);
+    hasher.finish()
 }
 
 fn empty_checkpoint(id: usize, files: FileMap) -> Checkpoint {

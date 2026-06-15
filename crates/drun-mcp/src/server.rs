@@ -208,7 +208,7 @@ impl ServerHandler for DrunHandler {
                     .get(&t.path)
                     .ok_or_else(|| DrunError::file_not_found(&t.path).into_tool_err())?;
                 if t.offset.is_none() && t.limit.is_none() {
-                    return Ok(file_content(&t.path, all_bytes));
+                    return Ok(file_content(&t.path, all_bytes.as_slice()));
                 }
                 let total = all_bytes.len();
                 let start = (t.offset.unwrap_or(0) as usize).min(total);

@@ -2,8 +2,9 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::Arc;
 
-pub type FileMap = HashMap<String, Vec<u8>>;
+pub type FileMap = HashMap<String, Arc<Vec<u8>>>;
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Checkpoint {
