@@ -324,17 +324,23 @@ impl Session {
             parent: self.parent.clone(),
             label: self.label.clone(),
             checkpoints: self.checkpoints.clone(),
+            origins: self.origins.clone(),
         }
     }
 
     pub fn from_snapshot(engine: &DrunEngine, snapshot: SessionSnapshot) -> anyhow::Result<Self> {
         let packages_to_install = snapshot.packages.clone();
+        let origins = snapshot
+            .origins
+            .into_iter()
+            .filter(|(_, path)| path.exists())
+            .collect();
         let mut session = Self {
             runner: Runner::new(engine)?,
             engine: engine.clone(),
             checkpoints: snapshot.checkpoints,
             checkpoint_idx: snapshot.checkpoint_idx,
-            origins: HashMap::new(),
+            origins,
             packages: Vec::new(),
             label: snapshot.label,
             parent: snapshot.parent,

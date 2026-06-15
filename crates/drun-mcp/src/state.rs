@@ -38,6 +38,8 @@ struct SessionTreeNode {
     session_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     label: Option<String>,
+    parent_session_id: Option<String>,
+    parent_checkpoint_id: Option<usize>,
     checkpoints: Vec<CheckpointTreeNode>,
 }
 
@@ -207,6 +209,7 @@ fn build_session_node(
     session_id: &str,
     session: &Session,
     children: &HashMap<(String, usize), Vec<(String, &Session)>>,
+    orphan_parent: Option<(String, usize)>,
 ) -> SessionTreeNode {
     let current_id = session.current().id;
     let checkpoints = session
@@ -217,7 +220,7 @@ fn build_session_node(
                 .get(&(session_id.to_string(), cp.id))
                 .map(|kids| {
                     kids.iter()
-                        .map(|(id, s)| build_session_node(id, s, children))
+                        .map(|(id, s)| build_session_node(id, s, children, None))
                         .collect()
                 })
                 .unwrap_or_default();
@@ -231,9 +234,15 @@ fn build_session_node(
             }
         })
         .collect();
+    let (parent_session_id, parent_checkpoint_id) = match orphan_parent {
+        Some((sid, cid)) => (Some(sid), Some(cid)),
+        None => (None, None),
+    };
     SessionTreeNode {
         session_id: session_id.to_string(),
         label: session.label.clone(),
+        parent_session_id,
+        parent_checkpoint_id,
         checkpoints,
     }
 }
@@ -265,7 +274,16 @@ pub(crate) fn build_session_tree(sessions: &HashMap<String, Arc<Mutex<Session>>>
 
     let tree: Vec<SessionTreeNode> = roots
         .into_iter()
-        .map(|(id, session)| build_session_node(id, session, &children))
+        .map(|(id, session)| {
+            let orphan_parent = session.parent.as_ref().and_then(|r| {
+                if !sessions.contains_key(&r.session_id) {
+                    Some((r.session_id.clone(), r.checkpoint_id))
+                } else {
+                    None
+                }
+            });
+            build_session_node(id, session, &children, orphan_parent)
+        })
         .collect();
 
     serde_json::to_string(&tree).unwrap_or_else(|_| "[]".into())

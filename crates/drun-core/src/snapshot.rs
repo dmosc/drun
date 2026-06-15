@@ -4,6 +4,8 @@
 use crate::{Checkpoint, CheckpointRef};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::path::PathBuf;
 
 const MAGIC: &[u8; 4] = b"DRUN";
 const COMPRESSION_LEVEL: i32 = 3;
@@ -16,6 +18,7 @@ pub struct SessionSnapshot {
     pub checkpoints: Vec<Checkpoint>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
+    pub origins: HashMap<String, PathBuf>,
 }
 
 impl SessionSnapshot {
