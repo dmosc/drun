@@ -10,6 +10,7 @@ console.warn = toStderr;
 
 const pyodide = await loadPyodide();
 await pyodide.loadPackage("micropip", { messageCallback: toStderr, errorCallback: toStderr });
+Deno.stdout.writeSync(enc.encode(JSON.stringify({ ready: true }) + "\n"));
 
 let capturedStdout = "";
 let capturedStderr = "";

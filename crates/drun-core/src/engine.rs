@@ -4,11 +4,20 @@
 use crate::config::Config;
 use std::path::PathBuf;
 use std::process::Stdio;
+use std::sync::Arc;
+
+struct RunnerFile(PathBuf);
+
+impl Drop for RunnerFile {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
 
 #[derive(Clone)]
 pub struct DrunEngine {
     pub(crate) deno_path: PathBuf,
-    pub(crate) runner_path: PathBuf,
+    runner_file: Arc<RunnerFile>,
     pub config: Config,
 }
 
@@ -16,13 +25,12 @@ impl DrunEngine {
     pub fn new(config: Config) -> anyhow::Result<Self> {
         let deno_path = which::which("deno")
             .map_err(|_| anyhow::anyhow!("deno not found; install from https://deno.land"))?;
-        // Use a per-process unique filename to avoid TOCTOU race conditions.
         let runner_path =
             std::env::temp_dir().join(format!("drun_runner_{}.ts", std::process::id()));
         std::fs::write(&runner_path, include_str!("assets/runner.ts"))?;
         Ok(Self {
             deno_path,
-            runner_path,
+            runner_file: Arc::new(RunnerFile(runner_path)),
             config,
         })
     }
@@ -42,7 +50,7 @@ impl DrunEngine {
         if let Some(ref flag) = net_flag {
             args.push(flag);
         }
-        let runner = self.runner_path.to_string_lossy().into_owned();
+        let runner = self.runner_file.0.to_string_lossy().into_owned();
         args.push(&runner);
         Ok(std::process::Command::new(&self.deno_path)
             .args(&args)
@@ -50,11 +58,5 @@ impl DrunEngine {
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
             .spawn()?)
-    }
-}
-
-impl Drop for DrunEngine {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.runner_path);
     }
 }

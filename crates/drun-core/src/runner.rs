@@ -43,6 +43,11 @@ struct ProgressLine {
     progress: String,
 }
 
+#[derive(Deserialize)]
+struct ReadyLine {
+    ready: bool,
+}
+
 pub(crate) struct ExecSuccess {
     pub stdout: String,
     pub stderr: String,
@@ -60,9 +65,52 @@ impl Runner {
     pub fn new(engine: &DrunEngine) -> anyhow::Result<Self> {
         let mut child = engine.spawn_runner(&engine.config.domain_allowlist)?;
         let stdin = BufWriter::new(child.stdin.take().unwrap());
-        let stdout = BufReader::new(child.stdout.take().unwrap());
+        let mut stdout = BufReader::new(child.stdout.take().unwrap());
+        let child = Arc::new(Mutex::new(child));
+        let child_for_timeout = Arc::clone(&child);
+        let timed_out = Arc::new(AtomicBool::new(false));
+        let timed_out_flag = Arc::clone(&timed_out);
+        let timeout_ms = engine.config.install_timeout_ms;
+        let (cancel_tx, cancel_rx) = std::sync::mpsc::channel::<()>();
+        std::thread::spawn(move || {
+            if cancel_rx
+                .recv_timeout(Duration::from_millis(timeout_ms))
+                .is_err()
+            {
+                timed_out_flag.store(true, Ordering::Relaxed);
+                let _ = child_for_timeout.lock().unwrap().kill();
+            }
+        });
+
+        let mut line = String::new();
+        let ready = match stdout.read_line(&mut line) {
+            Ok(n) if n > 0 => {
+                serde_json::from_str::<ReadyLine>(line.trim()).map_or(false, |r| r.ready)
+            }
+            _ => false,
+        };
+        let _ = cancel_tx.send(());
+
+        if !ready {
+            let exit_code = child
+                .lock()
+                .unwrap()
+                .try_wait()
+                .ok()
+                .flatten()
+                .and_then(|s| s.code());
+            if timed_out.load(Ordering::Relaxed) {
+                anyhow::bail!(
+                    "Deno runner startup timed out after {timeout_ms}ms; check server stderr for details"
+                );
+            }
+            anyhow::bail!(
+                "Deno runner exited during startup (exit code: {exit_code:?}); check server stderr for details"
+            );
+        }
+
         Ok(Self {
-            child: Arc::new(Mutex::new(child)),
+            child,
             stdin,
             stdout,
             engine: engine.clone(),
