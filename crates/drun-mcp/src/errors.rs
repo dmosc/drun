@@ -1,3 +1,7 @@
+//! DrunError: structured MCP tool error type. Constructors map domain errors
+//! (session not found, timeout, command denied, etc.) to typed error codes
+//! that clients can inspect programmatically.
+
 use drun_core::RunnerError;
 use rust_mcp_sdk::schema::schema_utils::CallToolError;
 use serde::Serialize;
@@ -154,9 +158,7 @@ impl DrunError {
             _ => Self::package_install_failed(package, &e.to_string()),
         }
     }
-}
 
-impl DrunError {
     pub fn into_tool_err(self) -> CallToolError {
         CallToolError::from(self)
     }

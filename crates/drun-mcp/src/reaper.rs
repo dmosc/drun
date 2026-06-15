@@ -1,3 +1,6 @@
+//! Idle session reaper: periodically evicts sessions that have exceeded the
+//! configured idle timeout, freeing their Deno subprocess and file state.
+
 use drun_core::Session;
 use std::{
     collections::HashMap,

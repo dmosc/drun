@@ -1,3 +1,6 @@
+//! Operator configuration loaded from a TOML file at DRUN_CONFIG. All fields
+//! have defaults so the server runs without any config file.
+
 use serde::Deserialize;
 use std::path::PathBuf;
 

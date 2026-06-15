@@ -1,3 +1,6 @@
+//! Sandbox execution via macOS sandbox-exec. Builds an SBPL profile that
+//! confines a shell command to the session workspace with no network access.
+
 use std::path::Path;
 use std::process::Command;
 

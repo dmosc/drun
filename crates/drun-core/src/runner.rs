@@ -1,3 +1,8 @@
+//! Runner: manages the long-lived Deno subprocess that executes Python code.
+//! Communicates over stdin/stdout with newline-delimited JSON. Each request is
+//! either an exec or a package install; responses are either Ok (with output
+//! and updated files) or Err (application error string).
+
 use crate::error::RunnerError;
 use crate::{DrunEngine, FileMap};
 use serde::{Deserialize, Serialize};
@@ -81,11 +86,46 @@ impl Runner {
         files: &FileMap,
         on_progress: &mut dyn FnMut(String),
     ) -> anyhow::Result<ExecSuccess> {
-        let request = serde_json::to_string(&ExecRequest { code, files })?;
-        writeln!(self.stdin, "{}", request)?;
+        writeln!(
+            self.stdin,
+            "{}",
+            serde_json::to_string(&ExecRequest { code, files })?
+        )?;
         self.stdin.flush()?;
+        match self.await_response(self.engine.config.exec_timeout_ms, on_progress)? {
+            RunnerResponse::Ok {
+                stdout,
+                stderr,
+                files,
+            } => Ok(ExecSuccess {
+                stdout,
+                stderr,
+                files,
+            }),
+            RunnerResponse::Err { error } => {
+                Err(anyhow::Error::from(RunnerError::Application(error)))
+            }
+        }
+    }
 
-        let timeout_ms = self.engine.config.exec_timeout_ms;
+    pub fn install(&mut self, package: &str) -> anyhow::Result<()> {
+        writeln!(
+            self.stdin,
+            "{}",
+            serde_json::to_string(&PackageInstallRequest { package })?
+        )?;
+        self.stdin.flush()?;
+        match self.await_response(self.engine.config.install_timeout_ms, &mut |_| {})? {
+            RunnerResponse::Ok { .. } => Ok(()),
+            RunnerResponse::Err { error } => anyhow::bail!(error),
+        }
+    }
+
+    fn await_response(
+        &mut self,
+        timeout_ms: u64,
+        on_progress: &mut dyn FnMut(String),
+    ) -> anyhow::Result<RunnerResponse> {
         let timed_out = Arc::new(AtomicBool::new(false));
         let child_handle = Arc::clone(&self.child);
         let timed_out_flag = Arc::clone(&timed_out);
@@ -113,61 +153,8 @@ impl Runner {
                         continue;
                     }
                     let _ = cancel_tx.send(());
-                    return match serde_json::from_str::<RunnerResponse>(&line)? {
-                        RunnerResponse::Ok {
-                            stdout,
-                            stderr,
-                            files,
-                        } => Ok(ExecSuccess {
-                            stdout,
-                            stderr,
-                            files,
-                        }),
-                        RunnerResponse::Err { error } => {
-                            Err(anyhow::Error::from(RunnerError::Application(error)))
-                        }
-                    };
-                }
-            }
-        }
-    }
-
-    pub fn install(&mut self, package: &str) -> anyhow::Result<()> {
-        let request = serde_json::to_string(&PackageInstallRequest { package })?;
-        writeln!(self.stdin, "{}", request)?;
-        self.stdin.flush()?;
-
-        let timeout_ms = self.engine.config.install_timeout_ms;
-        let timed_out = Arc::new(AtomicBool::new(false));
-        let child_handle = Arc::clone(&self.child);
-        let timed_out_flag = Arc::clone(&timed_out);
-        let (cancel_tx, cancel_rx) = std::sync::mpsc::channel::<()>();
-        std::thread::spawn(move || {
-            if cancel_rx
-                .recv_timeout(Duration::from_millis(timeout_ms))
-                .is_err()
-            {
-                timed_out_flag.store(true, Ordering::Relaxed);
-                let _ = child_handle.lock().unwrap().kill();
-            }
-        });
-
-        loop {
-            let mut line = String::new();
-            match self.stdout.read_line(&mut line) {
-                Ok(0) | Err(_) => {
-                    let _ = cancel_tx.send(());
-                    return Err(self.classify_eof(timed_out.load(Ordering::Relaxed), timeout_ms));
-                }
-                Ok(_) => {
-                    if serde_json::from_str::<ProgressLine>(line.trim()).is_ok() {
-                        continue;
-                    }
-                    let _ = cancel_tx.send(());
-                    return match serde_json::from_str::<RunnerResponse>(&line)? {
-                        RunnerResponse::Ok { .. } => Ok(()),
-                        RunnerResponse::Err { error } => anyhow::bail!(error),
-                    };
+                    return serde_json::from_str::<RunnerResponse>(&line)
+                        .map_err(anyhow::Error::from);
                 }
             }
         }

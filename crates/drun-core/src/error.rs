@@ -1,3 +1,5 @@
+//! RunnerError: typed errors produced by the Python runner and sandbox executor.
+
 #[derive(Debug)]
 pub enum RunnerError {
     Timeout { timeout_ms: u64 },

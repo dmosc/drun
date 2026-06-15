@@ -1,3 +1,6 @@
+//! Workspace helpers: materialize a FileMap onto the filesystem and collect it
+//! back after execution.
+
 use crate::FileMap;
 use std::path::Path;
 

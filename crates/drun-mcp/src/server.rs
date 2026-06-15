@@ -1,3 +1,6 @@
+//! MCP tool dispatch: implements ServerHandler to route each tool call to the
+//! appropriate Session method, wrapping results as MCP CallToolResult responses.
+
 use crate::errors::DrunError;
 use crate::handler::DrunHandler;
 use crate::response::{file_content, text};

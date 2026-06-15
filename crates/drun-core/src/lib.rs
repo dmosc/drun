@@ -1,3 +1,6 @@
+//! drun-core: sandboxed execution engine. Owns Config, DrunEngine, Session,
+//! and the checkpoint/snapshot model.
+
 mod checkpoint;
 pub mod config;
 mod engine;
@@ -13,4 +16,4 @@ pub use config::Config;
 pub use engine::DrunEngine;
 pub use error::RunnerError;
 pub use session::Session;
-pub use snapshot::{CheckpointSnapshot, SessionSnapshot};
+pub use snapshot::SessionSnapshot;

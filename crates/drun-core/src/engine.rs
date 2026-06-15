@@ -1,3 +1,6 @@
+//! DrunEngine: shared, cloneable handle to the Deno runtime. Writes the
+//! bundled runner script to a temp file on construction and removes it on drop.
+
 use crate::config::Config;
 use std::path::PathBuf;
 use std::process::Stdio;

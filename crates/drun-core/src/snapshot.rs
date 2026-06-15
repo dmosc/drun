@@ -1,4 +1,7 @@
-use crate::{CheckpointRef, FileMap};
+//! Session persistence: encode/decode the full checkpoint history to/from a
+//! zstd-compressed .drun file.
+
+use crate::{Checkpoint, CheckpointRef};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
@@ -6,21 +9,11 @@ const MAGIC: &[u8; 4] = b"DRUN";
 const COMPRESSION_LEVEL: i32 = 3;
 
 #[derive(Serialize, Deserialize)]
-pub struct CheckpointSnapshot {
-    pub id: usize,
-    pub stdout: String,
-    pub stderr: String,
-    pub files: FileMap,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub label: Option<String>,
-}
-
-#[derive(Serialize, Deserialize)]
 pub struct SessionSnapshot {
     pub checkpoint_idx: usize,
     pub packages: Vec<String>,
     pub parent: Option<CheckpointRef>,
-    pub checkpoints: Vec<CheckpointSnapshot>,
+    pub checkpoints: Vec<Checkpoint>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
 }

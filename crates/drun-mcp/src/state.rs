@@ -1,3 +1,6 @@
+//! Serializable view types for session and checkpoint state. All functions
+//! return JSON strings consumed directly by MCP tool responses.
+
 use drun_core::{FileMap, Session};
 use serde::Serialize;
 use std::collections::HashMap;
@@ -39,53 +42,60 @@ struct SessionTreeNode {
 }
 
 #[derive(Serialize)]
-pub(crate) struct SessionState {
-    pub session_id: String,
+struct SessionState {
+    session_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub label: Option<String>,
-    pub checkpoint_id: usize,
+    label: Option<String>,
+    checkpoint_id: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub parent_session_id: Option<String>,
+    parent_session_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub parent_checkpoint_id: Option<usize>,
+    parent_checkpoint_id: Option<usize>,
     #[serde(skip_serializing_if = "String::is_empty")]
-    pub stdout: String,
+    stdout: String,
     #[serde(skip_serializing_if = "String::is_empty")]
-    pub stderr: String,
-    pub workspace: Vec<String>,
-    pub packages: Vec<String>,
+    stderr: String,
+    workspace: Vec<String>,
+    packages: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub files_added: Vec<String>,
+    files_added: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub files_modified: Vec<String>,
+    files_modified: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub files_removed: Vec<String>,
+    files_removed: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub committed_files: Vec<String>,
+    committed_files: Vec<String>,
 }
 
 #[derive(Serialize)]
-pub(crate) struct CheckpointSummary {
-    pub checkpoint_id: usize,
+struct CheckpointSummary {
+    checkpoint_id: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub label: Option<String>,
+    label: Option<String>,
     #[serde(skip_serializing_if = "String::is_empty")]
-    pub stdout: String,
-    pub file_count: usize,
+    stdout: String,
+    file_count: usize,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub files_added: Vec<String>,
+    files_added: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub files_modified: Vec<String>,
+    files_modified: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub files_removed: Vec<String>,
+    files_removed: Vec<String>,
 }
 
-fn file_delta(
-    previous_files: Option<&FileMap>,
-    current_files: &FileMap,
-) -> (Vec<String>, Vec<String>, Vec<String>) {
+struct FileDelta {
+    added: Vec<String>,
+    modified: Vec<String>,
+    removed: Vec<String>,
+}
+
+fn file_delta(previous_files: Option<&FileMap>, current_files: &FileMap) -> FileDelta {
     let Some(previous) = previous_files else {
-        return (vec![], vec![], vec![]);
+        return FileDelta {
+            added: vec![],
+            modified: vec![],
+            removed: vec![],
+        };
     };
     let mut added = Vec::new();
     let mut modified = Vec::new();
@@ -105,7 +115,11 @@ fn file_delta(
     added.sort();
     modified.sort();
     removed.sort();
-    (added, modified, removed)
+    FileDelta {
+        added,
+        modified,
+        removed,
+    }
 }
 
 pub(crate) fn build_session_list(sessions: &HashMap<String, Arc<Mutex<Session>>>) -> String {
@@ -140,7 +154,7 @@ pub(crate) fn build_session_state(
     let current = session.current();
     let mut workspace: Vec<String> = current.files.keys().cloned().collect();
     workspace.sort();
-    let (files_added, files_modified, files_removed) = file_delta(previous_files, &current.files);
+    let delta = file_delta(previous_files, &current.files);
     let (parent_session_id, parent_checkpoint_id) = match &session.parent {
         Some(r) => (Some(r.session_id.clone()), Some(r.checkpoint_id)),
         None => (None, None),
@@ -155,9 +169,9 @@ pub(crate) fn build_session_state(
         stderr: current.stderr.clone(),
         workspace,
         packages: session.packages().to_vec(),
-        files_added,
-        files_modified,
-        files_removed,
+        files_added: delta.added,
+        files_modified: delta.modified,
+        files_removed: delta.removed,
         committed_files,
     })
     .unwrap_or_else(|_| "{}".into())
@@ -174,16 +188,15 @@ pub(crate) fn build_checkpoint_history(session: &Session) -> String {
             } else {
                 None
             };
-            let (files_added, files_modified, files_removed) =
-                file_delta(previous_files, &checkpoint.files);
+            let delta = file_delta(previous_files, &checkpoint.files);
             CheckpointSummary {
                 checkpoint_id: checkpoint.id,
                 label: checkpoint.label.clone(),
                 stdout: checkpoint.stdout.clone(),
                 file_count: checkpoint.files.len(),
-                files_added,
-                files_modified,
-                files_removed,
+                files_added: delta.added,
+                files_modified: delta.modified,
+                files_removed: delta.removed,
             }
         })
         .collect();

@@ -1,6 +1,9 @@
+//! Session: a live execution context holding a Runner, checkpoint history,
+//! mounted file origins, and installed packages.
+
 use crate::error::RunnerError;
 use crate::runner::{ExecSuccess, Runner};
-use crate::snapshot::{CheckpointSnapshot, SessionSnapshot};
+use crate::snapshot::SessionSnapshot;
 use crate::{Checkpoint, CheckpointRef, DrunEngine, FileMap, sandbox, workspace};
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read};
@@ -27,7 +30,7 @@ impl Session {
         Ok(Self {
             runner: Runner::new(engine)?,
             engine: engine.clone(),
-            checkpoints: vec![Self::empty_checkpoint(0, HashMap::new())],
+            checkpoints: vec![empty_checkpoint(0, HashMap::new())],
             checkpoint_idx: 0,
             origins: HashMap::new(),
             packages: Vec::new(),
@@ -93,7 +96,7 @@ impl Session {
                 );
             }
         }
-        let entries = Self::read_host_entries(&abs)?;
+        let entries = read_host_entries(&abs)?;
         let keys: Vec<String> = entries.iter().map(|(key, _, _)| key.clone()).collect();
         let checkpoint = &mut self.checkpoints[self.checkpoint_idx];
         for (key, bytes, host_path) in entries {
@@ -367,17 +370,7 @@ impl Session {
             packages: self.packages.clone(),
             parent: self.parent.clone(),
             label: self.label.clone(),
-            checkpoints: self
-                .checkpoints
-                .iter()
-                .map(|c| CheckpointSnapshot {
-                    id: c.id,
-                    stdout: c.stdout.clone(),
-                    stderr: c.stderr.clone(),
-                    files: c.files.clone(),
-                    label: c.label.clone(),
-                })
-                .collect(),
+            checkpoints: self.checkpoints.clone(),
         }
     }
 
@@ -386,17 +379,7 @@ impl Session {
         let mut session = Self {
             runner: Runner::new(engine)?,
             engine: engine.clone(),
-            checkpoints: snapshot
-                .checkpoints
-                .into_iter()
-                .map(|s| Checkpoint {
-                    id: s.id,
-                    stdout: s.stdout,
-                    stderr: s.stderr,
-                    files: s.files,
-                    label: s.label,
-                })
-                .collect(),
+            checkpoints: snapshot.checkpoints,
             checkpoint_idx: snapshot.checkpoint_idx,
             origins: HashMap::new(),
             packages: Vec::new(),
@@ -425,38 +408,11 @@ impl Session {
         &self.checkpoints
     }
 
-    fn read_host_entries(abs: &Path) -> anyhow::Result<Vec<(String, Vec<u8>, PathBuf)>> {
-        if abs.is_dir() {
-            walkdir::WalkDir::new(abs)
-                .into_iter()
-                .filter_map(|e| e.ok())
-                .filter(|e| e.file_type().is_file())
-                .map(|entry| {
-                    let key = entry
-                        .path()
-                        .strip_prefix(abs)
-                        .unwrap()
-                        .to_string_lossy()
-                        .into_owned();
-                    let bytes = std::fs::read(entry.path())?;
-                    Ok((key, bytes, entry.path().to_path_buf()))
-                })
-                .collect()
-        } else {
-            let key = abs
-                .file_name()
-                .ok_or_else(|| anyhow::anyhow!("path has no filename: {}", abs.display()))?
-                .to_string_lossy()
-                .into_owned();
-            Ok(vec![(key, std::fs::read(abs)?, abs.to_path_buf())])
-        }
-    }
-
     fn push_files_as_checkpoint(&mut self, files: FileMap) -> anyhow::Result<&Checkpoint> {
         self.check_checkpoint_limit()?;
         self.checkpoints.truncate(self.checkpoint_idx + 1);
         let id = self.checkpoints.len();
-        self.checkpoints.push(Self::empty_checkpoint(id, files));
+        self.checkpoints.push(empty_checkpoint(id, files));
         self.checkpoint_idx = id;
         Ok(self.checkpoints.last().unwrap())
     }
@@ -495,16 +451,6 @@ impl Session {
     fn rebuild_runner_after_timeout(&mut self) -> anyhow::Result<()> {
         self.runner = Runner::new_from_timeout_recovery(&self.engine, &self.packages)?;
         Ok(())
-    }
-
-    fn empty_checkpoint(id: usize, files: FileMap) -> Checkpoint {
-        Checkpoint {
-            id,
-            stdout: String::new(),
-            stderr: String::new(),
-            files,
-            label: None,
-        }
     }
 
     fn check_command_policy(&self, command: &str) -> anyhow::Result<()> {
@@ -548,5 +494,42 @@ impl Session {
             }
         }
         Ok(())
+    }
+}
+
+fn empty_checkpoint(id: usize, files: FileMap) -> Checkpoint {
+    Checkpoint {
+        id,
+        stdout: String::new(),
+        stderr: String::new(),
+        files,
+        label: None,
+    }
+}
+
+fn read_host_entries(abs: &Path) -> anyhow::Result<Vec<(String, Vec<u8>, PathBuf)>> {
+    if abs.is_dir() {
+        walkdir::WalkDir::new(abs)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_type().is_file())
+            .map(|entry| {
+                let key = entry
+                    .path()
+                    .strip_prefix(abs)
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned();
+                let bytes = std::fs::read(entry.path())?;
+                Ok((key, bytes, entry.path().to_path_buf()))
+            })
+            .collect()
+    } else {
+        let key = abs
+            .file_name()
+            .ok_or_else(|| anyhow::anyhow!("path has no filename: {}", abs.display()))?
+            .to_string_lossy()
+            .into_owned();
+        Ok(vec![(key, std::fs::read(abs)?, abs.to_path_buf())])
     }
 }

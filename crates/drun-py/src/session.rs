@@ -1,3 +1,6 @@
+//! DrunSession: PyO3 wrapper around the core Session, exposing the execution
+//! and checkpoint API to Python callers.
+
 use crate::types::{DrunCheckpoint, checkpoint_to_py};
 use drun_core::{Config, DrunEngine, Session};
 use pyo3::{exceptions::PyRuntimeError, prelude::*};

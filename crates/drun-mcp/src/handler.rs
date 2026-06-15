@@ -1,3 +1,7 @@
+//! DrunHandler: owns the session map and DrunEngine. Provides with_session /
+//! with_session_mut helpers that enforce idle-timeout and busy-session checks
+//! before granting access to a session.
+
 use crate::errors::DrunError;
 use crate::reaper::{self, SessionMap};
 use drun_core::{Config, DrunEngine, Session};
