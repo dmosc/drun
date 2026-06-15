@@ -99,11 +99,11 @@ Removes the binary and deregisters drun from Claude Code.
 ```
 create_session
   → session_install_package(pandas)
-  → session_mount(/data/sales.csv)          # read from host
-  → session_execute(load + clean data)      # checkpoint 1
-  → session_execute(compute summary)        # checkpoint 2 — something looks off
-  → session_rollback(1)                     # back to clean data
-  → session_execute(corrected approach)     # checkpoint 3
+  → session_mount(/data/sales.csv)                  # read from host
+  → session_execute_python(load + clean data)       # checkpoint 1
+  → session_execute_python(compute summary)         # checkpoint 2 — something looks off
+  → session_rollback(1)                             # back to clean data
+  → session_execute_python(corrected approach)      # checkpoint 3
   → session_export                          # write output to host
 ```
 
@@ -114,8 +114,8 @@ create_session → session_execute(load data) → checkpoint 1
 
 session_fork(checkpoint_1) → session B
 
-session_execute(session A, strategy 1)
-session_execute(session B, strategy 2)      # both run from the same starting point
+session_execute_python(session A, strategy 1)
+session_execute_python(session B, strategy 2)      # both run from the same starting point
 
 session_close(loser)
 ```
@@ -124,7 +124,7 @@ session_close(loser)
 
 ```
 session_mount(/path/to/script.py)
-session_execute(refactor the code)
+session_execute_python(refactor the code)
 session_diff                                # review before touching the host
 session_commit                              # writes only changed mounted files back
 ```
@@ -143,7 +143,7 @@ commands directly via Bash.
 
 - `create_session` — start every coding task
 - `session_install_package` — before importing third-party packages
-- `session_execute` — run Python code
+- `session_execute_python` — run Python code
 - `session_bash` — run shell commands (git, npm, make, etc.)
 - `session_fork` — explore alternative approaches without losing the original
 - `session_rollback` — recover from mistakes
@@ -153,10 +153,10 @@ commands directly via Bash.
 ## Network access
 
 Never use curl, wget, or Python HTTP libraries to fetch external data directly.
-Both session_execute and session_bash have restricted or no network access by
-design. Always use session_fetch to retrieve external data — it saves the
-response as a workspace file that subsequent session_execute and session_bash
-calls can read immediately.
+Both session_execute_python and session_bash have restricted or no network
+access by design. Always use session_fetch to retrieve external data — it saves
+the response as a workspace file that subsequent session_execute_python and
+session_bash calls can read immediately.
 ```
 
 ### Enforcing drun usage
@@ -174,7 +174,7 @@ invocations. Use drun MCP tools for all code execution.
 For shell commands that need to run in the workspace, use `session_bash` instead
 of the built-in Bash tool. It executes in the same sandboxed environment,
 produces a checkpoint, and respects the same operator policy (denylist,
-allowlist, timeout) as all other drun tools.
+allowlist, timeout) as `session_execute_python`.
 
 ---
 
@@ -183,7 +183,7 @@ allowlist, timeout) as all other drun tools.
 | Category   | Tools                                                                                              |
 | ---------- | -------------------------------------------------------------------------------------------------- |
 | Lifecycle  | `create_session`, `session_list`, `session_close`, `session_tree`                                  |
-| Execution  | `session_execute`, `session_bash`, `session_install_package`, `session_get_env`                    |
+| Execution  | `session_execute_python`, `session_bash`, `session_install_package`, `session_get_env`             |
 | Navigation | `session_rollback`, `session_fork`, `session_history`, `get_session_state`                         |
 | Files      | `session_read_file`, `session_write_file`, `session_delete_file`, `session_mount`, `session_diff`  |
 | Host I/O   | `session_export`, `session_commit`, `session_fetch`, `get_fetch_allowlist`, `get_allowed_packages` |

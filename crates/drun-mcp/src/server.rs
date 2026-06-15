@@ -149,12 +149,12 @@ impl ServerHandler for DrunHandler {
                 })
             }
 
-            DrunTools::SessionExecuteTool(t) => {
+            DrunTools::SessionExecutePythonTool(t) => {
                 let progress_tx = spawn_progress_forwarder(runtime.clone(), progress_token.clone());
                 self.with_session_mut(&t.session_id, |session| {
                     let previous_files = session.current().files.clone();
                     session
-                        .execute(&t.code, &mut |chunk| {
+                        .execute_python(&t.code, &mut |chunk| {
                             let _ = progress_tx.send(chunk);
                         })
                         .map_err(|e| DrunError::from_exec(e).into_tool_err())?;

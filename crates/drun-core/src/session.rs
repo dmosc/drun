@@ -130,14 +130,14 @@ impl Session {
         Ok(())
     }
 
-    pub fn execute(
+    pub fn execute_python(
         &mut self,
         code: &str,
         on_stdout: &mut dyn FnMut(String),
     ) -> anyhow::Result<&Checkpoint> {
         self.checkpoints.truncate(self.checkpoint_idx + 1);
         let files = &self.checkpoints[self.checkpoint_idx].files;
-        match self.runner.execute(code, files, on_stdout) {
+        match self.runner.execute_python(code, files, on_stdout) {
             Ok(ExecSuccess {
                 stdout,
                 stderr,

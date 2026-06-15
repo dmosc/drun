@@ -24,7 +24,7 @@ pub struct HttpHeader {
 pub struct CreateSessionTool {}
 
 #[mcp_tool(
-    name = "session_execute",
+    name = "session_execute_python",
     description = "Run Python code in an existing session, building on the current checkpoint. \
                    Returns stdout and the new checkpoint_id. \
                    Python's outbound HTTP is governed by the server's domain allowlist (same as \
@@ -35,7 +35,7 @@ pub struct CreateSessionTool {}
     read_only_hint = false
 )]
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct SessionExecuteTool {
+pub struct SessionExecutePythonTool {
     /// Session ID from create_session
     pub session_id: String,
     /// Python source code to run
@@ -79,7 +79,7 @@ pub struct SessionRollbackTool {
 
 #[mcp_tool(
     name = "session_install_package",
-    description = "Install a Python package into the session. The package will be available in all subsequent session_execute calls.",
+    description = "Install a Python package into the session. The package will be available in all subsequent session_execute_python calls.",
     idempotent_hint = false,
     destructive_hint = false,
     read_only_hint = false
@@ -134,7 +134,7 @@ pub struct SessionDiffTool {
 
 #[mcp_tool(
     name = "session_mount",
-    description = "Copy a file or directory from the host filesystem into the session workspace. Files become available at /workspace/<filename> (or /workspace/<relative-path> for directories). Call before session_execute to make host data accessible to the sandbox.",
+    description = "Copy a file or directory from the host filesystem into the session workspace. Files become available at /workspace/<filename> (or /workspace/<relative-path> for directories). Call before session_execute_python to make host data accessible to the sandbox.",
     idempotent_hint = false,
     destructive_hint = false,
     read_only_hint = false
@@ -300,12 +300,12 @@ pub struct GetAllowedPackagesTool {}
 
 #[mcp_tool(
     name = "session_fetch",
-    description = "The designated gateway for all outbound HTTP. session_execute and session_bash have \
-                   restricted or no network access by design — fetch external data here first, then \
-                   process it with those tools. Makes an HTTP request from the host and saves the \
-                   response body as a workspace file so it is immediately available to subsequent \
-                   session_execute and session_bash calls. The body is never returned inline — use \
-                   session_read_file with offset + limit to read it in chunks. \
+    description = "The designated gateway for all outbound HTTP. session_execute_python and session_bash \
+                   have restricted or no network access by design — fetch external data here first, \
+                   then process it with those tools. Makes an HTTP request from the host and saves \
+                   the response body as a workspace file so it is immediately available to subsequent \
+                   session_execute_python and session_bash calls. The body is never returned inline — \
+                   use session_read_file with offset + limit to read it in chunks. \
                    The target URL's domain must be in the server's fetch allowlist.",
     idempotent_hint = false,
     destructive_hint = false,
@@ -425,7 +425,7 @@ tool_box!(
         SessionHistoryTool,
         GetSessionStateTool,
         SessionInstallPackageTool,
-        SessionExecuteTool,
+        SessionExecutePythonTool,
         SessionBashTool,
         SessionRollbackTool,
         SessionReadFileTool,

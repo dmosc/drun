@@ -75,7 +75,7 @@ impl Runner {
         Ok(runner)
     }
 
-    pub fn execute(
+    pub fn execute_python(
         &mut self,
         code: &str,
         files: &FileMap,

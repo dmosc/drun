@@ -59,11 +59,11 @@ impl DrunSession {
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))
     }
 
-    pub fn execute(&self, code: String) -> PyResult<DrunCheckpoint> {
+    pub fn execute_python(&self, code: String) -> PyResult<DrunCheckpoint> {
         self.inner
             .lock()
             .unwrap()
-            .execute(&code, &mut |_| {})
+            .execute_python(&code, &mut |_| {})
             .map(checkpoint_to_py)
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))
     }
