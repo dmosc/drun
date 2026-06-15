@@ -212,7 +212,7 @@ session_idle_timeout_secs = 3600
 # export_root = "/tmp/drun-outputs"            # restrict session_export destination
 # env_allowlist = ["OPENAI_API_KEY"]           # env vars readable via session_get_env
 # package_allowlist = ["pandas", "numpy"]      # restrict installable packages
-# auto_snapshot = true
+# snapshot_on_close = true
 # snapshots_dir = "/tmp/drun-snapshots"
 
 # bash_timeout_ms = 30000

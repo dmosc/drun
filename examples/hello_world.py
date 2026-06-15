@@ -28,7 +28,7 @@ def main():
     code = extract_code(response['message']['content'])
     session = drun.Session()
     session.mount('examples/')
-    session.execute(code)
+    session.execute_python(code)
 
 
 if __name__ == '__main__':

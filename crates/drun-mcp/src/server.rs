@@ -104,7 +104,7 @@ impl ServerHandler for DrunHandler {
                     .unwrap()
                     .remove(&t.session_id)
                     .ok_or_else(|| DrunError::session_not_found(&t.session_id).into_tool_err())?;
-                if self.engine.config.auto_snapshot {
+                if self.engine.config.snapshot_on_close {
                     let output_path = self
                         .engine
                         .config

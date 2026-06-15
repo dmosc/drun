@@ -28,7 +28,7 @@ pub struct Config {
     /// Directory where session_snapshot writes .drun files.
     pub snapshots_dir: PathBuf,
     /// Automatically write a .drun snapshot when session_close is called.
-    pub auto_snapshot: bool,
+    pub snapshot_on_close: bool,
     /// Maximum number of concurrent sessions.
     pub max_sessions: Option<usize>,
     /// Maximum number of checkpoints per session.
@@ -69,7 +69,7 @@ impl Default for Config {
             mount_allowlist: vec![],
             export_root: PathBuf::from("drun-export"),
             snapshots_dir: PathBuf::from("drun-snapshots"),
-            auto_snapshot: false,
+            snapshot_on_close: false,
             env_allowlist: vec![],
             package_allowlist: vec![],
             bash_timeout_ms: 30_000,

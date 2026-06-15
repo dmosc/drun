@@ -2,7 +2,7 @@
 //! and checkpoint API to Python callers.
 
 use crate::types::{DrunCheckpoint, checkpoint_to_py};
-use drun_core::{Config, DrunEngine, Session};
+use drun_core::{DrunEngine, Session};
 use pyo3::{exceptions::PyRuntimeError, prelude::*};
 use std::sync::Mutex;
 
@@ -15,7 +15,7 @@ pub struct DrunSession {
 impl DrunSession {
     #[new]
     pub fn new() -> PyResult<Self> {
-        let engine = DrunEngine::new(Config::default())
+        let engine = DrunEngine::new(drun_core::Config::load())
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
         let session = Session::new(&engine).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
         Ok(Self {
@@ -68,6 +68,59 @@ impl DrunSession {
             .unwrap()
             .execute_python(&code, &mut |_| {})
             .map(checkpoint_to_py)
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+    }
+
+    pub fn execute_bash(&self, command: String) -> PyResult<DrunCheckpoint> {
+        self.inner
+            .lock()
+            .unwrap()
+            .execute_bash(&command, &mut |_| {})
+            .map(checkpoint_to_py)
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+    }
+
+    pub fn write_file(&self, path: String, content: Vec<u8>) -> PyResult<()> {
+        self.inner
+            .lock()
+            .unwrap()
+            .write_file(&path, content)
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+    }
+
+    pub fn delete_file(&self, path: String) -> PyResult<DrunCheckpoint> {
+        self.inner
+            .lock()
+            .unwrap()
+            .delete_file(&path)
+            .map(checkpoint_to_py)
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+    }
+
+    #[pyo3(signature = (output_dir, keys=None))]
+    pub fn export(&self, output_dir: String, keys: Option<Vec<String>>) -> PyResult<Vec<String>> {
+        self.inner
+            .lock()
+            .unwrap()
+            .export(std::path::Path::new(&output_dir), keys)
+            .map(|paths| {
+                paths
+                    .iter()
+                    .map(|p| p.to_string_lossy().into_owned())
+                    .collect()
+            })
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))
+    }
+
+    pub fn set_label(&self, label: String) {
+        self.inner.lock().unwrap().set_label(label);
+    }
+
+    pub fn set_checkpoint_label(&self, checkpoint_id: usize, label: String) -> PyResult<()> {
+        self.inner
+            .lock()
+            .unwrap()
+            .set_checkpoint_label(checkpoint_id, label)
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))
     }
 

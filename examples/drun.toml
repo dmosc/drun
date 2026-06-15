@@ -39,7 +39,7 @@ export_root = "/tmp/drun-reports"
 
 # Automatically write a .drun snapshot whenever session_close is called.
 # Snapshots land in snapshots_dir (or ./drun-snapshots if unset).
-# auto_snapshot = true
+# snapshot_on_close = true
 
 # Host environment variables the agent may read via session_get_env.
 # Empty (default) means none are accessible.

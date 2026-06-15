@@ -20,5 +20,5 @@ print(f"Generated {len(records)} records")
 """
 
 session = drun.Session()
-checkpoint = session.execute(code)
+checkpoint = session.execute_python(code)
 print(checkpoint.stdout)
