@@ -1,6 +1,6 @@
 [package]
 name = "drun-mcp"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 description = "MCP server for drun — sandboxed execution for agentic loops."
 license = "LicenseRef-PolyForm-Noncommercial-1.0"
@@ -9,7 +9,7 @@ keywords = ["mcp", "sandbox", "python", "agent", "claude"]
 categories = ["development-tools", "command-line-utilities"]
 
 [dependencies]
-drun-core = { version = "0.1.0", path = "../drun-core" }
+drun-core = { version = "0.1.1", path = "../drun-core" }
 rust-mcp-sdk = { version = "0.9.0", features = ["server", "macros", "stdio"] }
 tokio = { workspace = true, features = ["full"] }
 anyhow = { workspace = true }

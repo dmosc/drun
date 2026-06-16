@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "drun-sandbox"
-version = "0.1.0"
+version = "0.1.1"
 description = "Sandboxed Python execution for agentic loops"
 license = { text = "PolyForm-Noncommercial-1.0.0" }
 requires-python = ">=3.9"
