@@ -23,6 +23,7 @@ pyodide.setStdout({
 });
 pyodide.setStderr({
   batched: (s: string) => {
+    Deno.stdout.writeSync(enc.encode(JSON.stringify({ progress: s }) + "\n"));
     if (capturedStderr.length < CAPTURE_LIMIT) capturedStderr += s + "\n";
   }
 });
@@ -96,7 +97,7 @@ while (true) {
   if ("package" in message) {
     try {
       pyodide.globals.set("_drun_pkg", String(message.package));
-      await pyodide.runPythonAsync(`import micropip\nawait micropip.install(_drun_pkg)`);
+      await pyodide.runPythonAsync(`import micropip\nawait micropip.install(_drun_pkg, verbose=True)`);
       Deno.stdout.writeSync(enc.encode(JSON.stringify({ stdout: "", stderr: "", files: {} }) + "\n"));
     } catch (e) {
       Deno.stdout.writeSync(enc.encode(JSON.stringify({ error: String(e) }) + "\n"));
