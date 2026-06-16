@@ -15,6 +15,12 @@ classifiers = [
     "Topic :: Software Development :: Libraries",
 ]
 
+[project.optional-dependencies]
+chat = ["litellm>=1.0"]
+
+[project.scripts]
+drun = "drun.cli:main"
+
 [tool.maturin]
 python-source = "python"
 module-name = "drun.drun_internal"

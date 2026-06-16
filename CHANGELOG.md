@@ -4,6 +4,25 @@ All notable changes to drun are documented here.
 
 ---
 
+## v0.1.1 — 2026-06-15
+
+### Python SDK (`drun-sandbox`)
+
+- Added `drun chat` CLI command: runs a local or cloud LLM in an agentic
+  tool-use loop with access to four sandbox tools — `execute_python`,
+  `execute_bash`, `install_package`, and `write_file`
+- Added `drun.chat.run()` for programmatic access to the same loop from Python
+- Added `[chat]` optional dependency group (`litellm>=1.0`) for multi-provider
+  LLM routing
+- Added `drun` console script entry point via `pyproject.toml`
+- System prompt explicitly declares the CPython (non-WebAssembly) execution
+  environment and tool-use rules to prevent model hallucination
+- Assistant messages are serialized as plain dicts in exact OpenAI wire format,
+  ensuring tool call ID association is preserved across all litellm backends
+  including Ollama's OpenAI-compatible `/v1` endpoint
+
+---
+
 ## v0.1.0 — 2026-06-14
 
 Initial public release.

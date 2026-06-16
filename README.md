@@ -92,6 +92,114 @@ Removes the binary and deregisters drun from Claude Code.
 
 ---
 
+## Python SDK
+
+`drun-sandbox` exposes the same sandboxed execution model through a Python API
+and a `drun` CLI, without needing Claude Code or any MCP client. Useful for
+scripting agentic workflows directly or for running a local LLM against the
+sandbox.
+
+### Installation
+
+Requires Python 3.9+ and [Deno](https://deno.land) (used for sandboxed Python
+execution, same as the MCP server). Prebuilt wheels are available for macOS
+(arm64, x86_64) and Linux (x86_64, aarch64) — no Rust toolchain needed:
+
+```bash
+# Install Deno if you don't have it
+curl -fsSL https://deno.land/install.sh | sh
+
+pip install 'drun-sandbox[chat]'
+```
+
+The `[chat]` extra installs [litellm](https://github.com/BerriAI/litellm)
+(`>=1.0`), which routes requests to any provider — Ollama, Anthropic, OpenAI,
+Google, or any OpenAI-compatible endpoint — from a single interface.
+
+**Build from source** (requires a [Rust toolchain](https://rustup.rs)):
+
+```bash
+git clone https://github.com/dmosc/drun.git
+cd drun/crates/drun-py
+pip install '.[chat]'
+```
+
+### `drun chat` — agentic CLI
+
+Runs a local or cloud LLM in a tool-use loop over the drun sandbox. The agent
+can write files, run Python and shell commands, and install packages, all inside
+an isolated session with the full checkpoint/rollback model.
+
+```bash
+# Local model via Ollama — use the openai/ prefix + /v1 endpoint
+drun chat --model openai/qwen2.5:14b \
+          --base-url http://localhost:11434/v1 \
+          "write a CSV parser and test it on sample data"
+
+# Mount host files into the session
+drun chat --model openai/qwen2.5:14b \
+          --base-url http://localhost:11434/v1 \
+          --mount ./src \
+          "read the source files and summarize what each module does"
+
+# Anthropic Claude (requires ANTHROPIC_API_KEY)
+drun chat --model claude-sonnet-4-6 "build a Fibonacci memoization benchmark"
+
+# OpenAI (requires OPENAI_API_KEY)
+drun chat --model gpt-4o "analyze this dataset" --mount ./data.csv
+
+# Google Gemini (requires GEMINI_API_KEY)
+drun chat --model gemini/gemini-2.0-flash "write and run a quicksort implementation"
+```
+
+**Options:**
+
+| Flag                 | Default              | Description                                     |
+| -------------------- | -------------------- | ----------------------------------------------- |
+| `--model MODEL`      | `ollama/qwen2.5:14b` | litellm model identifier                        |
+| `--base-url URL`     | —                    | API base URL override                           |
+| `--mount PATH`       | —                    | Mount a host path into the session (repeatable) |
+| `--system PROMPT`    | built-in             | Override the system prompt                      |
+| `--max-iterations N` | `30`                 | Maximum agent loop iterations                   |
+
+**Local model compatibility:** `qwen2.5:14b` and `qwen2.5:7b` are the most
+reliable Ollama models for multi-turn structured tool calling. Avoid
+reasoning/thinking variants (`deepseek-r1`, `qwen3.*`) — they emit tool calls as
+plain text rather than structured JSON and do not interoperate reliably with
+standard tool-use loops.
+
+When targeting Ollama, prefer the `openai/<model>` prefix with
+`--base-url http://localhost:11434/v1` over the `ollama/<model>` prefix.
+Ollama's OpenAI-compatible `/v1` endpoint threads tool call IDs more reliably
+across turns.
+
+### Python API
+
+```python
+from drun import Session
+
+session = Session()
+session.mount("/path/to/data")
+
+cp = session.execute_python("import os; print(os.listdir('.'))")
+print(cp.stdout)
+
+# Roll back to a prior checkpoint
+session.rollback(cp.id - 1)
+
+# Drive the session with an LLM
+from drun.chat import run
+
+run(
+    session,
+    "clean the data and compute summary statistics",
+    model="openai/qwen2.5:14b",
+    base_url="http://localhost:11434/v1",
+)
+```
+
+---
+
 ## Typical flows
 
 **Data analysis with rollback:**

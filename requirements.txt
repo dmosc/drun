@@ -1,3 +1,4 @@
 maturin==1.13.1
 rich==15.0.0
 ollama==0.6.1
+litellm==1.89.1
