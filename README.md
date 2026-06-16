@@ -1,5 +1,7 @@
 # drun
 
+![drun architecture](assets/architecture.png)
+
 **Safe-by-design agentic code execution**
 
 Isolated by design. Every execution is a checkpoint: mistakes are undoable,
@@ -130,8 +132,13 @@ Runs a local or cloud LLM in a tool-use loop over the drun sandbox. The agent
 can write files, run Python and shell commands, and install packages, all inside
 an isolated session with the full checkpoint/rollback model.
 
+**Local models via [Ollama](https://ollama.com)** — runs models on your own
+machine, no API key needed:
+
 ```bash
-# Local model via Ollama — use the openai/ prefix + /v1 endpoint
+# Install Ollama from https://ollama.com, then pull a model
+ollama pull qwen2.5:14b
+
 drun chat --model openai/qwen2.5:14b \
           --base-url http://localhost:11434/v1 \
           "write a CSV parser and test it on sample data"
@@ -141,14 +148,27 @@ drun chat --model openai/qwen2.5:14b \
           --base-url http://localhost:11434/v1 \
           --mount ./src \
           "read the source files and summarize what each module does"
+```
 
-# Anthropic Claude (requires ANTHROPIC_API_KEY)
+Use the `openai/<model>` prefix with `--base-url http://localhost:11434/v1`
+(Ollama's OpenAI-compatible endpoint) rather than the `ollama/<model>` prefix.
+The `/v1` endpoint threads tool call IDs more reliably across turns.
+
+`qwen2.5:14b` and `qwen2.5:7b` are the most reliable local models for
+multi-turn structured tool calling. Avoid reasoning/thinking variants
+(`deepseek-r1`, `qwen3.*`) — they emit tool calls as plain text rather than
+structured JSON and do not interoperate reliably with standard tool-use loops.
+
+**Cloud providers** — requires the relevant API key as an environment variable:
+
+```bash
+# Anthropic (ANTHROPIC_API_KEY)
 drun chat --model claude-sonnet-4-6 "build a Fibonacci memoization benchmark"
 
-# OpenAI (requires OPENAI_API_KEY)
+# OpenAI (OPENAI_API_KEY)
 drun chat --model gpt-4o "analyze this dataset" --mount ./data.csv
 
-# Google Gemini (requires GEMINI_API_KEY)
+# Google Gemini (GEMINI_API_KEY)
 drun chat --model gemini/gemini-2.0-flash "write and run a quicksort implementation"
 ```
 
@@ -161,17 +181,6 @@ drun chat --model gemini/gemini-2.0-flash "write and run a quicksort implementat
 | `--mount PATH`       | —                    | Mount a host path into the session (repeatable) |
 | `--system PROMPT`    | built-in             | Override the system prompt                      |
 | `--max-iterations N` | `30`                 | Maximum agent loop iterations                   |
-
-**Local model compatibility:** `qwen2.5:14b` and `qwen2.5:7b` are the most
-reliable Ollama models for multi-turn structured tool calling. Avoid
-reasoning/thinking variants (`deepseek-r1`, `qwen3.*`) — they emit tool calls as
-plain text rather than structured JSON and do not interoperate reliably with
-standard tool-use loops.
-
-When targeting Ollama, prefer the `openai/<model>` prefix with
-`--base-url http://localhost:11434/v1` over the `ollama/<model>` prefix.
-Ollama's OpenAI-compatible `/v1` endpoint threads tool call IDs more reliably
-across turns.
 
 ### Python API
 
@@ -196,6 +205,18 @@ run(
     model="openai/qwen2.5:14b",
     base_url="http://localhost:11434/v1",
 )
+```
+
+### Updating
+
+```bash
+pip install --upgrade 'drun-sandbox[chat]'
+```
+
+### Uninstalling
+
+```bash
+pip uninstall drun-sandbox
 ```
 
 ---
