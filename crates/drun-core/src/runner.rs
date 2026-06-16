@@ -128,6 +128,10 @@ impl Runner {
         Ok(runner)
     }
 
+    pub fn child_arc(&self) -> Arc<Mutex<std::process::Child>> {
+        Arc::clone(&self.child)
+    }
+
     pub fn execute_python(
         &mut self,
         code: &str,

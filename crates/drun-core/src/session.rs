@@ -7,6 +7,7 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
+use std::process::Child;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
@@ -146,6 +147,10 @@ impl Session {
         result?;
         self.packages.push(package.to_string());
         Ok(())
+    }
+
+    pub fn execution_handle(&self) -> Arc<Mutex<Child>> {
+        self.runner.child_arc()
     }
 
     pub fn execute_python(

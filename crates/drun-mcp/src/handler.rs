@@ -8,12 +8,14 @@ use drun_core::{Config, DrunEngine, Session};
 use rust_mcp_sdk::schema::{CallToolResult, schema_utils::CallToolError};
 use std::{
     collections::HashMap,
+    process::Child,
     sync::{Arc, Mutex},
 };
 
 pub struct DrunHandler {
     pub(crate) engine: DrunEngine,
     pub(crate) sessions: SessionMap,
+    pub(crate) active_children: Arc<Mutex<HashMap<String, Arc<Mutex<Child>>>>>,
 }
 
 impl DrunHandler {
@@ -22,6 +24,7 @@ impl DrunHandler {
         Self {
             engine,
             sessions: Arc::new(Mutex::new(HashMap::new())),
+            active_children: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -65,6 +68,34 @@ impl DrunHandler {
                 self.check_idle(session_id, &guard)?;
                 guard.last_activity = std::time::Instant::now();
                 f(&mut guard)
+            }
+            Err(_) => Err(DrunError::session_busy(session_id).into_tool_err()),
+        }
+    }
+
+    pub(crate) fn with_session_mut_cancellable(
+        &self,
+        session_id: &str,
+        f: impl FnOnce(&mut Session) -> Result<CallToolResult, CallToolError>,
+    ) -> Result<CallToolResult, CallToolError> {
+        let session = self
+            .sessions
+            .lock()
+            .unwrap()
+            .get(session_id)
+            .ok_or_else(|| CallToolError::from(DrunError::session_not_found(session_id)))?
+            .clone();
+        match session.try_lock() {
+            Ok(mut guard) => {
+                self.check_idle(session_id, &guard)?;
+                guard.last_activity = std::time::Instant::now();
+                self.active_children
+                    .lock()
+                    .unwrap()
+                    .insert(session_id.to_string(), guard.execution_handle());
+                let result = f(&mut guard);
+                self.active_children.lock().unwrap().remove(session_id);
+                result
             }
             Err(_) => Err(DrunError::session_busy(session_id).into_tool_err()),
         }

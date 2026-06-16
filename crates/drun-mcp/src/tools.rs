@@ -415,6 +415,21 @@ pub struct SessionCheckpointLabelTool {
     pub label: String,
 }
 
+#[mcp_tool(
+    name = "session_cancel",
+    description = "Interrupt an in-progress session_execute_python or session_bash call. Kills \
+                   the sandbox process; the session recovers automatically and is ready for new \
+                   calls immediately after. Returns immediately if the session is not executing.",
+    idempotent_hint = false,
+    destructive_hint = false,
+    read_only_hint = false
+)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct SessionCancelTool {
+    /// Session ID from create_session.
+    pub session_id: String,
+}
+
 tool_box!(
     DrunTools,
     [
@@ -444,5 +459,6 @@ tool_box!(
         SessionGetEnvTool,
         SessionLabelTool,
         SessionCheckpointLabelTool,
+        SessionCancelTool,
     ]
 );

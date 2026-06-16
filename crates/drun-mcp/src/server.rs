@@ -98,6 +98,7 @@ impl ServerHandler for DrunHandler {
             }
 
             DrunTools::SessionCloseTool(t) => {
+                self.active_children.lock().unwrap().remove(&t.session_id);
                 let session = self
                     .sessions
                     .lock()
@@ -154,7 +155,7 @@ impl ServerHandler for DrunHandler {
 
             DrunTools::SessionExecutePythonTool(t) => {
                 let progress_tx = spawn_progress_forwarder(runtime.clone(), progress_token.clone());
-                self.with_session_mut(&t.session_id, |session| {
+                self.with_session_mut_cancellable(&t.session_id, |session| {
                     let previous_files = session.current().files.clone();
                     session
                         .execute_python(&t.code, &mut |chunk| {
@@ -172,7 +173,7 @@ impl ServerHandler for DrunHandler {
 
             DrunTools::SessionBashTool(t) => {
                 let progress_tx = spawn_progress_forwarder(runtime.clone(), progress_token.clone());
-                self.with_session_mut(&t.session_id, |session| {
+                self.with_session_mut_cancellable(&t.session_id, |session| {
                     let previous_files = session.current().files.clone();
                     session
                         .execute_bash(&t.command, &mut |chunk| {
@@ -529,6 +530,25 @@ impl ServerHandler for DrunHandler {
                     .unwrap()
                     .insert(session_id, Arc::new(Mutex::new(restored)));
                 Ok(text(state))
+            }
+
+            DrunTools::SessionCancelTool(t) => {
+                let child = self
+                    .active_children
+                    .lock()
+                    .unwrap()
+                    .get(&t.session_id)
+                    .cloned();
+                match child {
+                    Some(c) => {
+                        let _ = c.lock().unwrap().kill();
+                        Ok(text(format!(
+                            "cancelled execution in session {}",
+                            t.session_id
+                        )))
+                    }
+                    None => Ok(text(format!("session {} is not executing", t.session_id))),
+                }
             }
 
             DrunTools::SessionLabelTool(t) => self.with_session_mut(&t.session_id, |session| {
