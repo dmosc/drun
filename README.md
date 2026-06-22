@@ -154,10 +154,10 @@ Use the `openai/<model>` prefix with `--base-url http://localhost:11434/v1`
 (Ollama's OpenAI-compatible endpoint) rather than the `ollama/<model>` prefix.
 The `/v1` endpoint threads tool call IDs more reliably across turns.
 
-`qwen2.5:14b` and `qwen2.5:7b` are the most reliable local models for
-multi-turn structured tool calling. Avoid reasoning/thinking variants
-(`deepseek-r1`, `qwen3.*`) — they emit tool calls as plain text rather than
-structured JSON and do not interoperate reliably with standard tool-use loops.
+`qwen2.5:14b` and `qwen2.5:7b` are the most reliable local models for multi-turn
+structured tool calling. Avoid reasoning/thinking variants (`deepseek-r1`,
+`qwen3.*`) — they emit tool calls as plain text rather than structured JSON and
+do not interoperate reliably with standard tool-use loops.
 
 **Cloud providers** — requires the relevant API key as an environment variable:
 
@@ -309,22 +309,23 @@ allowlist, timeout) as `session_execute_python`.
 
 ## Tools reference
 
-| Category   | Tools                                                                                              |
-| ---------- | -------------------------------------------------------------------------------------------------- |
-| Lifecycle  | `create_session`, `session_list`, `session_close`, `session_tree`                                  |
-| Execution  | `session_execute_python`, `session_bash`, `session_install_package`, `session_get_env`             |
-| Navigation | `session_rollback`, `session_fork`, `session_history`, `get_session_state`                         |
-| Files      | `session_read_file`, `session_write_file`, `session_delete_file`, `session_mount`, `session_diff`  |
-| Host I/O   | `session_export`, `session_commit`, `session_fetch`, `get_fetch_allowlist`, `get_allowed_packages` |
-| Snapshots  | `session_snapshot`, `session_restore`                                                              |
-| Labels     | `session_label`, `session_checkpoint_label`                                                        |
+| Category   | Tools                                                                                                    |
+| ---------- | -------------------------------------------------------------------------------------------------------- |
+| Lifecycle  | `create_session`, `session_list`, `session_close`, `session_tree`                                        |
+| Execution  | `session_execute_python`, `session_bash`, `session_install_package`, `session_get_env`, `session_cancel` |
+| Navigation | `session_rollback`, `session_fork`, `session_history`, `get_session_state`                               |
+| Files      | `session_read_file`, `session_write_file`, `session_delete_file`, `session_mount`, `session_diff`        |
+| Host I/O   | `session_export`, `session_commit`, `session_fetch`, `get_fetch_allowlist`, `get_allowed_packages`       |
+| Snapshots  | `session_snapshot`, `session_restore`                                                                    |
+| Labels     | `session_label`, `session_checkpoint_label`                                                              |
 
 ---
 
 ## Configuration
 
-Set `DRUN_CONFIG` to a TOML file path. Without it, drun runs with no network
-access and no restrictions on workspace size or session count.
+Set `DRUN_CONFIG` to a TOML file path. Without it, drun applies built-in
+defaults: PyPI and jsDelivr are reachable for package installation, workspace is
+capped at 512 MB per session, and active sessions are capped at 50.
 
 ```toml
 # Domains reachable via session_fetch and Python outbound HTTP.
