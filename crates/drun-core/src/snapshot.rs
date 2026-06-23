@@ -1,11 +1,11 @@
 //! Session persistence: encode/decode the full checkpoint history to/from a
-//! zstd-compressed .drun file.
+//! zstd-compressed .drun file, plus a lightweight .drun.meta sidecar.
 
 use crate::CheckpointRef;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 const MAGIC: &[u8; 4] = b"DRUN";
 const COMPRESSION_LEVEL: i32 = 3;
@@ -18,6 +18,24 @@ pub struct CheckpointRecord {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
     pub files: HashMap<String, usize>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct SnapshotMeta {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    pub packages: Vec<String>,
+    pub checkpoint_count: usize,
+}
+
+impl SnapshotMeta {
+    pub fn encode(&self) -> Result<Vec<u8>> {
+        Ok(serde_json::to_vec(self)?)
+    }
+
+    pub fn decode(bytes: &[u8]) -> Result<Self> {
+        Ok(serde_json::from_slice(bytes)?)
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -49,5 +67,16 @@ impl SessionSnapshot {
         );
         let decompressed = zstd::decode_all(&bytes[MAGIC.len()..])?;
         Ok(serde_json::from_slice(&decompressed)?)
+    }
+
+    pub fn write(&self, path: &Path) -> Result<()> {
+        std::fs::write(path, self.encode()?)?;
+        let meta = SnapshotMeta {
+            label: self.label.clone(),
+            packages: self.packages.clone(),
+            checkpoint_count: self.checkpoints.len(),
+        };
+        std::fs::write(path.with_extension("drun.meta"), meta.encode()?)?;
+        Ok(())
     }
 }

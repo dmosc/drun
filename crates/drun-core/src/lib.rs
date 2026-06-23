@@ -17,4 +17,4 @@ pub use config::Config;
 pub use engine::DrunEngine;
 pub use error::RunnerError;
 pub use session::Session;
-pub use snapshot::SessionSnapshot;
+pub use snapshot::{SessionSnapshot, SnapshotMeta};

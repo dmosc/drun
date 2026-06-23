@@ -349,6 +349,18 @@ pub struct SessionFetchTool {
 pub struct SessionTreeTool {}
 
 #[mcp_tool(
+    name = "list_snapshots",
+    description = "List all .drun snapshot files in the server's snapshots directory. Returns \
+                   path, size, label, checkpoint count, and installed packages for each file. \
+                   Use session_restore to reload any entry.",
+    idempotent_hint = true,
+    destructive_hint = false,
+    read_only_hint = true
+)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct ListSnapshotsTool {}
+
+#[mcp_tool(
     name = "session_snapshot",
     description = "Serialize a session's full checkpoint history to a .drun file on the host. \
                    Captures all checkpoints, installed packages, and session config. \
@@ -506,6 +518,7 @@ tool_box!(
         SessionFetchTool,
         GetFetchAllowlistTool,
         GetAllowedPackagesTool,
+        ListSnapshotsTool,
         SessionSnapshotTool,
         SessionRestoreTool,
         SessionGetEnvTool,

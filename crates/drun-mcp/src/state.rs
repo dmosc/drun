@@ -1,9 +1,10 @@
 //! Serializable view types for session and checkpoint state. All functions
 //! return JSON strings consumed directly by MCP tool responses.
 
-use drun_core::{FileMap, Session};
+use drun_core::{FileMap, Session, SnapshotMeta};
 use serde::Serialize;
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 #[derive(Serialize)]
@@ -20,6 +21,8 @@ struct SessionSummary {
     parent_checkpoint_id: Option<usize>,
 }
 
+const TREE_PREVIEW_LEN: usize = 200;
+
 #[derive(Serialize)]
 struct CheckpointTreeNode {
     checkpoint_id: usize,
@@ -27,10 +30,22 @@ struct CheckpointTreeNode {
     #[serde(skip_serializing_if = "Option::is_none")]
     label: Option<String>,
     #[serde(skip_serializing_if = "String::is_empty")]
-    stdout: String,
+    stdout_preview: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    stderr_preview: String,
     file_count: usize,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     forks: Vec<SessionTreeNode>,
+}
+
+#[derive(Serialize)]
+struct SnapshotEntry {
+    path: String,
+    size_bytes: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    label: Option<String>,
+    checkpoint_count: usize,
+    packages: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -209,6 +224,46 @@ pub(crate) fn build_checkpoint_history(session: &Session) -> String {
     serde_json::to_string(&summaries).unwrap_or_else(|_| "[]".into())
 }
 
+fn truncate_preview(s: &str) -> String {
+    if s.len() <= TREE_PREVIEW_LEN {
+        s.to_string()
+    } else {
+        format!("{}…", &s[..TREE_PREVIEW_LEN])
+    }
+}
+
+pub(crate) fn build_snapshot_catalog(snapshots_dir: &Path) -> String {
+    let Ok(entries) = std::fs::read_dir(snapshots_dir) else {
+        return "[]".into();
+    };
+    let mut catalog: Vec<SnapshotEntry> = entries
+        .filter_map(|e| e.ok())
+        .filter(|e| {
+            let p = e.path();
+            p.extension().and_then(|x| x.to_str()) == Some("meta")
+                && Path::new(p.file_stem().unwrap_or_default())
+                    .extension()
+                    .and_then(|x| x.to_str())
+                    == Some("drun")
+        })
+        .filter_map(|e| {
+            let meta_path = e.path();
+            let drun_path = meta_path.with_extension("");
+            let size_bytes = std::fs::metadata(&drun_path).ok()?.len();
+            let meta = SnapshotMeta::decode(&std::fs::read(&meta_path).ok()?).ok()?;
+            Some(SnapshotEntry {
+                path: drun_path.to_string_lossy().into_owned(),
+                size_bytes,
+                label: meta.label,
+                checkpoint_count: meta.checkpoint_count,
+                packages: meta.packages,
+            })
+        })
+        .collect();
+    catalog.sort_by(|a, b| a.path.cmp(&b.path));
+    serde_json::to_string(&catalog).unwrap_or_else(|_| "[]".into())
+}
+
 fn build_session_node(
     session_id: &str,
     session: &Session,
@@ -232,7 +287,8 @@ fn build_session_node(
                 checkpoint_id: cp.id,
                 is_current: cp.id == current_id,
                 label: cp.label.clone(),
-                stdout: cp.stdout.clone(),
+                stdout_preview: truncate_preview(&cp.stdout),
+                stderr_preview: truncate_preview(&cp.stderr),
                 file_count: cp.files.len(),
                 forks,
             }

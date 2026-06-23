@@ -6,6 +6,7 @@ use crate::handler::DrunHandler;
 use crate::response::{file_content, text};
 use crate::state::{
     build_checkpoint_history, build_session_list, build_session_state, build_session_tree,
+    build_snapshot_catalog,
 };
 use crate::tools::DrunTools;
 use async_trait::async_trait;
@@ -119,9 +120,7 @@ impl ServerHandler for DrunHandler {
                     if let Some(parent_dir) = output_path.parent() {
                         let _ = std::fs::create_dir_all(parent_dir);
                     }
-                    if let Ok(bytes) = session.lock().unwrap().snapshot().encode() {
-                        let _ = std::fs::write(output_path, bytes);
-                    }
+                    let _ = session.lock().unwrap().snapshot().write(&output_path);
                 }
                 Ok(text(format!("closed {}", t.session_id)))
             }
@@ -349,6 +348,10 @@ impl ServerHandler for DrunHandler {
                 Ok(text(build_session_tree(&sessions)))
             }
 
+            DrunTools::ListSnapshotsTool(_) => Ok(text(build_snapshot_catalog(
+                &self.engine.config.snapshots_dir,
+            ))),
+
             DrunTools::SessionExportTool(t) => {
                 let export_root = &self.engine.config.export_root;
                 let output_dir = match &t.output_dir {
@@ -516,11 +519,9 @@ impl ServerHandler for DrunHandler {
                         .map_err(|e| DrunError::internal(e).into_tool_err())?;
                 }
                 self.with_session(&t.session_id, |session| {
-                    let encoded = session
+                    session
                         .snapshot()
-                        .encode()
-                        .map_err(|e| DrunError::internal(e).into_tool_err())?;
-                    std::fs::write(&output_path, encoded)
+                        .write(&output_path)
                         .map_err(|e| DrunError::internal(e).into_tool_err())?;
                     Ok(text(
                         serde_json::json!({
