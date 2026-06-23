@@ -1,10 +1,10 @@
 # Security model
 
 drun is designed to protect the host from untrusted AI-generated code. It is not
-designed to protect against a compromised Deno binary, a vulnerability in the
-Pyodide WASM runtime itself, or a misconfigured operator allowlist.
-Understanding what each layer does — and where it stops — is important before
-deploying drun in any sensitive environment.
+designed to protect against a vulnerability in the Python interpreter itself, or
+a misconfigured operator allowlist. Understanding what each layer does — and
+where it stops — is important before deploying drun in any sensitive
+environment.
 
 ---
 
@@ -12,7 +12,7 @@ deploying drun in any sensitive environment.
 
 ### 1. Operator allowlists (runtime policy)
 
-The server enforces a second set of restrictions on top of Deno's flags:
+The server enforces a set of policy restrictions on all sessions:
 
 | Config key          | What it restricts                                                                                                                   |
 | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |

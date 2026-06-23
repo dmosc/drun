@@ -4,63 +4,39 @@ Common issues and how to resolve them.
 
 ---
 
-## `deno: command not found`
+## `python3: command not found`
 
-The MCP server spawns a Deno subprocess on first use. If Deno is not on your
-`PATH`, every `session_execute` and `create_session` will fail immediately.
+The MCP server spawns a Python 3 subprocess on first use. If `python3` is not on
+your `PATH`, every `session_execute_python` and `create_session` will fail
+immediately.
 
-**Fix:** Install Deno:
+**Fix:** Install Python 3 via your system package manager or from
+[python.org](https://www.python.org/downloads/), then verify:
+`python3 --version`
+
+On macOS with Homebrew:
 
 ```bash
-curl -fsSL https://deno.land/install.sh | sh
-```
-
-Then add it to your shell profile (`~/.zshrc`, `~/.bashrc`, etc.):
-
-```bash
-export DENO_INSTALL="$HOME/.deno"
-export PATH="$DENO_INSTALL/bin:$PATH"
-```
-
-Restart your shell and verify: `deno --version`
-
----
-
-## First execution is very slow (30–60 seconds)
-
-Pyodide downloads approximately 50 MB of WebAssembly assets on its first run.
-This is a one-time cost — the assets are cached in Deno's npm cache
-(`~/.cache/deno` on Linux, `~/Library/Caches/deno` on macOS) and reused on every
-subsequent execution.
-
-If the first run times out before Pyodide finishes loading, increase the session
-timeout when creating the session:
-
-```
-create_session(timeout_ms=120000)   # 2 minutes
+brew install python
 ```
 
 ---
 
 ## Package install times out (`execution_timeout`)
 
-Large scientific packages under Pyodide — `scipy`, `Pillow`, `scikit-learn` —
-can take 2–5 minutes to download and compile on first install. The default
-per-session execution timeout may be too short.
+Large packages — `scipy`, `Pillow`, `scikit-learn`, `torch` — can take several
+minutes to download on first install. The default `install_timeout_ms` (2
+minutes) may be too short on a slow connection.
 
-**Fix:** Create the session with a longer timeout specifically for installs:
+**Fix:** Increase `install_timeout_ms` in your `drun.toml`:
 
+```toml
+install_timeout_ms = 300000   # 5 minutes
 ```
-create_session(timeout_ms=300000)   # 5 minutes
-```
 
-You can fork the session after packages are installed if you want a shorter
-timeout for subsequent executions.
-
-Note: not all PyPI packages are available in Pyodide. See the
-[Pyodide package list](https://pyodide.org/en/stable/usage/packages-in-pyodide.html)
-for what is supported. Packages with C extensions that are not pre-compiled for
-WASM will fail to install.
+Packages are cached in `packages_dir` (defaults to a `drun-packages` folder in
+the OS temp directory) and reused across sessions, so the slow download only
+happens once.
 
 ---
 
@@ -164,7 +140,7 @@ claude mcp add drun -- /usr/local/bin/drun-mcp
 [Open an issue on GitHub](https://github.com/dmosc/drun/issues/new) with:
 
 - Your OS and architecture (`uname -sm`)
-- Deno version (`deno --version`)
+- Python version (`python3 --version`)
 - The exact error message or structured error code from the tool response
 - The `DRUN_CONFIG` you are using (redact any secrets)
 - Steps to reproduce

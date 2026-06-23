@@ -12,11 +12,10 @@ def extract_code(text: str) -> str:
 
 def main():
     system_prompt = textwrap.dedent("""
-    You are a specialized Python coding agent. You have access to a secure WASM
-    sandbox. Any code you write will be executed in a directory called
-    '/workspace'.
+    You are a specialized Python coding agent. You have access to a native Python
+    subprocess sandbox. Any code you write will be executed via exec().
 
-    To modify files, write a Python script that reads and writes to '/workspace'.
+    To modify files, write a Python script that uses open() with relative paths.
     Your entire response is passed directly to Python's exec(). Any non-code
     characters will raise a SyntaxError and abort execution.
     """)

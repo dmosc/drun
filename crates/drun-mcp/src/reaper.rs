@@ -1,5 +1,5 @@
 //! Idle session reaper: periodically evicts sessions that have exceeded the
-//! configured idle timeout, freeing their Deno subprocess and file state.
+//! configured idle timeout, freeing their Python subprocess and session state.
 
 use drun_core::Session;
 use std::{
