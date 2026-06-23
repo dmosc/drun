@@ -84,6 +84,19 @@ impl Default for Config {
 }
 
 impl Config {
+    pub fn domain_allowed(&self, host: &str) -> bool {
+        self.domain_allowlist
+            .iter()
+            .any(|pattern| match pattern.as_str() {
+                "*" => true,
+                p if p.starts_with("*.") => host
+                    .strip_suffix(&p[2..])
+                    .and_then(|pre| pre.strip_suffix('.'))
+                    .is_some(),
+                p => p == host,
+            })
+    }
+
     pub fn load() -> Self {
         let Some(path) = std::env::var("DRUN_CONFIG").ok().map(PathBuf::from) else {
             return Self::default();

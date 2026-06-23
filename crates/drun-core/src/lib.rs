@@ -5,6 +5,7 @@ mod checkpoint;
 pub mod config;
 mod engine;
 pub mod error;
+mod proxy;
 mod runner;
 mod sandbox;
 mod session;

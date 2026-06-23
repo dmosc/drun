@@ -71,11 +71,14 @@ for raw_line in sys.stdin:
     msg = json.loads(line)
 
     if 'package' in msg:
+        proxy_keys = {'http_proxy', 'https_proxy'}
+        pip_env = {k: v for k, v in os.environ.items() if k not in proxy_keys}
         result = subprocess.run(
             [sys.executable, '-m', 'pip', 'install',
                 '--target', PACKAGES_DIR, msg['package']],
             capture_output=True,
             text=True,
+            env=pip_env,
         )
         if result.returncode == 0:
             send({'stdout': '', 'stderr': '', 'files': {}})

@@ -365,9 +365,8 @@ impl ServerHandler for DrunHandler {
                 if !self.sessions.lock().unwrap().contains_key(&t.session_id) {
                     return Err(DrunError::session_not_found(&t.session_id).into_tool_err());
                 }
-                let url_is_allowed = self.engine.config.domain_allowlist.iter().any(|h| h == "*")
-                    || host_from_url(&t.url)
-                        .map_or(false, |h| self.engine.config.domain_allowlist.contains(&h));
+                let url_is_allowed =
+                    host_from_url(&t.url).map_or(false, |h| self.engine.config.domain_allowed(&h));
                 if !url_is_allowed {
                     return Err(DrunError::fetch_denied(&t.url).into_tool_err());
                 }

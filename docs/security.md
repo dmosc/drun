@@ -14,13 +14,13 @@ environment.
 
 The server enforces a set of policy restrictions on all sessions:
 
-| Config key          | What it restricts                                                                                                                   |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `domain_allowlist`  | Domains reachable via `session_fetch` and Python outbound HTTP. PyPI CDNs are always included.                                      |
-| `mount_allowlist`   | Host paths that may be mounted. Checked against the canonicalized path; symlinks that point outside an allowed prefix are rejected. |
-| `export_root`       | Directory that `session_export` and `session_snapshot` may write into.                                                              |
-| `env_allowlist`     | Host environment variable names readable via `session_get_env`.                                                                     |
-| `package_allowlist` | If set, `session_install_package` rejects any package not in the list.                                                              |
+| Config key          | What it restricts                                                                                                                                               |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `domain_allowlist`  | Domains reachable via `session_fetch` and direct Python HTTP. Supports exact hostnames and `*.example.com` wildcards. Package installs always bypass this list. |
+| `mount_allowlist`   | Host paths that may be mounted. Checked against the canonicalized path; symlinks that point outside an allowed prefix are rejected.                             |
+| `export_root`       | Directory that `session_export` and `session_snapshot` may write into.                                                                                          |
+| `env_allowlist`     | Host environment variable names readable via `session_get_env`.                                                                                                 |
+| `package_allowlist` | If set, `session_install_package` rejects any package not in the list.                                                                                          |
 
 Agents operate within whatever the operator configured. They cannot expand their
 own permissions at runtime.
@@ -33,7 +33,7 @@ When no `DRUN_CONFIG` is set, drun applies the following defaults:
 
 | Property                  | Default            |
 | ------------------------- | ------------------ |
-| Outbound network (Python) | Unrestricted       |
+| Outbound network (Python) | PyPI CDNs only     |
 | Mount path restrictions   | None               |
 | Export path restrictions  | None               |
 | Env var exposure          | None               |
@@ -71,10 +71,8 @@ to the host until `session_export` or `session_commit` is explicitly called.
 
 ## Known limitations
 
-The Python subprocess can access the host filesystem and network without
-restriction. `session_fetch` is the designated network gateway and enforces
-`domain_allowlist`; Python's own HTTP libraries are not yet constrained.
-Filesystem and network sandboxing for the Python runner is planned for a future
+The Python subprocess can read and write the host filesystem without
+restriction. Filesystem sandboxing for the Python runner is planned for a future
 release.
 
 ---
@@ -87,11 +85,11 @@ release.
 - Workspace state exceeding configured resource limits
 - Sessions lingering indefinitely (idle reaper)
 - Path traversal via crafted workspace keys
-- Unauthorized outbound HTTP via `session_fetch` (domain allowlist enforced)
+- Unauthorized outbound HTTP via `session_fetch` and direct Python HTTP calls
+  (domain allowlist enforced via local forward proxy)
 
 **drun does not protect against:**
 
-- AI-generated Python code making direct outbound network requests
 - AI-generated Python code reading arbitrary host files
 - Side-channel attacks between sessions (timing, cache)
 - An operator who misconfigures the allowlists (e.g., `allowed_hosts = ["*"]`)
