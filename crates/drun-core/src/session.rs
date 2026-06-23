@@ -256,6 +256,92 @@ impl Session {
         Ok(())
     }
 
+    pub fn checkpoint_by_label(&self, label: &str) -> Option<usize> {
+        self.checkpoints
+            .iter()
+            .find(|c| c.label.as_deref() == Some(label))
+            .map(|c| c.id)
+    }
+
+    pub fn squash_checkpoints(
+        &mut self,
+        from_id: usize,
+        to_id: usize,
+        label: Option<String>,
+    ) -> anyhow::Result<&Checkpoint> {
+        anyhow::ensure!(
+            from_id <= to_id,
+            "from_id {} must be <= to_id {}",
+            from_id,
+            to_id
+        );
+        anyhow::ensure!(
+            to_id < self.checkpoints.len(),
+            "checkpoint {} does not exist",
+            to_id
+        );
+        let combined_stdout = self.checkpoints[from_id..=to_id]
+            .iter()
+            .map(|c| c.stdout.as_str())
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>()
+            .join("\n");
+        let combined_stderr = self.checkpoints[from_id..=to_id]
+            .iter()
+            .map(|c| c.stderr.as_str())
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>()
+            .join("\n");
+        let terminal_files = self.checkpoints[to_id].files.clone();
+        let squashed = Checkpoint {
+            id: from_id,
+            stdout: combined_stdout,
+            stderr: combined_stderr,
+            files: terminal_files,
+            label,
+        };
+        let removed_count = to_id - from_id;
+        self.checkpoints
+            .splice(from_id..=to_id, std::iter::once(squashed));
+        for (i, cp) in self.checkpoints.iter_mut().enumerate() {
+            cp.id = i;
+        }
+        if self.checkpoint_idx >= from_id && self.checkpoint_idx <= to_id {
+            self.checkpoint_idx = from_id;
+        } else if self.checkpoint_idx > to_id {
+            self.checkpoint_idx -= removed_count;
+        }
+        Ok(&self.checkpoints[self.checkpoint_idx])
+    }
+
+    pub fn drop_checkpoints(&mut self, from_id: usize, to_id: usize) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            from_id <= to_id,
+            "from_id {} must be <= to_id {}",
+            from_id,
+            to_id
+        );
+        anyhow::ensure!(
+            to_id < self.checkpoints.len(),
+            "checkpoint {} does not exist",
+            to_id
+        );
+        anyhow::ensure!(
+            self.checkpoint_idx < from_id || self.checkpoint_idx > to_id,
+            "cannot drop the current checkpoint ({})",
+            self.checkpoint_idx
+        );
+        let removed_count = to_id - from_id + 1;
+        self.checkpoints.drain(from_id..=to_id);
+        for (i, cp) in self.checkpoints.iter_mut().enumerate() {
+            cp.id = i;
+        }
+        if self.checkpoint_idx > to_id {
+            self.checkpoint_idx -= removed_count;
+        }
+        Ok(())
+    }
+
     pub fn export(
         &self,
         output_dir: &Path,

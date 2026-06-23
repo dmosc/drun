@@ -75,13 +75,18 @@ impl ServerHandler for DrunHandler {
                     .clone();
                 let forked_session = {
                     let source = source_arc.lock().unwrap();
-                    Session::from_session(
-                        &self.engine,
-                        &t.session_id,
-                        &source,
-                        t.checkpoint_id.map(|id| id as usize),
-                    )
-                    .map_err(|e| DrunError::internal(e).into_tool_err())?
+                    let checkpoint_id = match (t.checkpoint_id, t.checkpoint_label.as_deref()) {
+                        (_, Some(lbl)) => {
+                            Some(source.checkpoint_by_label(lbl).ok_or_else(|| {
+                                DrunError::internal(format!("no checkpoint with label '{lbl}'"))
+                                    .into_tool_err()
+                            })?)
+                        }
+                        (Some(id), None) => Some(id as usize),
+                        (None, None) => None,
+                    };
+                    Session::from_session(&self.engine, &t.session_id, &source, checkpoint_id)
+                        .map_err(|e| DrunError::internal(e).into_tool_err())?
                 };
                 let fork_id = Uuid::new_v4().to_string();
                 let state = build_session_state(&fork_id, &forked_session, None, vec![]);
@@ -190,9 +195,22 @@ impl ServerHandler for DrunHandler {
             }
 
             DrunTools::SessionRollbackTool(t) => self.with_session_mut(&t.session_id, |session| {
+                let checkpoint_id = match (t.checkpoint_id, t.checkpoint_label.as_deref()) {
+                    (_, Some(lbl)) => session.checkpoint_by_label(lbl).ok_or_else(|| {
+                        DrunError::internal(format!("no checkpoint with label '{lbl}'"))
+                            .into_tool_err()
+                    })?,
+                    (Some(id), None) => id as usize,
+                    (None, None) => {
+                        return Err(DrunError::internal(
+                            "provide checkpoint_id or checkpoint_label",
+                        )
+                        .into_tool_err());
+                    }
+                };
                 let previous_files = session.current().files.clone();
                 session
-                    .rollback(t.checkpoint_id as usize)
+                    .rollback(checkpoint_id)
                     .map_err(|e| DrunError::internal(e).into_tool_err())?;
                 Ok(text(build_session_state(
                     &t.session_id,
@@ -284,11 +302,22 @@ impl ServerHandler for DrunHandler {
             }),
 
             DrunTools::SessionDiffTool(t) => self.with_session(&t.session_id, |session| {
-                let from = t.from_checkpoint_id.unwrap_or(0) as usize;
-                let to = t
-                    .to_checkpoint_id
-                    .map(|id| id as usize)
-                    .unwrap_or_else(|| session.current().id);
+                let from = match (t.from_checkpoint_id, t.from_checkpoint_label.as_deref()) {
+                    (_, Some(lbl)) => session.checkpoint_by_label(lbl).ok_or_else(|| {
+                        DrunError::internal(format!("no checkpoint with label '{lbl}'"))
+                            .into_tool_err()
+                    })?,
+                    (Some(id), None) => id as usize,
+                    (None, None) => 0,
+                };
+                let to = match (t.to_checkpoint_id, t.to_checkpoint_label.as_deref()) {
+                    (_, Some(lbl)) => session.checkpoint_by_label(lbl).ok_or_else(|| {
+                        DrunError::internal(format!("no checkpoint with label '{lbl}'"))
+                            .into_tool_err()
+                    })?,
+                    (Some(id), None) => id as usize,
+                    (None, None) => session.current().id,
+                };
                 let diff = session
                     .diff(from, to)
                     .map_err(|e| DrunError::internal(e).into_tool_err())?;
@@ -568,6 +597,31 @@ impl ServerHandler for DrunHandler {
                         .unwrap_or_else(|| session.current().id);
                     session
                         .set_checkpoint_label(checkpoint_id, t.label)
+                        .map_err(|e| DrunError::internal(e).into_tool_err())?;
+                    Ok(text(build_checkpoint_history(session)))
+                })
+            }
+
+            DrunTools::SessionCheckpointSquashTool(t) => {
+                self.with_session_mut(&t.session_id, |session| {
+                    session
+                        .squash_checkpoints(
+                            t.from_checkpoint_id as usize,
+                            t.to_checkpoint_id as usize,
+                            t.label,
+                        )
+                        .map_err(|e| DrunError::internal(e).into_tool_err())?;
+                    Ok(text(build_checkpoint_history(session)))
+                })
+            }
+
+            DrunTools::SessionCheckpointDropTool(t) => {
+                self.with_session_mut(&t.session_id, |session| {
+                    session
+                        .drop_checkpoints(
+                            t.from_checkpoint_id as usize,
+                            t.to_checkpoint_id as usize,
+                        )
                         .map_err(|e| DrunError::internal(e).into_tool_err())?;
                     Ok(text(build_checkpoint_history(session)))
                 })

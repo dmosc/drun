@@ -64,7 +64,7 @@ pub struct SessionBashTool {
 
 #[mcp_tool(
     name = "session_rollback",
-    description = "Move the session head to a prior checkpoint without discarding history. Subsequent writes branch from the new head. Use session_fork if you want to explore a branch while keeping the original.",
+    description = "Move the session head to a prior checkpoint without discarding history. Subsequent writes branch from the new head. Use session_fork if you want to explore a branch while keeping the original. Provide checkpoint_id or checkpoint_label; label takes precedence if both are given.",
     idempotent_hint = false,
     destructive_hint = false,
     read_only_hint = false
@@ -73,8 +73,10 @@ pub struct SessionBashTool {
 pub struct SessionRollbackTool {
     /// Session ID from create_session.
     pub session_id: String,
-    /// Checkpoint ID to restore.
-    pub checkpoint_id: u64,
+    /// Checkpoint ID to restore. Provide this or checkpoint_label.
+    pub checkpoint_id: Option<u64>,
+    /// Label of the checkpoint to restore. Takes precedence over checkpoint_id.
+    pub checkpoint_label: Option<String>,
 }
 
 #[mcp_tool(
@@ -117,7 +119,7 @@ pub struct SessionReadFileTool {
 
 #[mcp_tool(
     name = "session_diff",
-    description = "Compute a unified diff between two checkpoints. Defaults to comparing the initial mounted state (checkpoint 0) against the current checkpoint. Returns standard unified diff output across all changed files.",
+    description = "Compute a unified diff between two checkpoints. Defaults to comparing the initial mounted state (checkpoint 0) against the current checkpoint. Returns standard unified diff output across all changed files. Each endpoint accepts an ID or a label; label takes precedence.",
     idempotent_hint = true,
     destructive_hint = false,
     read_only_hint = true
@@ -128,8 +130,14 @@ pub struct SessionDiffTool {
     pub session_id: String,
     /// Checkpoint to diff from. Defaults to 0 (the mounted state).
     pub from_checkpoint_id: Option<u64>,
+    /// Label of the checkpoint to diff from. Takes precedence over
+    /// from_checkpoint_id.
+    pub from_checkpoint_label: Option<String>,
     /// Checkpoint to diff to. Defaults to the current checkpoint.
     pub to_checkpoint_id: Option<u64>,
+    /// Label of the checkpoint to diff to. Takes precedence over
+    /// to_checkpoint_id.
+    pub to_checkpoint_label: Option<String>,
 }
 
 #[mcp_tool(
@@ -247,7 +255,7 @@ pub struct SessionExportTool {
 
 #[mcp_tool(
     name = "session_fork",
-    description = "Create a new session branching from an existing session at a given checkpoint. The fork inherits the workspace files and installed packages from the source. All runtime limits (timeouts, network policy, etc.) are governed by server config and are identical across all sessions. Returns a new session_id independent of the original.",
+    description = "Create a new session branching from an existing session at a given checkpoint. The fork inherits the workspace files and installed packages from the source. All runtime limits (timeouts, network policy, etc.) are governed by server config and are identical across all sessions. Returns a new session_id independent of the original. Provide checkpoint_id or checkpoint_label to branch from a specific point; label takes precedence. Omit both to branch from the current checkpoint.",
     idempotent_hint = false,
     destructive_hint = false,
     read_only_hint = false
@@ -258,6 +266,9 @@ pub struct SessionForkTool {
     pub session_id: String,
     /// Checkpoint to branch from. Defaults to the current checkpoint.
     pub checkpoint_id: Option<u64>,
+    /// Label of the checkpoint to branch from. Takes precedence over
+    /// checkpoint_id.
+    pub checkpoint_label: Option<String>,
 }
 
 #[mcp_tool(
@@ -430,6 +441,47 @@ pub struct SessionCancelTool {
     pub session_id: String,
 }
 
+#[mcp_tool(
+    name = "session_checkpoint_squash",
+    description = "Collapse a range of checkpoints into one, keeping the terminal file state and \
+                   merging all stdout/stderr. Useful for cleaning up exploration history before \
+                   committing to a direction. The range is inclusive on both ends. Returns the \
+                   updated checkpoint history.",
+    idempotent_hint = false,
+    destructive_hint = true,
+    read_only_hint = false
+)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct SessionCheckpointSquashTool {
+    /// Session ID from create_session.
+    pub session_id: String,
+    /// First checkpoint in the range to squash (inclusive).
+    pub from_checkpoint_id: u64,
+    /// Last checkpoint in the range to squash (inclusive).
+    pub to_checkpoint_id: u64,
+    /// Optional label to attach to the resulting squashed checkpoint.
+    pub label: Option<String>,
+}
+
+#[mcp_tool(
+    name = "session_checkpoint_drop",
+    description = "Remove a range of checkpoints from history to free memory or stay under the \
+                   checkpoint limit. The range is inclusive on both ends. Cannot drop the current \
+                   checkpoint. Returns the updated checkpoint history.",
+    idempotent_hint = false,
+    destructive_hint = true,
+    read_only_hint = false
+)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct SessionCheckpointDropTool {
+    /// Session ID from create_session.
+    pub session_id: String,
+    /// First checkpoint in the range to drop (inclusive).
+    pub from_checkpoint_id: u64,
+    /// Last checkpoint in the range to drop (inclusive).
+    pub to_checkpoint_id: u64,
+}
+
 tool_box!(
     DrunTools,
     [
@@ -460,5 +512,7 @@ tool_box!(
         SessionLabelTool,
         SessionCheckpointLabelTool,
         SessionCancelTool,
+        SessionCheckpointSquashTool,
+        SessionCheckpointDropTool,
     ]
 );
