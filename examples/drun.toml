@@ -45,6 +45,10 @@ export_root = "/tmp/drun-reports"
 # Empty (default) means none are accessible.
 # env_allowlist = ["OPENAI_API_KEY", "ANTHROPIC_API_KEY"]
 
+# Directory where pip packages are installed and cached across sessions.
+# Defaults to a drun-packages subdirectory in the OS temp dir.
+# packages_dir = "/var/lib/drun/packages"
+
 # PyPI packages the agent is permitted to install via session_install_package.
 # Empty (default) means all packages are allowed.
 # package_allowlist = ["pandas", "numpy", "matplotlib", "pdfplumber", "yfinance"]

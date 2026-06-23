@@ -48,6 +48,9 @@ pub struct Config {
     /// Shell command substrings that are permitted. Empty means all commands
     /// are allowed (except for the ones listed in denylist).
     pub bash_command_allowlist: Vec<String>,
+    /// Directory where pip packages are installed. All sessions share this
+    /// cache. Defaults to a `drun-packages` subdirectory in the OS temp dir.
+    pub packages_dir: Option<PathBuf>,
 }
 
 impl Default for Config {
@@ -75,6 +78,7 @@ impl Default for Config {
             bash_timeout_ms: 30_000,
             bash_command_denylist: vec![],
             bash_command_allowlist: vec![],
+            packages_dir: None,
         }
     }
 }

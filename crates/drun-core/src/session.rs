@@ -140,13 +140,18 @@ impl Session {
     }
 
     pub fn install(&mut self, package: &str) -> anyhow::Result<()> {
-        let result = self.runner.install(package);
-        if result.is_err() {
-            self.runner = Runner::new_from_timeout_recovery(&self.engine, &self.packages)?;
+        match self.runner.install(package) {
+            Ok(()) => {
+                self.packages.push(package.to_string());
+                Ok(())
+            }
+            Err(e) => {
+                if e.downcast_ref::<RunnerError>().is_some() {
+                    self.runner = Runner::new(&self.engine)?;
+                }
+                Err(e)
+            }
         }
-        result?;
-        self.packages.push(package.to_string());
-        Ok(())
     }
 
     pub fn execution_handle(&self) -> Arc<Mutex<Child>> {
@@ -185,7 +190,7 @@ impl Session {
                     .downcast_ref::<RunnerError>()
                     .map_or(false, |r| !matches!(r, RunnerError::Application(_)));
                 if runner_died {
-                    self.rebuild_runner_after_timeout()?;
+                    self.rebuild_runner_after_crash()?;
                 }
                 Err(e)
             }
@@ -533,8 +538,8 @@ impl Session {
         Ok(())
     }
 
-    fn rebuild_runner_after_timeout(&mut self) -> anyhow::Result<()> {
-        self.runner = Runner::new_from_timeout_recovery(&self.engine, &self.packages)?;
+    fn rebuild_runner_after_crash(&mut self) -> anyhow::Result<()> {
+        self.runner = Runner::new(&self.engine)?;
         Ok(())
     }
 
@@ -586,7 +591,7 @@ impl Session {
         mut child: std::process::Child,
         on_stdout: &mut dyn FnMut(String),
     ) -> anyhow::Result<BashOutput> {
-        let timeout_ms = self.engine.config.bash_timeout_ms;
+        let bash_timeout_ms = self.engine.config.bash_timeout_ms;
         let child_stderr = child.stderr.take().unwrap();
         let child_stdout = child.stdout.take().unwrap();
         let child = Arc::new(Mutex::new(child));
@@ -596,7 +601,7 @@ impl Session {
         let (cancel_tx, cancel_rx) = std::sync::mpsc::channel::<()>();
         std::thread::spawn(move || {
             if cancel_rx
-                .recv_timeout(Duration::from_millis(timeout_ms))
+                .recv_timeout(Duration::from_millis(bash_timeout_ms))
                 .is_err()
             {
                 timed_out_flag.store(true, Ordering::Relaxed);
@@ -624,7 +629,9 @@ impl Session {
         let stderr = stderr_thread.join().unwrap_or_default();
         let _ = child.lock().unwrap().wait();
         if timed_out.load(Ordering::Relaxed) {
-            return Err(anyhow::Error::from(RunnerError::Timeout { timeout_ms }));
+            return Err(anyhow::Error::from(RunnerError::Timeout {
+                timeout_ms: self.engine.config.bash_timeout_ms,
+            }));
         }
         Ok(BashOutput { stdout, stderr })
     }

@@ -33,11 +33,11 @@ expand them at runtime.
 
 ## Installation
 
-**Requires [Deno](https://deno.land).** The one-liner installs it automatically;
-all other paths assume it is already on your `PATH`.
+**Requires Python 3.** The one-liner detects your platform automatically; all
+other paths assume `python` is already on your `PATH`.
 
-**One-liner (recommended)** — detects your platform, installs Deno if needed,
-downloads the binary to `/usr/local/bin`, and registers drun with Claude Code:
+**One-liner (recommended)** — detects your platform, downloads the binary to
+`/usr/local/bin`, and registers drun with Claude Code:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/dmosc/drun/main/install.sh | bash
@@ -103,14 +103,10 @@ sandbox.
 
 ### Installation
 
-Requires Python 3.9+ and [Deno](https://deno.land) (used for sandboxed Python
-execution, same as the MCP server). Prebuilt wheels are available for macOS
-(arm64, x86_64) and Linux (x86_64, aarch64) — no Rust toolchain needed:
+Requires Python 3.9+. Prebuilt wheels are available for macOS (arm64, x86_64)
+and Linux (x86_64, aarch64) — no Rust toolchain needed:
 
 ```bash
-# Install Deno if you don't have it
-curl -fsSL https://deno.land/install.sh | sh
-
 pip install 'drun-sandbox[chat]'
 ```
 
@@ -296,7 +292,7 @@ drun:
 
 ```markdown
 Never use Bash to run Python or shell commands that modify files — no
-`python3 script.py`, no `pip install`, no `npm install`, no build tool
+`python script.py`, no `pip install`, no `npm install`, no build tool
 invocations. Use drun MCP tools for all code execution.
 ```
 

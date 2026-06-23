@@ -5,7 +5,7 @@ edition = "2024"
 description = "Sandboxed execution core for drun"
 license = "LicenseRef-PolyForm-Noncommercial-1.0"
 repository = "https://github.com/dmosc/drun"
-keywords = ["sandbox", "python", "execution", "wasm", "agent"]
+keywords = ["sandbox", "python", "execution", "agent"]
 categories = ["development-tools"]
 
 [dependencies]
@@ -13,7 +13,6 @@ anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true
-fs_extra.workspace = true
 walkdir.workspace = true
 which = "7"
 toml = "0.8"

@@ -1,8 +1,3 @@
-//! Runner: manages the long-lived Deno subprocess that executes Python code.
-//! Communicates over stdin/stdout with newline-delimited JSON. Each request is
-//! either an exec or a package install; responses are either Ok (with output
-//! and updated files) or Err (application error string).
-
 use crate::error::RunnerError;
 use crate::{DrunEngine, FileMap};
 use serde::{Deserialize, Serialize};
@@ -55,26 +50,27 @@ pub(crate) struct ExecSuccess {
 }
 
 pub(crate) struct Runner {
+    engine: DrunEngine,
     child: Arc<Mutex<Child>>,
     stdin: BufWriter<ChildStdin>,
     stdout: BufReader<ChildStdout>,
-    engine: DrunEngine,
 }
 
 impl Runner {
     pub fn new(engine: &DrunEngine) -> anyhow::Result<Self> {
-        let mut child = engine.spawn_runner(&engine.config.domain_allowlist)?;
+        let mut child = engine.spawn_python_runner()?;
         let stdin = BufWriter::new(child.stdin.take().unwrap());
         let mut stdout = BufReader::new(child.stdout.take().unwrap());
         let child = Arc::new(Mutex::new(child));
         let child_for_timeout = Arc::clone(&child);
         let timed_out = Arc::new(AtomicBool::new(false));
         let timed_out_flag = Arc::clone(&timed_out);
-        let timeout_ms = engine.config.install_timeout_ms;
+        let install_timeout_ms = engine.config.install_timeout_ms;
         let (cancel_tx, cancel_rx) = std::sync::mpsc::channel::<()>();
+
         std::thread::spawn(move || {
             if cancel_rx
-                .recv_timeout(Duration::from_millis(timeout_ms))
+                .recv_timeout(Duration::from_millis(install_timeout_ms))
                 .is_err()
             {
                 timed_out_flag.store(true, Ordering::Relaxed);
@@ -101,34 +97,22 @@ impl Runner {
                 .and_then(|s| s.code());
             if timed_out.load(Ordering::Relaxed) {
                 anyhow::bail!(
-                    "Deno runner startup timed out after {timeout_ms}ms; check server stderr for details"
+                    "Python runner startup timed out after {}ms",
+                    engine.config.install_timeout_ms
                 );
             }
-            anyhow::bail!(
-                "Deno runner exited during startup (exit code: {exit_code:?}); check server stderr for details"
-            );
+            anyhow::bail!("Python runner exited during startup (exit code: {exit_code:?})");
         }
 
         Ok(Self {
+            engine: engine.clone(),
             child,
             stdin,
             stdout,
-            engine: engine.clone(),
         })
     }
 
-    pub fn new_from_timeout_recovery(
-        engine: &DrunEngine,
-        packages: &[String],
-    ) -> anyhow::Result<Self> {
-        let mut runner = Self::new(engine)?;
-        for package in packages {
-            let _ = runner.install(package);
-        }
-        Ok(runner)
-    }
-
-    pub fn child_arc(&self) -> Arc<Mutex<std::process::Child>> {
+    pub fn child_arc(&self) -> Arc<Mutex<Child>> {
         Arc::clone(&self.child)
     }
 
@@ -182,6 +166,7 @@ impl Runner {
         let child_handle = Arc::clone(&self.child);
         let timed_out_flag = Arc::clone(&timed_out);
         let (cancel_tx, cancel_rx) = std::sync::mpsc::channel::<()>();
+
         std::thread::spawn(move || {
             if cancel_rx
                 .recv_timeout(Duration::from_millis(timeout_ms))
