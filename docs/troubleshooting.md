@@ -4,6 +4,26 @@ Common issues and how to resolve them.
 
 ---
 
+## Configuration lifecycle
+
+drun reads `DRUN_CONFIG` once at startup and holds the parsed config in memory
+for the lifetime of the server process. Changing `drun.toml` while the server is
+running has no effect — not on open sessions, and not on new sessions created
+after the edit.
+
+To apply a config change:
+
+1. Edit `drun.toml`
+2. Restart the MCP server (e.g. `claude mcp restart drun`, or stop and re-add
+   it)
+3. Claude Code reconnects automatically on the next tool call
+
+Open sessions that were created before the restart are gone — sessions live only
+in server memory and are not persisted across restarts unless you called
+`session_snapshot` first.
+
+---
+
 ## `python3: command not found`
 
 The MCP server spawns a Python 3 subprocess on first use. If `python3` is not on
