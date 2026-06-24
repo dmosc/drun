@@ -204,40 +204,34 @@ DRUN_CONFIG=/path/to/your.toml drun-mcp
 
 All fields are optional. Omitting a field applies the default shown below.
 
-> **Note on `domain_allowlist`:** setting this field in your TOML **replaces**
-> the built-in defaults entirely (including PyPI). If you need package
-> installation to work, list `pypi.org` and `files.pythonhosted.org` explicitly.
-
-| Field                       | Default                                                      | Description                                                                                                                                                                         |
-| --------------------------- | ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `domain_allowlist`          | `["cdn.jsdelivr.net", "files.pythonhosted.org", "pypi.org"]` | Domains reachable via `session_fetch` and Python outbound HTTP. Use `["*"]` to allow all, or `"*.example.com"` for wildcard subdomains. Replaces defaults when set.                 |
-| `fetch_timeout_ms`          | `60000`                                                      | Timeout for the full `session_fetch` response in milliseconds.                                                                                                                      |
-| `connect_timeout_ms`        | `30000`                                                      | TCP connection timeout for `session_fetch` in milliseconds.                                                                                                                         |
-| `exec_timeout_ms`           | `60000`                                                      | Maximum wall time for a single `session_execute_python` call. The runner is killed when exceeded; the session auto-rebuilds and remains usable.                                     |
-| `install_timeout_ms`        | `120000`                                                     | Maximum wall time for `session_install_package` (pip download + install).                                                                                                           |
-| `bash_timeout_ms`           | `30000`                                                      | Maximum wall time for a single `session_bash` call.                                                                                                                                 |
-| `max_workspace_mb`          | `512`                                                        | Maximum workspace size per session in megabytes.                                                                                                                                    |
-| `max_sessions`              | `50`                                                         | Maximum number of concurrent sessions.                                                                                                                                              |
-| `max_checkpoints`           | `200`                                                        | Maximum checkpoints stored per session.                                                                                                                                             |
-| `session_idle_timeout_secs` | `3600`                                                       | Seconds of inactivity before a session is abandoned.                                                                                                                                |
-| `mount_allowlist`           | `[]`                                                         | Host path prefixes that `session_mount` may read from. Empty means all paths are permitted. Non-empty restricts mounts to the listed prefixes.                                      |
-| `export_root`               | `"drun-export"`                                              | Directory that `session_export` must write into.                                                                                                                                    |
-| `snapshots_dir`             | `"drun-snapshots"`                                           | Directory where `session_snapshot` writes `.drun` files.                                                                                                                            |
-| `snapshot_on_close`         | `false`                                                      | When true, automatically write a snapshot when `session_close` is called.                                                                                                           |
-| `env_allowlist`             | `[]`                                                         | Host environment variable names exposed to agents via `session_get_env`. Empty means no variables are exposed.                                                                      |
-| `package_allowlist`         | `[]`                                                         | Package names the agent may install via `session_install_package`. Empty means all packages are allowed. Enforced at the MCP layer only — the Python SDK bypasses this check.       |
-| `bash_command_denylist`     | `[]`                                                         | Command substrings always rejected by `session_bash` before execution. Checked before the sandbox runs, so the error is an application-level rejection rather than a sandbox error. |
-| `bash_command_allowlist`    | `[]`                                                         | Command substrings permitted by `session_bash`. Empty means all commands are allowed (subject to the denylist).                                                                     |
-| `packages_dir`              | OS temp dir                                                  | Directory where pip installs packages. Shared across all sessions as a cache.                                                                                                       |
+| Field                       | Default                            | Description                                                                                                                                                                                                                                     |
+| --------------------------- | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `domain_allowlist`          | `[]` (only package infrastructure) | Additional domains reachable via `session_fetch` and Python outbound HTTP. `pypi.org`, `files.pythonhosted.org`, and `cdn.jsdelivr.net` are always allowed and cannot be removed. Use `["*"]` to allow all, or `"*.example.com"` for wildcards. |
+| `fetch_timeout_ms`          | `60000`                            | Timeout for the full `session_fetch` response in milliseconds.                                                                                                                                                                                  |
+| `connect_timeout_ms`        | `30000`                            | TCP connection timeout for `session_fetch` in milliseconds.                                                                                                                                                                                     |
+| `exec_timeout_ms`           | `60000`                            | Maximum wall time for a single `session_execute_python` call. The runner is killed when exceeded; the session auto-rebuilds and remains usable.                                                                                                 |
+| `install_timeout_ms`        | `120000`                           | Maximum wall time for `session_install_package` (pip download + install).                                                                                                                                                                       |
+| `bash_timeout_ms`           | `30000`                            | Maximum wall time for a single `session_bash` call.                                                                                                                                                                                             |
+| `max_workspace_mb`          | `512`                              | Maximum workspace size per session in megabytes.                                                                                                                                                                                                |
+| `max_sessions`              | `50`                               | Maximum number of concurrent sessions.                                                                                                                                                                                                          |
+| `max_checkpoints`           | `200`                              | Maximum checkpoints stored per session.                                                                                                                                                                                                         |
+| `session_idle_timeout_secs` | `3600`                             | Seconds of inactivity before a session is abandoned.                                                                                                                                                                                            |
+| `mount_allowlist`           | `[]`                               | Host path prefixes that `session_mount` may read from. Empty means all paths are permitted. Non-empty restricts mounts to the listed prefixes.                                                                                                  |
+| `export_root`               | `"drun-export"`                    | Directory that `session_export` must write into.                                                                                                                                                                                                |
+| `snapshots_dir`             | `"drun-snapshots"`                 | Directory where `session_snapshot` writes `.drun` files.                                                                                                                                                                                        |
+| `snapshot_on_close`         | `false`                            | When true, automatically write a snapshot when `session_close` is called.                                                                                                                                                                       |
+| `env_allowlist`             | `[]`                               | Host environment variable names exposed to agents via `session_get_env`. Empty means no variables are exposed.                                                                                                                                  |
+| `package_allowlist`         | `[]`                               | Package names the agent may install via `session_install_package`. Empty means all packages are allowed. Enforced at the MCP layer only — the Python SDK bypasses this check.                                                                   |
+| `bash_command_denylist`     | `[]`                               | Command substrings always rejected by `session_bash` before execution. Checked before the sandbox runs, so the error is an application-level rejection rather than a sandbox error.                                                             |
+| `bash_command_allowlist`    | `[]`                               | Command substrings permitted by `session_bash`. Empty means all commands are allowed (subject to the denylist).                                                                                                                                 |
+| `packages_dir`              | OS temp dir                        | Directory where pip installs packages. Shared across all sessions as a cache.                                                                                                                                                                   |
 
 ### Example
 
 ```toml
-# Only PyPI is needed. Listing domain_allowlist replaces the defaults,
-# so PyPI domains must be included explicitly.
+# Note: Domains for major package managers like PyPi are injected under the
+# hood to allow for package installs.
 domain_allowlist = [
-    "pypi.org",
-    "files.pythonhosted.org",
     "api.example.com",
 ]
 
@@ -266,9 +260,11 @@ bash_command_denylist = ["curl", "wget", "nc"]
 snapshot_on_close = false
 ```
 
-See [`examples/drun.toml`](examples/drun.toml) for a fully annotated example.
-See [`examples/fibonacci_benchmark.toml`](examples/fibonacci_benchmark.toml) for
-a benchmark-oriented example that exercises every constraint.
+See [`examples/financial_analysis.toml`](examples/financial_analysis.toml) and
+[`examples/data_science.toml`](examples/data_science.toml) for fully annotated
+real-world recipes. See
+[`examples/fibonacci_benchmark.toml`](examples/fibonacci_benchmark.toml) for a
+tight-allowlist example that stress-tests every constraint.
 
 ---
 

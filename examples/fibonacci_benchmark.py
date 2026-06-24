@@ -33,6 +33,11 @@ Note on package_allowlist:
     The Python SDK path (this script) routes install_package directly to pip,
     so the allowlist is not checked here.  Phase 1d demonstrates install
     failure using a nonexistent package name instead.
+
+Note on domain_allowlist:
+    pypi.org, files.pythonhosted.org, and cdn.jsdelivr.net are always
+    permitted regardless of domain_allowlist.  The Phase 1b probe uses
+    pypi.org as the "allowed" URL and www.google.com as the "blocked" URL.
 """
 
 import os

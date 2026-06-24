@@ -1,0 +1,56 @@
+# drun configuration — heavy / long-running workloads
+#
+# Use this for compute-intensive or I/O-heavy tasks: training large models,
+# processing multi-GB datasets, running long simulations, or any workflow
+# where individual executions routinely take several minutes.
+#
+# Key differences from the default config:
+#   - All timeouts are raised to 10 minutes (exec, bash, install)
+#   - Workspace is expanded to 4 GB
+#   - Sessions are capped at 2 to avoid resource contention
+#   - Fewer checkpoints stored (heavy tasks rarely need deep rollback history)
+#   - Snapshots are written on close so long sessions can be resumed
+#   - pip cache is pinned to a persistent directory so re-installs are fast
+#
+# The built-in PyPI domains are always available — no need to list them here.
+#
+# Usage (Python SDK):
+#   DRUN_CONFIG=examples/heavy_workloads.toml \
+#       python your_heavy_script.py
+#
+# Usage (MCP):
+#   { "env": { "DRUN_CONFIG": "/absolute/path/to/examples/heavy_workloads.toml" } }
+
+# 10 minutes per execute_python call — covers slow training loops,
+# large file decompression, and extended numerical simulations.
+exec_timeout_ms = 600_000
+
+# Same for bash — multi-GB downloads and archive extraction need time.
+bash_timeout_ms = 600_000
+
+# Large packages like PyTorch or TensorFlow can take several minutes to install.
+install_timeout_ms = 600_000
+
+# 4 GB workspace — enough for most datasets, model weights, and intermediate
+# artifacts without spilling to disk-based storage.
+max_workspace_mb = 4096
+
+# Limit parallelism to avoid out-of-memory conditions under heavy load.
+max_sessions = 2
+
+# Deep rollback history wastes disk on large workspaces; keep fewer checkpoints.
+max_checkpoints = 25
+
+# Heavy sessions are long-lived; don't time them out prematurely.
+session_idle_timeout_secs = 14_400
+
+# Always snapshot on close — long sessions are expensive to redo from scratch.
+snapshot_on_close = true
+snapshots_dir = "/tmp/drun-snapshots"
+
+# Pin the pip cache to a persistent directory so packages survive process
+# restarts and are not re-downloaded every time.
+packages_dir = "/tmp/drun-packages"
+
+# Export large outputs here.
+export_root = "/tmp/drun-outputs"

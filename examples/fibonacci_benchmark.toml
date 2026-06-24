@@ -12,16 +12,10 @@
 #   DRUN_CONFIG=/path/to/examples/fibonacci_benchmark.toml \
 #       python examples/fibonacci_benchmark.py
 
-# Only PyPI is needed for package installation.  Listing explicit domains
-# replaces the built-in defaults (which also include cdn.jsdelivr.net), so
-# every permitted domain must appear here.
-#
-# www.google.com is intentionally absent — the Phase 1 domain probe tries to
-# reach it and expects a blocked/forbidden response.
-domain_allowlist = [
-    "pypi.org",
-    "files.pythonhosted.org",
-]
+# The PyPI domains are always permitted and cannot be removed.
+# This list is intentionally empty of any extra public domains so that
+# the Phase 1 egress probe can confirm that www.google.com is blocked.
+domain_allowlist = []
 
 # All implementations, benchmark data, and the results table fit under 32 MB.
 max_workspace_mb = 32
