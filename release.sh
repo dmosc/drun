@@ -94,10 +94,16 @@ done
 
 echo ""
 
+# Regenerate Cargo.lock so the version bump is reflected before committing.
+echo "Updating Cargo.lock..."
+cargo metadata --format-version 1 -q > /dev/null
+
+echo ""
+
 # ── commit, tag, push ──────────────────────────────────────────────────────────
 
 echo "Committing version bump..."
-git add "${CARGO_FILES[@]}"
+git add "${CARGO_FILES[@]}" Cargo.lock
 git commit -m "chore: bump version to ${NEW_TAG}"
 
 echo "Creating tag ${NEW_TAG}..."
