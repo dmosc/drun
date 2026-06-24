@@ -616,6 +616,36 @@ impl ServerHandler for DrunHandler {
                 })
             }
 
+            DrunTools::SessionMergeTool(t) => {
+                let source_arc = self
+                    .sessions
+                    .lock()
+                    .unwrap()
+                    .get(&t.source_session_id)
+                    .ok_or_else(|| {
+                        DrunError::session_not_found(&t.source_session_id).into_tool_err()
+                    })?
+                    .clone();
+                let source = source_arc.lock().unwrap();
+                let source_checkpoint_id =
+                    match (t.source_checkpoint_id, t.source_checkpoint_label.as_deref()) {
+                        (_, Some(lbl)) => Some(source.checkpoint_by_label(lbl).ok_or_else(
+                            || {
+                                DrunError::internal(format!("no checkpoint with label '{lbl}'"))
+                                    .into_tool_err()
+                            },
+                        )?),
+                        (Some(id), None) => Some(id as usize),
+                        (None, None) => None,
+                    };
+                self.with_session_mut(&t.session_id, |session| {
+                    session
+                        .merge_from(&source, source_checkpoint_id, t.keys)
+                        .map_err(|e| DrunError::internal(e).into_tool_err())?;
+                    Ok(text(build_session_state(&t.session_id, session, None, vec![])))
+                })
+            }
+
             DrunTools::SessionCheckpointDropTool(t) => {
                 self.with_session_mut(&t.session_id, |session| {
                     session

@@ -254,6 +254,33 @@ pub struct SessionExportTool {
 }
 
 #[mcp_tool(
+    name = "session_merge",
+    description = "Overlay files from another session's checkpoint onto the current session, \
+                   creating a new checkpoint with the merged workspace. Useful for combining \
+                   the best parts of two parallel explorations. Provide keys to merge only \
+                   specific files; omit to merge all files from the source. Accepts \
+                   checkpoint_id or checkpoint_label on the source; label takes precedence. \
+                   Defaults to the source session's current checkpoint.",
+    idempotent_hint = false,
+    destructive_hint = false,
+    read_only_hint = false
+)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct SessionMergeTool {
+    /// Session ID to merge into (the target).
+    pub session_id: String,
+    /// Session ID to merge files from (the source).
+    pub source_session_id: String,
+    /// Checkpoint on the source to merge from. Defaults to the source's current checkpoint.
+    pub source_checkpoint_id: Option<u64>,
+    /// Label of the checkpoint on the source to merge from. Takes precedence over
+    /// source_checkpoint_id.
+    pub source_checkpoint_label: Option<String>,
+    /// Specific file paths to merge. Omit to merge all files from the source checkpoint.
+    pub keys: Option<Vec<String>>,
+}
+
+#[mcp_tool(
     name = "session_fork",
     description = "Create a new session branching from an existing session at a given checkpoint. The fork inherits the workspace files and installed packages from the source. All runtime limits (timeouts, network policy, etc.) are governed by server config and are identical across all sessions. Returns a new session_id independent of the original. Provide checkpoint_id or checkpoint_label to branch from a specific point; label takes precedence. Omit both to branch from the current checkpoint.",
     idempotent_hint = false,
@@ -527,5 +554,6 @@ tool_box!(
         SessionCancelTool,
         SessionCheckpointSquashTool,
         SessionCheckpointDropTool,
+        SessionMergeTool,
     ]
 );

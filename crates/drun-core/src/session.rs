@@ -342,6 +342,48 @@ impl Session {
         Ok(())
     }
 
+    pub fn merge_from(
+        &mut self,
+        source: &Session,
+        checkpoint_id: Option<usize>,
+        keys: Option<Vec<String>>,
+    ) -> anyhow::Result<&Checkpoint> {
+        let source_checkpoint_id = checkpoint_id.unwrap_or(source.checkpoint_idx);
+        let source_files = &source
+            .checkpoints
+            .get(source_checkpoint_id)
+            .ok_or_else(|| anyhow::anyhow!("checkpoint {} does not exist", source_checkpoint_id))?
+            .files;
+        let mut merged = self.checkpoints[self.checkpoint_idx].files.clone();
+        match keys {
+            Some(ks) => {
+                for key in &ks {
+                    match source_files.get(key) {
+                        Some(blob) => { merged.insert(key.clone(), Arc::clone(blob)); }
+                        None => anyhow::bail!("file '{}' not found in source checkpoint", key),
+                    }
+                }
+            }
+            None => {
+                for (key, blob) in source_files {
+                    merged.insert(key.clone(), Arc::clone(blob));
+                }
+            }
+        }
+        self.check_workspace_size(&merged)?;
+        self.check_checkpoint_limit()?;
+        let id = self.checkpoints.len();
+        self.checkpoints.push(Checkpoint {
+            id,
+            stdout: String::new(),
+            stderr: String::new(),
+            files: merged,
+            label: None,
+        });
+        self.checkpoint_idx = id;
+        Ok(self.checkpoints.last().unwrap())
+    }
+
     pub fn export(
         &self,
         output_dir: &Path,
