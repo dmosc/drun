@@ -1,0 +1,59 @@
+# drun configuration — financial analysis
+#
+# Use this when the agent needs to pull live market data and SEC filings,
+# install financial packages, and export PDF/Markdown reports.
+#
+# The built-in PyPI domains (pypi.org, files.pythonhosted.org, cdn.jsdelivr.net)
+# are always available regardless of this file — no need to list them here.
+#
+# Usage (Python SDK):
+#   DRUN_CONFIG=examples/financial_analysis.toml \
+#       python examples/financial_analysis.py
+#
+# Usage (MCP — set in ~/.claude/settings.json or .claude/settings.json):
+#   { "env": { "DRUN_CONFIG": "/absolute/path/to/examples/financial_analysis.toml" } }
+#   Then reload the window and ask Claude to analyze a company's financials.
+
+# Financial data sources the agent may fetch from.
+domain_allowlist = [
+    "data.sec.gov",
+    "efts.sec.gov",
+    "www.sec.gov",
+    "query1.finance.yahoo.com",
+    "query2.finance.yahoo.com",
+]
+
+# Raw price history, XBRL payloads, and generated reports fit comfortably here.
+max_workspace_mb = 512
+
+# One base session plus room for parallel company comparisons.
+max_sessions = 4
+
+# SEC EDGAR full 10-K XBRL payloads can be large and slow to parse — allow 3 min.
+exec_timeout_ms = 180_000
+
+# Financial packages are not tiny; pip may need time on a cold cache.
+install_timeout_ms = 180_000
+
+# Keep sessions alive across breaks in the analysis.
+session_idle_timeout_secs = 7200
+
+# Only permit packages relevant to financial analysis.
+# Remove or widen if you need additional libraries.
+package_allowlist = [
+    "pandas",
+    "requests",
+    "tabulate",
+    "yfinance",
+    "matplotlib",
+]
+
+# Reject dangerous shell commands before they reach the sandbox.
+bash_command_denylist = ["rm -rf", "curl", "wget", "nc"]
+
+# Preserve session state — financial analysis sessions are worth keeping.
+snapshot_on_close = true
+snapshots_dir = "/tmp/drun-snapshots"
+
+# All exported files (reports, charts) land here.
+export_root = "/tmp/drun-financial"

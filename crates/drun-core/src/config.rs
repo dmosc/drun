@@ -85,6 +85,16 @@ impl Default for Config {
 
 impl Config {
     pub fn domain_allowed(&self, host: &str) -> bool {
+        // Package infrastructure is always permitted so that session_install_package
+        // works regardless of the operator's domain_allowlist.
+        const ALWAYS_ALLOWED: &[&str] = &[
+            "pypi.org",
+            "files.pythonhosted.org",
+            "cdn.jsdelivr.net",
+        ];
+        if ALWAYS_ALLOWED.contains(&host) {
+            return true;
+        }
         self.domain_allowlist
             .iter()
             .any(|pattern| match pattern.as_str() {
