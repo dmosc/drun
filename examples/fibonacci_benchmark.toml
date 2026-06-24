@@ -1,0 +1,66 @@
+# drun configuration for the Fibonacci optimization benchmark.
+#
+# The agent first stress-tests each sandbox constraint (exec timeout, egress
+# domain allowlist, bash command denylist, correctness gate), then implements
+# four faster Fibonacci algorithms, benchmarks them with pyperf, and exports
+# a comparison table.  All session state is discarded when sessions close.
+#
+# Usage (MCP — Claude Code integration):
+#   DRUN_CONFIG=/path/to/examples/fibonacci_benchmark.toml drun-mcp
+#
+# Usage (Python SDK):
+#   DRUN_CONFIG=/path/to/examples/fibonacci_benchmark.toml \
+#       python examples/fibonacci_benchmark.py
+
+# Only PyPI is needed for package installation.  Listing explicit domains
+# replaces the built-in defaults (which also include cdn.jsdelivr.net), so
+# every permitted domain must appear here.
+#
+# www.google.com is intentionally absent — the Phase 1 domain probe tries to
+# reach it and expects a blocked/forbidden response.
+domain_allowlist = [
+    "pypi.org",
+    "files.pythonhosted.org",
+]
+
+# All implementations, benchmark data, and the results table fit under 32 MB.
+max_workspace_mb = 32
+
+# One base session plus forks for parallel exploration if the agent uses them.
+max_sessions = 6
+
+# Each Python execution may run for up to 30 seconds before the runner is
+# killed.  This is intentionally tight so that:
+#   - Phase 1 timeout probe (time.sleep(120)) is killed quickly (~30 s wait).
+#   - Benchmark rounds for the FAST implementations complete with room to spare.
+#   - The SLOW baseline must use n=30 instead of n=35 to stay under the limit.
+exec_timeout_ms = 30_000
+
+# pip download + install can be slow on a cold cache; allow 2 minutes.
+install_timeout_ms = 120_000
+
+# Abandon idle sessions after 10 minutes.
+session_idle_timeout_secs = 600
+
+# Allow the agent to mount the examples directory so it can read
+# fibonacci_slow.py.  Update this to the absolute path on your machine.
+mount_allowlist = ["/Users/oscar/Desktop/Projects/drun/examples"]
+
+# Benchmark results (results.md) are exported here after the run.
+export_root = "/tmp/drun-fibonacci-results"
+
+# Packages the agent may install.  Only pyperf and tabulate are needed;
+# any other install_package call will be rejected by the MCP server.
+# Note: this restriction is enforced at the MCP layer.  The Python SDK path
+# (fibonacci_benchmark.py) uses a pip-level failure to demonstrate install
+# errors instead.
+package_allowlist = ["pyperf", "tabulate"]
+
+# Bash commands containing these substrings are rejected before the command
+# reaches the sandbox.  The Phase 1 bash probe tries "curl" and expects a
+# denylist rejection error (not a network error — the sandbox has no network
+# for bash regardless, but the denylist fires first and gives a clear message).
+bash_command_denylist = ["curl", "wget", "nc"]
+
+# Sessions are fully ephemeral: workspace is discarded when sessions close.
+snapshot_on_close = false
