@@ -88,7 +88,9 @@ max_checkpoints = 200
 session_idle_timeout_secs = 3600
 
 # Host path prefixes agents may mount into a session. Empty = all paths allowed.
-mount_allowlist = []
+mount_allowlist = [
+  "$PWD"
+]
 
 # Directory where session_export writes files.
 export_root = "$DRUN_DIR/exports"
