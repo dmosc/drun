@@ -26,18 +26,6 @@ case "$OS-$ARCH" in
     ;;
 esac
 
-# ── Deno ──────────────────────────────────────────────────────────────────────
-
-if ! command -v deno &>/dev/null; then
-  echo "Deno not found — installing..."
-  curl -fsSL https://deno.land/install.sh | sh
-  export DENO_INSTALL="${DENO_INSTALL:-$HOME/.deno}"
-  export PATH="$DENO_INSTALL/bin:$PATH"
-  echo "Deno installed."
-else
-  echo "Deno $(deno --version | head -1) already installed."
-fi
-
 # ── drun-mcp binary ───────────────────────────────────────────────────────────
 
 echo "Downloading drun-mcp..."
