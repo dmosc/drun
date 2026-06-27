@@ -40,15 +40,34 @@ chmod +x "$BIN" 2>/dev/null || sudo chmod +x "$BIN"
 
 echo "drun-mcp installed to $BIN."
 
+# ── drun config ───────────────────────────────────────────────────────────────
+
+DRUN_DIR="$HOME/.drun"
+DRUN_CONFIG_FILE="$DRUN_DIR/drun.toml"
+SAMPLE_TOML_URL="https://raw.githubusercontent.com/$REPO/main/sample.toml"
+
+mkdir -p "$DRUN_DIR"
+
+if [[ ! -f "$DRUN_CONFIG_FILE" ]]; then
+  if curl -fsSL "$SAMPLE_TOML_URL" -o "$DRUN_CONFIG_FILE"; then
+    echo "Created default config at $DRUN_CONFIG_FILE."
+  else
+    echo "Warning: could not download sample.toml; created empty config at $DRUN_CONFIG_FILE."
+    touch "$DRUN_CONFIG_FILE"
+  fi
+else
+  echo "Existing config kept at $DRUN_CONFIG_FILE."
+fi
+
 # ── Claude Code MCP registration ─────────────────────────────────────────────
 
 if command -v claude &>/dev/null; then
-  claude mcp add drun -- "$BIN"
+  claude mcp add drun -e "DRUN_CONFIG=$DRUN_CONFIG_FILE" -- "$BIN"
   echo "drun added to Claude Code."
 else
   echo ""
   echo "Claude Code CLI not found. Add drun manually:"
-  echo "  claude mcp add drun -- $BIN"
+  echo "  claude mcp add drun -e DRUN_CONFIG=$DRUN_CONFIG_FILE -- $BIN"
 fi
 
 echo "Done! drun is ready."
