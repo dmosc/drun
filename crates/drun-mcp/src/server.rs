@@ -50,13 +50,13 @@ impl ServerHandler for DrunHandler {
         let tool = DrunTools::try_from(params)?;
         match tool {
             DrunTools::CreateSessionTool(_) => {
-                if let Some(max) = self.engine.config.max_sessions {
+                if let Some(max) = self.config.max_sessions {
                     if self.sessions.lock().unwrap().len() >= max {
                         return Err(DrunError::session_limit_reached(max).into_tool_err());
                     }
                 }
                 let session_id = Uuid::new_v4().to_string();
-                let session = Session::new(&self.engine)
+                let session = Session::new(&self.config)
                     .map_err(|e| DrunError::internal(e).into_tool_err())?;
                 let state = build_session_state(&session_id, &session, None, vec![]);
                 self.sessions
@@ -86,7 +86,7 @@ impl ServerHandler for DrunHandler {
                         (Some(id), None) => Some(id as usize),
                         (None, None) => None,
                     };
-                    Session::from_session(&self.engine, &t.session_id, &source, checkpoint_id)
+                    Session::from_session(&self.config, &t.session_id, &source, checkpoint_id)
                         .map_err(|e| DrunError::internal(e).into_tool_err())?
                 };
                 let fork_id = Uuid::new_v4().to_string();
@@ -104,16 +104,14 @@ impl ServerHandler for DrunHandler {
             }
 
             DrunTools::SessionCloseTool(t) => {
-                self.active_children.lock().unwrap().remove(&t.session_id);
                 let session = self
                     .sessions
                     .lock()
                     .unwrap()
                     .remove(&t.session_id)
                     .ok_or_else(|| DrunError::session_not_found(&t.session_id).into_tool_err())?;
-                if self.engine.config.snapshot_on_close {
+                if self.config.snapshot_on_close {
                     let output_path = self
-                        .engine
                         .config
                         .snapshots_dir
                         .join(format!("{}.drun", t.session_id));
@@ -138,46 +136,9 @@ impl ServerHandler for DrunHandler {
                 )))
             }),
 
-            DrunTools::SessionInstallPackageTool(t) => {
-                if !self.engine.config.package_allowlist.is_empty()
-                    && !self.engine.config.package_allowlist.contains(&t.package)
-                {
-                    return Err(DrunError::package_denied(&t.package).into_tool_err());
-                }
-                self.with_session_mut(&t.session_id, |session| {
-                    session
-                        .install(&t.package)
-                        .map_err(|e| DrunError::from_install(&t.package, e).into_tool_err())?;
-                    Ok(text(build_session_state(
-                        &t.session_id,
-                        session,
-                        None,
-                        vec![],
-                    )))
-                })
-            }
-
-            DrunTools::SessionExecutePythonTool(t) => {
-                let progress_tx = spawn_progress_forwarder(runtime.clone(), progress_token.clone());
-                self.with_session_mut_cancellable(&t.session_id, |session| {
-                    let previous_files = session.current().files.clone();
-                    session
-                        .execute_python(&t.code, &mut |chunk| {
-                            let _ = progress_tx.send(chunk);
-                        })
-                        .map_err(|e| DrunError::from_exec(e).into_tool_err())?;
-                    Ok(text(build_session_state(
-                        &t.session_id,
-                        session,
-                        Some(&previous_files),
-                        vec![],
-                    )))
-                })
-            }
-
             DrunTools::SessionBashTool(t) => {
                 let progress_tx = spawn_progress_forwarder(runtime.clone(), progress_token.clone());
-                self.with_session_mut_cancellable(&t.session_id, |session| {
+                self.with_session_mut(&t.session_id, |session| {
                     let previous_files = session.current().files.clone();
                     session
                         .execute_bash(&t.command, &mut |chunk| {
@@ -348,12 +309,12 @@ impl ServerHandler for DrunHandler {
                 Ok(text(build_session_tree(&sessions)))
             }
 
-            DrunTools::ListSnapshotsTool(_) => Ok(text(build_snapshot_catalog(
-                &self.engine.config.snapshots_dir,
-            ))),
+            DrunTools::ListSnapshotsTool(_) => {
+                Ok(text(build_snapshot_catalog(&self.config.snapshots_dir)))
+            }
 
             DrunTools::SessionExportTool(t) => {
-                let export_root = &self.engine.config.export_root;
+                let export_root = &self.config.export_root;
                 let output_dir = match &t.output_dir {
                     Some(dir) => {
                         let p = PathBuf::from(dir);
@@ -398,7 +359,7 @@ impl ServerHandler for DrunHandler {
                     return Err(DrunError::session_not_found(&t.session_id).into_tool_err());
                 }
                 let url_is_allowed =
-                    host_from_url(&t.url).map_or(false, |h| self.engine.config.domain_allowed(&h));
+                    host_from_url(&t.url).map_or(false, |h| self.config.domain_allowed(&h));
                 if !url_is_allowed {
                     return Err(DrunError::fetch_denied(&t.url).into_tool_err());
                 }
@@ -409,8 +370,8 @@ impl ServerHandler for DrunHandler {
                 })?;
 
                 let builder = reqwest::Client::builder()
-                    .connect_timeout(Duration::from_millis(self.engine.config.connect_timeout_ms))
-                    .timeout(Duration::from_millis(self.engine.config.fetch_timeout_ms));
+                    .connect_timeout(Duration::from_millis(self.config.connect_timeout_ms))
+                    .timeout(Duration::from_millis(self.config.fetch_timeout_ms));
                 let client = builder
                     .build()
                     .map_err(|e| DrunError::internal(e).into_tool_err())?;
@@ -438,7 +399,6 @@ impl ServerHandler for DrunHandler {
                     .to_string();
 
                 let max_body = self
-                    .engine
                     .config
                     .max_workspace_mb
                     .map(|mb| mb * 1024 * 1024)
@@ -484,15 +444,11 @@ impl ServerHandler for DrunHandler {
             }
 
             DrunTools::GetFetchAllowlistTool(_) => Ok(text(
-                serde_json::to_string(&self.engine.config.domain_allowlist).unwrap(),
-            )),
-
-            DrunTools::GetAllowedPackagesTool(_) => Ok(text(
-                serde_json::to_string(&self.engine.config.package_allowlist).unwrap(),
+                serde_json::to_string(&self.config.domain_allowlist).unwrap(),
             )),
 
             DrunTools::SessionSnapshotTool(t) => {
-                let snapshots_dir = &self.engine.config.snapshots_dir;
+                let snapshots_dir = &self.config.snapshots_dir;
                 let output_path = match t.path {
                     Some(p) => {
                         let p = PathBuf::from(p);
@@ -536,7 +492,7 @@ impl ServerHandler for DrunHandler {
                 if !self.sessions.lock().unwrap().contains_key(&t.session_id) {
                     return Err(DrunError::session_not_found(&t.session_id).into_tool_err());
                 }
-                if !self.engine.config.env_allowlist.contains(&t.name) {
+                if !self.config.env_allowlist.contains(&t.name) {
                     return Err(DrunError::env_var_denied(&t.name).into_tool_err());
                 }
                 let value = std::env::var(&t.name).unwrap_or_default();
@@ -550,7 +506,7 @@ impl ServerHandler for DrunHandler {
                     std::fs::read(&t.path).map_err(|e| DrunError::internal(e).into_tool_err())?;
                 let snapshot = SessionSnapshot::decode(&bytes)
                     .map_err(|e| DrunError::internal(e).into_tool_err())?;
-                let restored = Session::from_snapshot(&self.engine, snapshot)
+                let restored = Session::from_snapshot(&self.config, snapshot)
                     .map_err(|e| DrunError::internal(e).into_tool_err())?;
                 let session_id = Uuid::new_v4().to_string();
                 let state = build_session_state(&session_id, &restored, None, vec![]);
@@ -559,25 +515,6 @@ impl ServerHandler for DrunHandler {
                     .unwrap()
                     .insert(session_id, Arc::new(Mutex::new(restored)));
                 Ok(text(state))
-            }
-
-            DrunTools::SessionCancelTool(t) => {
-                let child = self
-                    .active_children
-                    .lock()
-                    .unwrap()
-                    .get(&t.session_id)
-                    .cloned();
-                match child {
-                    Some(c) => {
-                        let _ = c.lock().unwrap().kill();
-                        Ok(text(format!(
-                            "cancelled execution in session {}",
-                            t.session_id
-                        )))
-                    }
-                    None => Ok(text(format!("session {} is not executing", t.session_id))),
-                }
             }
 
             DrunTools::SessionLabelTool(t) => self.with_session_mut(&t.session_id, |session| {
@@ -629,12 +566,12 @@ impl ServerHandler for DrunHandler {
                 let source = source_arc.lock().unwrap();
                 let source_checkpoint_id =
                     match (t.source_checkpoint_id, t.source_checkpoint_label.as_deref()) {
-                        (_, Some(lbl)) => Some(source.checkpoint_by_label(lbl).ok_or_else(
-                            || {
+                        (_, Some(lbl)) => {
+                            Some(source.checkpoint_by_label(lbl).ok_or_else(|| {
                                 DrunError::internal(format!("no checkpoint with label '{lbl}'"))
                                     .into_tool_err()
-                            },
-                        )?),
+                            })?)
+                        }
                         (Some(id), None) => Some(id as usize),
                         (None, None) => None,
                     };
@@ -642,7 +579,12 @@ impl ServerHandler for DrunHandler {
                     session
                         .merge_from(&source, source_checkpoint_id, t.keys)
                         .map_err(|e| DrunError::internal(e).into_tool_err())?;
-                    Ok(text(build_session_state(&t.session_id, session, None, vec![])))
+                    Ok(text(build_session_state(
+                        &t.session_id,
+                        session,
+                        None,
+                        vec![],
+                    )))
                 })
             }
 

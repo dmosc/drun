@@ -24,7 +24,6 @@ pub struct CheckpointRecord {
 pub struct SnapshotMeta {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
-    pub packages: Vec<String>,
     pub checkpoint_count: usize,
 }
 
@@ -41,7 +40,6 @@ impl SnapshotMeta {
 #[derive(Serialize, Deserialize)]
 pub struct SessionSnapshot {
     pub checkpoint_idx: usize,
-    pub packages: Vec<String>,
     pub parent: Option<CheckpointRef>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
@@ -75,7 +73,6 @@ impl SessionSnapshot {
         std::fs::write(path, self.encode()?)?;
         let meta = SnapshotMeta {
             label: self.label.clone(),
-            packages: self.packages.clone(),
             checkpoint_count: self.checkpoints.len(),
         };
         std::fs::write(path.with_extension("drun.meta"), meta.encode()?)?;

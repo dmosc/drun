@@ -1,7 +1,7 @@
+use crate::config::Config;
 use crate::error::RunnerError;
-use crate::runner::{ExecSuccess, Runner};
 use crate::snapshot::{CheckpointRecord, SessionSnapshot};
-use crate::{Checkpoint, CheckpointRef, DrunEngine, FileMap, sandbox, workspace};
+use crate::{Checkpoint, CheckpointRef, FileMap, sandbox, workspace};
 use std::collections::HashMap;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -13,13 +13,11 @@ use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
 
 pub struct Session {
-    runner: Runner,
-    engine: DrunEngine,
+    config: Config,
     checkpoints: Vec<Checkpoint>,
     checkpoint_idx: usize,
     origins: HashMap<String, PathBuf>,
     overlays: HashMap<String, PathBuf>,
-    packages: Vec<String>,
     intern_table: HashMap<u64, Weak<Vec<u8>>>,
     pub label: Option<String>,
     pub parent: Option<CheckpointRef>,
@@ -28,15 +26,13 @@ pub struct Session {
 }
 
 impl Session {
-    pub fn new(engine: &DrunEngine) -> anyhow::Result<Self> {
+    pub fn new(config: &Config) -> anyhow::Result<Self> {
         Ok(Self {
-            runner: Runner::new(engine)?,
-            engine: engine.clone(),
+            config: config.clone(),
             checkpoints: vec![empty_checkpoint(0, HashMap::new())],
             checkpoint_idx: 0,
             origins: HashMap::new(),
             overlays: HashMap::new(),
-            packages: Vec::new(),
             intern_table: HashMap::new(),
             label: None,
             parent: None,
@@ -46,7 +42,7 @@ impl Session {
     }
 
     pub fn from_session(
-        engine: &DrunEngine,
+        config: &Config,
         source_session_id: &str,
         source: &Session,
         checkpoint_id: Option<usize>,
@@ -63,10 +59,7 @@ impl Session {
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
 
-        let mut session = Self::new(engine)?;
-        for package in &source.packages {
-            session.install(package)?;
-        }
+        let mut session = Self::new(config)?;
         for arc in forked_files.values() {
             let hash = file_content_hash(arc);
             session
@@ -88,9 +81,8 @@ impl Session {
         let abs = path
             .canonicalize()
             .map_err(|_| anyhow::anyhow!("path does not exist: {}", path.display()))?;
-        if !self.engine.config.mount_allowlist.is_empty() {
+        if !self.config.mount_allowlist.is_empty() {
             let allowed = self
-                .engine
                 .config
                 .mount_allowlist
                 .iter()
@@ -99,8 +91,7 @@ impl Session {
                 anyhow::bail!(
                     "'{}' is not in the mount allowlist; permitted prefixes: {}",
                     abs.display(),
-                    self.engine
-                        .config
+                    self.config
                         .mount_allowlist
                         .iter()
                         .map(|p| p.display().to_string())
@@ -111,7 +102,7 @@ impl Session {
         }
 
         let (file_entries, overlay_entries) = if abs.is_dir() {
-            scan_mount_path(&abs, "", &self.engine.config.mount_overlay_paths)?
+            scan_mount_path(&abs, "", &self.config.mount_overlay_paths)?
         } else {
             let key = abs
                 .file_name()
@@ -156,67 +147,6 @@ impl Session {
             anyhow::bail!("'{}' not in current checkpoint", path);
         }
         self.push_files_as_checkpoint(files)
-    }
-
-    pub fn install(&mut self, package: &str) -> anyhow::Result<()> {
-        match self.runner.install(package) {
-            Ok(()) => {
-                self.packages.push(package.to_string());
-                Ok(())
-            }
-            Err(e) => {
-                if e.downcast_ref::<RunnerError>().is_some() {
-                    self.runner = Runner::new(&self.engine)?;
-                }
-                Err(e)
-            }
-        }
-    }
-
-    pub fn execution_handle(&self) -> Arc<Mutex<Child>> {
-        self.runner.child_arc()
-    }
-
-    pub fn execute_python(
-        &mut self,
-        code: &str,
-        on_stdout: &mut dyn FnMut(String),
-    ) -> anyhow::Result<&Checkpoint> {
-        self.checkpoints.truncate(self.checkpoint_idx + 1);
-        let current_files = &self.checkpoints[self.checkpoint_idx].files;
-        match self
-            .runner
-            .execute_python(code, current_files, &self.overlays, on_stdout)
-        {
-            Ok(ExecSuccess {
-                stdout,
-                stderr,
-                files: result_files,
-            }) => {
-                let interned_files = self.intern_file_map(result_files);
-                self.check_workspace_size(&interned_files)?;
-                self.check_checkpoint_limit()?;
-                let id = self.checkpoints.len();
-                self.checkpoints.push(Checkpoint {
-                    id,
-                    stdout,
-                    stderr,
-                    files: interned_files,
-                    label: None,
-                });
-                self.checkpoint_idx = id;
-                Ok(self.checkpoints.last().unwrap())
-            }
-            Err(e) => {
-                let runner_died = e
-                    .downcast_ref::<RunnerError>()
-                    .map_or(false, |r| !matches!(r, RunnerError::Application(_)));
-                if runner_died {
-                    self.rebuild_runner_after_crash()?;
-                }
-                Err(e)
-            }
-        }
     }
 
     pub fn execute_bash(
@@ -538,7 +468,6 @@ impl Session {
 
         SessionSnapshot {
             checkpoint_idx: self.checkpoint_idx,
-            packages: self.packages.clone(),
             parent: self.parent.clone(),
             label: self.label.clone(),
             origins: self.origins.clone(),
@@ -548,9 +477,7 @@ impl Session {
         }
     }
 
-    pub fn from_snapshot(engine: &DrunEngine, snapshot: SessionSnapshot) -> anyhow::Result<Self> {
-        let packages_to_install = snapshot.packages.clone();
-
+    pub fn from_snapshot(config: &Config, snapshot: SessionSnapshot) -> anyhow::Result<Self> {
         let blob_arcs: Vec<Arc<Vec<u8>>> = snapshot.blobs.into_iter().map(Arc::new).collect();
         let checkpoints: Vec<Checkpoint> = snapshot
             .checkpoints
@@ -593,30 +520,18 @@ impl Session {
             .filter(|(_, path)| path.exists())
             .collect();
 
-        let mut session = Self {
-            runner: Runner::new(engine)?,
-            engine: engine.clone(),
+        Ok(Self {
+            config: config.clone(),
             checkpoints,
             checkpoint_idx: snapshot.checkpoint_idx,
             origins,
             overlays,
-            packages: Vec::new(),
             intern_table,
             label: snapshot.label,
             parent: snapshot.parent,
             created_at: Instant::now(),
             last_activity: Instant::now(),
-        };
-        for package in &packages_to_install {
-            session
-                .install(package)
-                .map_err(|e| anyhow::anyhow!("failed to reinstall '{package}': {e}"))?;
-        }
-        Ok(session)
-    }
-
-    pub fn packages(&self) -> &[String] {
-        &self.packages
+        })
     }
 
     pub fn current(&self) -> &Checkpoint {
@@ -677,7 +592,7 @@ impl Session {
     }
 
     fn check_checkpoint_limit(&self) -> anyhow::Result<()> {
-        if let Some(max) = self.engine.config.max_checkpoints {
+        if let Some(max) = self.config.max_checkpoints {
             if self.checkpoints.len() >= max {
                 anyhow::bail!(
                     "checkpoint limit of {} reached; close or snapshot this session and start a new one",
@@ -689,12 +604,7 @@ impl Session {
     }
 
     fn check_workspace_size(&self, files: &FileMap) -> anyhow::Result<()> {
-        if let Some(limit) = self
-            .engine
-            .config
-            .max_workspace_mb
-            .map(|mb| mb * 1024 * 1024)
-        {
+        if let Some(limit) = self.config.max_workspace_mb.map(|mb| mb * 1024 * 1024) {
             let total: u64 = files.values().map(|v| v.len() as u64).sum();
             if total > limit {
                 anyhow::bail!(
@@ -707,22 +617,16 @@ impl Session {
         Ok(())
     }
 
-    fn rebuild_runner_after_crash(&mut self) -> anyhow::Result<()> {
-        self.runner = Runner::new(&self.engine)?;
-        Ok(())
-    }
-
     fn check_command_policy(&self, command: &str) -> anyhow::Result<()> {
-        for denied in &self.engine.config.bash_command_denylist {
+        for denied in &self.config.bash_command_denylist {
             if command.contains(denied.as_str()) {
                 return Err(anyhow::Error::from(RunnerError::CommandDenied(format!(
                     "command denied: matches denylist pattern '{denied}'"
                 ))));
             }
         }
-        if !self.engine.config.bash_command_allowlist.is_empty()
+        if !self.config.bash_command_allowlist.is_empty()
             && !self
-                .engine
                 .config
                 .bash_command_allowlist
                 .iter()
@@ -730,7 +634,7 @@ impl Session {
         {
             return Err(anyhow::Error::from(RunnerError::CommandDenied(format!(
                 "command denied: not matched by any allowlist pattern; permitted: {}",
-                self.engine.config.bash_command_allowlist.join(", ")
+                self.config.bash_command_allowlist.join(", ")
             ))));
         }
         Ok(())
@@ -757,10 +661,10 @@ impl Session {
 
     fn run_sandboxed_bash_child(
         &self,
-        mut child: std::process::Child,
+        mut child: Child,
         on_stdout: &mut dyn FnMut(String),
     ) -> anyhow::Result<BashOutput> {
-        let bash_timeout_ms = self.engine.config.bash_timeout_ms;
+        let bash_timeout_ms = self.config.bash_timeout_ms;
         let child_stderr = child.stderr.take().unwrap();
         let child_stdout = child.stdout.take().unwrap();
         let child = Arc::new(Mutex::new(child));
@@ -799,7 +703,7 @@ impl Session {
         let _ = child.lock().unwrap().wait();
         if timed_out.load(Ordering::Relaxed) {
             return Err(anyhow::Error::from(RunnerError::Timeout {
-                timeout_ms: self.engine.config.bash_timeout_ms,
+                timeout_ms: self.config.bash_timeout_ms,
             }));
         }
         Ok(BashOutput { stdout, stderr })

@@ -14,7 +14,6 @@ struct SessionSummary {
     label: Option<String>,
     checkpoint_id: usize,
     checkpoint_count: usize,
-    packages: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     parent_session_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -45,7 +44,6 @@ struct SnapshotEntry {
     #[serde(skip_serializing_if = "Option::is_none")]
     label: Option<String>,
     checkpoint_count: usize,
-    packages: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -73,7 +71,6 @@ struct SessionState {
     #[serde(skip_serializing_if = "String::is_empty")]
     stderr: String,
     workspace: Vec<String>,
-    packages: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     files_added: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -157,7 +154,6 @@ pub(crate) fn build_session_list(sessions: &HashMap<String, Arc<Mutex<Session>>>
                 label: session.label.clone(),
                 checkpoint_id: session.current().id,
                 checkpoint_count: session.history().len(),
-                packages: session.packages().to_vec(),
                 parent_session_id,
                 parent_checkpoint_id,
             }
@@ -189,7 +185,6 @@ pub(crate) fn build_session_state(
         stdout: current.stdout.clone(),
         stderr: current.stderr.clone(),
         workspace,
-        packages: session.packages().to_vec(),
         files_added: delta.added,
         files_modified: delta.modified,
         files_removed: delta.removed,
@@ -256,7 +251,6 @@ pub(crate) fn build_snapshot_catalog(snapshots_dir: &Path) -> String {
                 size_bytes,
                 label: meta.label,
                 checkpoint_count: meta.checkpoint_count,
-                packages: meta.packages,
             })
         })
         .collect();

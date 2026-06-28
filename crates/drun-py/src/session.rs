@@ -1,8 +1,5 @@
-//! DrunSession: PyO3 wrapper around the core Session, exposing the execution
-//! and checkpoint API to Python callers.
-
 use crate::types::{DrunCheckpoint, checkpoint_to_py};
-use drun_core::{DrunEngine, Session};
+use drun_core::Session;
 use pyo3::{exceptions::PyRuntimeError, prelude::*};
 use std::sync::Mutex;
 
@@ -15,9 +12,8 @@ pub struct DrunSession {
 impl DrunSession {
     #[new]
     pub fn new() -> PyResult<Self> {
-        let engine = DrunEngine::new(drun_core::Config::load())
-            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
-        let session = Session::new(&engine).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let config = drun_core::Config::load();
+        let session = Session::new(&config).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
         Ok(Self {
             inner: Mutex::new(session),
         })
@@ -51,23 +47,6 @@ impl DrunSession {
         let to = to_id.unwrap_or_else(|| inner.current().id);
         inner
             .diff(from_id, to)
-            .map_err(|e| PyRuntimeError::new_err(e.to_string()))
-    }
-
-    pub fn install(&self, package: String) -> PyResult<()> {
-        self.inner
-            .lock()
-            .unwrap()
-            .install(&package)
-            .map_err(|e| PyRuntimeError::new_err(e.to_string()))
-    }
-
-    pub fn execute_python(&self, code: String) -> PyResult<DrunCheckpoint> {
-        self.inner
-            .lock()
-            .unwrap()
-            .execute_python(&code, &mut |_| {})
-            .map(checkpoint_to_py)
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))
     }
 
