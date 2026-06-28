@@ -2,3 +2,4 @@ target/
 venv
 *.so
 *.pyc
+.drun
