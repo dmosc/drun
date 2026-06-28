@@ -120,3 +120,32 @@ fields are optional.
 | `bash_command_denylist`     | `[]`                    | Command substrings always rejected by `session_bash` before execution.                                                                                                        |
 | `bash_command_allowlist`    | `[]`                    | Command substrings permitted by `session_bash`. Empty means all commands are allowed (subject to the denylist).                                                               |
 | `packages_dir`              | `$TMPDIR/drun-packages` | Directory where pip installs packages. Shared across all sessions as a persistent cache.                                                                                      |
+
+#### Reloading the MCP
+
+`config.toml` is read once when the MCP process starts. Changes to the file take
+effect only after the MCP server is restarted. How to trigger that depends on
+your setup.
+
+**Claude Code CLI**
+
+Open a new `claude` session. Each invocation spawns a fresh MCP process that
+reads `config.toml` on startup, so closing and re-opening the chat is
+sufficient.
+
+```bash
+claude
+```
+
+**Claude Code in VSCode**
+
+The VSCode extension keeps the MCP process running in the background across chat
+sessions within the same window. To restart it after editing `config.toml`,
+reload the VSCode window:
+
+1. Open the Command Palette (`Cmd+Shift+P` on macOS / `Ctrl+Shift+P` on Windows
+   and Linux).
+2. Run **Developer: Reload Window**.
+
+The extension restarts the MCP server on reload, picking up the updated
+configuration.
