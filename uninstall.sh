@@ -1,19 +1,32 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# ── Deregister from Claude Code (all scopes) ─────────────────────────────────
+DRUN_REGISTRY="$HOME/.drun/projects"
 
-if command -v claude &>/dev/null; then
-  removed=false
-  for scope in local user project; do
-    if claude mcp remove drun -s "$scope" 2>/dev/null; then
-      removed=true
-    fi
-  done
-  if $removed; then
-    echo "drun removed from Claude Code."
+# ── Claude Code MCP deregistration ───────────────────────────────────────────
+
+deregister_mcp() {
+  if ! command -v claude &>/dev/null; then
+    return
   fi
-fi
+
+  claude mcp remove drun -s user 2>/dev/null && echo "Removed drun from user scope." || true
+
+  if [[ ! -f "$DRUN_REGISTRY" ]]; then
+    return
+  fi
+
+  while IFS= read -r project_dir; do
+    [[ -z "$project_dir" ]] && continue
+    for scope in local project; do
+      if (cd "$project_dir" && claude mcp remove drun -s "$scope" 2>/dev/null); then
+        echo "Removed drun from $project_dir ($scope scope)."
+      fi
+    done
+  done < "$DRUN_REGISTRY"
+
+  rm -f "$DRUN_REGISTRY"
+}
 
 # ── Remove session guard hooks ────────────────────────────────────────────────
 
@@ -48,17 +61,26 @@ for path in (hooks_script, os.path.expanduser("~/.drun/session_count")):
         print(f"Removed {path}.")
 PYEOF
 
-# ── Remove binary ─────────────────────────────────────────────────────────────
+# ── binary removal ────────────────────────────────────────────────────────────
 
-if ! BIN="$(command -v drun-mcp 2>/dev/null)"; then
-  echo "drun-mcp is not installed."
-  exit 0
-fi
+remove_binary() {
+  if ! BIN="$(command -v drun-mcp 2>/dev/null)"; then
+    echo "drun-mcp is not installed."
+    return
+  fi
 
-if [[ -w "$BIN" ]]; then
-  rm "$BIN"
-else
-  sudo rm "$BIN"
-fi
+  if [[ -w "$BIN" ]]; then
+    rm "$BIN"
+  else
+    sudo rm "$BIN"
+  fi
 
-echo "drun-mcp removed from $BIN."
+  echo "drun-mcp removed from $BIN."
+}
+
+# ── main ──────────────────────────────────────────────────────────────────────
+
+deregister_mcp
+remove_binary
+
+echo "Done."
