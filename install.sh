@@ -131,6 +131,10 @@ register_mcp() {
     echo "Claude Code CLI not found. Add drun manually:"
     echo "  claude mcp add drun -e DRUN_CONFIG=$DRUN_CONFIG -- $BIN"
   fi
+
+  local registry="$HOME/.drun/projects"
+  mkdir -p "$HOME/.drun"
+  grep -qxF "$PWD" "$registry" 2>/dev/null || echo "$PWD" >> "$registry"
 }
 
 # ── main ──────────────────────────────────────────────────────────────────────
