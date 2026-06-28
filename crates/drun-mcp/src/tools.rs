@@ -24,32 +24,14 @@ pub struct HttpHeader {
 pub struct CreateSessionTool {}
 
 #[mcp_tool(
-    name = "session_execute_python",
-    description = "Run Python code in an existing session, building on the current checkpoint. \
-                   Returns stdout and the new checkpoint_id. \
-                   Python's outbound HTTP is governed by the server's domain allowlist (same as \
-                   session_fetch). Use session_fetch to retrieve external data into the workspace \
-                   before running code that needs it.",
-    idempotent_hint = false,
-    destructive_hint = false,
-    read_only_hint = false
-)]
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct SessionExecutePythonTool {
-    /// Session ID from create_session
-    pub session_id: String,
-    /// Python source code to run
-    pub code: String,
-}
-
-#[mcp_tool(
     name = "session_bash",
-    description = "Run a shell command in the session workspace. The current checkpoint's files are \
-                   materialized into a temporary directory and the command is executed there via \
-                   sh -c, inheriting the host PATH. File changes are captured as a new checkpoint. \
-                   Command policy (denylist/allowlist patterns) is enforced by server config. \
-                   Network access is blocked in the sandbox — use session_fetch to retrieve \
-                   external data into the workspace before running commands that need it.",
+    description = "Run a shell command in the session workspace. The current checkpoint's files \
+                   are materialized into a temporary directory and the command runs there via \
+                   sh -c with the host PATH — so any binary installed on the host (python3, node, \
+                   ruby, go, etc.) is available. Directories registered as mount_overlay_paths \
+                   (node_modules, venvs, etc.) are symlinked in automatically. File changes are \
+                   captured as a new checkpoint. Command policy (denylist/allowlist) is enforced \
+                   by server config. Network is blocked — use session_fetch first for external data.",
     idempotent_hint = false,
     destructive_hint = false,
     read_only_hint = false
@@ -77,21 +59,6 @@ pub struct SessionRollbackTool {
     pub checkpoint_id: Option<u64>,
     /// Label of the checkpoint to restore. Takes precedence over checkpoint_id.
     pub checkpoint_label: Option<String>,
-}
-
-#[mcp_tool(
-    name = "session_install_package",
-    description = "Install a Python package into the session. The package will be available in all subsequent session_execute_python calls.",
-    idempotent_hint = false,
-    destructive_hint = false,
-    read_only_hint = false
-)]
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct SessionInstallPackageTool {
-    /// Session ID from create_session.
-    pub session_id: String,
-    /// Package name as it appears on PyPI.
-    pub package: String,
 }
 
 #[mcp_tool(
@@ -142,7 +109,7 @@ pub struct SessionDiffTool {
 
 #[mcp_tool(
     name = "session_mount",
-    description = "Copy a file or directory from the host filesystem into the session workspace. Files become available at /workspace/<filename> (or /workspace/<relative-path> for directories). Call before session_execute_python to make host data accessible to the sandbox.",
+    description = "Copy a file or directory from the host filesystem into the session workspace. Files become available at /workspace/<filename> (or /workspace/<relative-path> for directories). Directories whose names match mount_overlay_paths (node_modules, venvs, etc.) are registered as read-only host overlays — symlinked at execution time and never loaded into memory.",
     idempotent_hint = false,
     destructive_hint = false,
     read_only_hint = false
@@ -324,27 +291,13 @@ pub struct SessionCommitTool {
 pub struct GetFetchAllowlistTool {}
 
 #[mcp_tool(
-    name = "get_allowed_packages",
-    description = "Return the list of packages the server permits for session_install_package. \
-                   An empty list means all packages are allowed. A non-empty list means only those \
-                   packages may be installed — calls with any other package name will be rejected. \
-                   Check this before attempting to install a package.",
-    idempotent_hint = true,
-    destructive_hint = false,
-    read_only_hint = true
-)]
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct GetAllowedPackagesTool {}
-
-#[mcp_tool(
     name = "session_fetch",
-    description = "The designated gateway for all outbound HTTP. session_execute_python and session_bash \
-                   have restricted or no network access by design — fetch external data here first, \
-                   then process it with those tools. Makes an HTTP request from the host and saves \
-                   the response body as a workspace file so it is immediately available to subsequent \
-                   session_execute_python and session_bash calls. The body is never returned inline — \
-                   use session_read_file with offset + limit to read it in chunks. \
-                   The target URL's domain must be in the server's fetch allowlist.",
+    description = "The designated gateway for all outbound HTTP. session_bash has no network \
+                   access by design — fetch external data here first, then process it there. \
+                   Makes an HTTP request from the host and saves the response body as a workspace \
+                   file so it is immediately available to subsequent session_bash calls. The body \
+                   is never returned inline — use session_read_file with offset + limit to read it \
+                   in chunks. The target URL's domain must be in the server's fetch allowlist.",
     idempotent_hint = false,
     destructive_hint = false,
     read_only_hint = false
@@ -466,21 +419,6 @@ pub struct SessionCheckpointLabelTool {
 }
 
 #[mcp_tool(
-    name = "session_cancel",
-    description = "Interrupt an in-progress session_execute_python or session_bash call. Kills \
-                   the sandbox process; the session recovers automatically and is ready for new \
-                   calls immediately after. Returns immediately if the session is not executing.",
-    idempotent_hint = false,
-    destructive_hint = false,
-    read_only_hint = false
-)]
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct SessionCancelTool {
-    /// Session ID from create_session.
-    pub session_id: String,
-}
-
-#[mcp_tool(
     name = "session_checkpoint_squash",
     description = "Collapse a range of checkpoints into one, keeping the terminal file state and \
                    merging all stdout/stderr. Useful for cleaning up exploration history before \
@@ -530,8 +468,6 @@ tool_box!(
         SessionCloseTool,
         SessionHistoryTool,
         GetSessionStateTool,
-        SessionInstallPackageTool,
-        SessionExecutePythonTool,
         SessionBashTool,
         SessionRollbackTool,
         SessionReadFileTool,
@@ -544,14 +480,12 @@ tool_box!(
         SessionTreeTool,
         SessionFetchTool,
         GetFetchAllowlistTool,
-        GetAllowedPackagesTool,
         ListSnapshotsTool,
         SessionSnapshotTool,
         SessionRestoreTool,
         SessionGetEnvTool,
         SessionLabelTool,
         SessionCheckpointLabelTool,
-        SessionCancelTool,
         SessionCheckpointSquashTool,
         SessionCheckpointDropTool,
         SessionMergeTool,

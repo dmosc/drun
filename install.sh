@@ -69,12 +69,6 @@ fetch_timeout_ms = 60_000
 # Timeout for establishing a TCP connection during session_fetch, in milliseconds.
 connect_timeout_ms = 30_000
 
-# Timeout for Python code execution per session_exec call, in milliseconds.
-exec_timeout_ms = 60_000
-
-# Timeout for session_install_package calls, in milliseconds.
-install_timeout_ms = 120_000
-
 # Maximum workspace size per session, in megabytes.
 max_workspace_mb = 512
 
@@ -108,9 +102,6 @@ snapshot_on_close = false
 
 # Host environment variable names exposed to agents via session_get_env.
 env_allowlist = []
-
-# Package names agents may install. Empty = all packages allowed.
-package_allowlist = []
 
 # Timeout for session_bash calls, in milliseconds.
 bash_timeout_ms = 30_000

@@ -65,42 +65,13 @@ impl DrunError {
     pub fn execution_timeout(timeout_ms: u64) -> Self {
         Self::new(
             "execution_timeout",
-            format!("execution exceeded the {timeout_ms}ms timeout; simplify the code or increase exec_timeout_ms in server config"),
+            format!("execution exceeded the {timeout_ms}ms timeout; increase bash_timeout_ms in server config"),
         )
         .with_detail(serde_json::json!({ "timeout_ms": timeout_ms }))
     }
 
-    pub fn runner_crash(exit_code: Option<i32>) -> Self {
-        let mut e = Self::new(
-            "runner_crash",
-            "the sandbox process exited unexpectedly; the runner has been rebuilt — retry the operation",
-        );
-        if let Some(code) = exit_code {
-            e.detail = Some(serde_json::json!({ "exit_code": code }));
-        }
-        e
-    }
-
-    pub fn application_error(message: impl Into<String>) -> Self {
-        Self::new("application_error", message)
-    }
-
     pub fn command_denied(message: impl Into<String>) -> Self {
         Self::new("command_denied", message)
-    }
-
-    pub fn package_denied(package: &str) -> Self {
-        Self::new(
-            "package_denied",
-            format!("'{package}' is not in the server's package_allowlist"),
-        )
-    }
-
-    pub fn package_install_failed(package: &str, reason: &str) -> Self {
-        Self::new(
-            "package_install_failed",
-            format!("failed to install '{package}': {reason}"),
-        )
     }
 
     pub fn fetch_denied(url: &str) -> Self {
@@ -145,17 +116,8 @@ impl DrunError {
     pub fn from_exec(e: anyhow::Error) -> Self {
         match e.downcast_ref::<RunnerError>() {
             Some(RunnerError::Timeout { timeout_ms }) => Self::execution_timeout(*timeout_ms),
-            Some(RunnerError::Crash { exit_code }) => Self::runner_crash(*exit_code),
-            Some(RunnerError::Application(msg)) => Self::application_error(msg.clone()),
             Some(RunnerError::CommandDenied(msg)) => Self::command_denied(msg.clone()),
             None => Self::internal(e),
-        }
-    }
-
-    pub fn from_install(package: &str, e: anyhow::Error) -> Self {
-        match e.downcast_ref::<RunnerError>() {
-            Some(RunnerError::Crash { exit_code }) => Self::runner_crash(*exit_code),
-            _ => Self::package_install_failed(package, &e.to_string()),
         }
     }
 

@@ -14,10 +14,6 @@ pub struct Config {
     /// Timeout for establishing a TCP connection during session_fetch in
     /// milliseconds.
     pub connect_timeout_ms: u64,
-    /// Timeout for Python code execution in milliseconds.
-    pub exec_timeout_ms: u64,
-    /// Timeout for session_install_package calls in milliseconds.
-    pub install_timeout_ms: u64,
     /// Maximum workspace size in megabytes per session.
     pub max_workspace_mb: Option<u64>,
     /// Host path prefixes that may be mounted into a session. Empty means all
@@ -42,9 +38,6 @@ pub struct Config {
     /// Environment variable names the host exposes to agents via
     /// session_get_env.
     pub env_allowlist: Vec<String>,
-    /// Package names permitted for session_install_package. Empty means all
-    /// packages are allowed.
-    pub package_allowlist: Vec<String>,
     /// Timeout for session_bash calls in milliseconds.
     pub bash_timeout_ms: u64,
     /// Shell command substrings that are always denied.
@@ -52,9 +45,6 @@ pub struct Config {
     /// Shell command substrings that are permitted. Empty means all commands
     /// are allowed (except for the ones listed in denylist).
     pub bash_command_allowlist: Vec<String>,
-    /// Directory where pip packages are installed. All sessions share this
-    /// cache. Defaults to a `drun-packages` subdirectory in the OS temp dir.
-    pub packages_dir: Option<PathBuf>,
 }
 
 impl Default for Config {
@@ -67,8 +57,6 @@ impl Default for Config {
             ],
             fetch_timeout_ms: 60_000,
             connect_timeout_ms: 30_000,
-            exec_timeout_ms: 60_000,
-            install_timeout_ms: 120_000,
             max_workspace_mb: Some(512),
             max_sessions: Some(50),
             max_checkpoints: Some(200),
@@ -86,11 +74,9 @@ impl Default for Config {
             snapshots_dir: PathBuf::from("drun-snapshots"),
             snapshot_on_close: false,
             env_allowlist: vec![],
-            package_allowlist: vec![],
             bash_timeout_ms: 30_000,
             bash_command_denylist: vec![],
             bash_command_allowlist: vec![],
-            packages_dir: None,
         }
     }
 }
