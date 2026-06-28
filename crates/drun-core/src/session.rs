@@ -18,6 +18,7 @@ pub struct Session {
     checkpoints: Vec<Checkpoint>,
     checkpoint_idx: usize,
     origins: HashMap<String, PathBuf>,
+    overlays: HashMap<String, PathBuf>,
     packages: Vec<String>,
     intern_table: HashMap<u64, Weak<Vec<u8>>>,
     pub label: Option<String>,
@@ -34,6 +35,7 @@ impl Session {
             checkpoints: vec![empty_checkpoint(0, HashMap::new())],
             checkpoint_idx: 0,
             origins: HashMap::new(),
+            overlays: HashMap::new(),
             packages: Vec::new(),
             intern_table: HashMap::new(),
             label: None,
@@ -74,6 +76,7 @@ impl Session {
         }
         session.checkpoints[0].files = forked_files;
         session.origins = inherited_origins;
+        session.overlays = source.overlays.clone();
         session.parent = Some(CheckpointRef {
             session_id: source_session_id.to_string(),
             checkpoint_id: source_checkpoint_idx,
@@ -106,17 +109,33 @@ impl Session {
                 );
             }
         }
-        let host_entries = read_host_entries(&abs)?;
-        let mounted_keys: Vec<String> =
-            host_entries.iter().map(|(key, _, _)| key.clone()).collect();
-        let interned_entries: Vec<(String, Arc<Vec<u8>>, PathBuf)> = host_entries
+
+        let (file_entries, overlay_entries) = if abs.is_dir() {
+            scan_mount_path(&abs, "", &self.engine.config.mount_overlay_paths)?
+        } else {
+            let key = abs
+                .file_name()
+                .ok_or_else(|| anyhow::anyhow!("path has no filename: {}", abs.display()))?
+                .to_string_lossy()
+                .into_owned();
+            (vec![(key, std::fs::read(&abs)?, abs.clone())], vec![])
+        };
+
+        let interned_file_entries: Vec<(String, Arc<Vec<u8>>, PathBuf)> = file_entries
             .into_iter()
             .map(|(key, bytes, host_path)| (key, self.intern_bytes(bytes), host_path))
             .collect();
+
+        let mut mounted_keys: Vec<String> = Vec::new();
         let checkpoint = &mut self.checkpoints[self.checkpoint_idx];
-        for (key, arc, host_path) in interned_entries {
+        for (key, arc, host_path) in interned_file_entries {
             checkpoint.files.insert(key.clone(), arc);
-            self.origins.insert(key, host_path);
+            self.origins.insert(key.clone(), host_path);
+            mounted_keys.push(key);
+        }
+        for (key, host_path) in overlay_entries {
+            self.overlays.insert(key.clone(), host_path);
+            mounted_keys.push(key);
         }
         Ok(mounted_keys)
     }
@@ -165,7 +184,10 @@ impl Session {
     ) -> anyhow::Result<&Checkpoint> {
         self.checkpoints.truncate(self.checkpoint_idx + 1);
         let current_files = &self.checkpoints[self.checkpoint_idx].files;
-        match self.runner.execute_python(code, current_files, on_stdout) {
+        match self
+            .runner
+            .execute_python(code, current_files, &self.overlays, on_stdout)
+        {
             Ok(ExecSuccess {
                 stdout,
                 stderr,
@@ -209,6 +231,15 @@ impl Session {
             &self.checkpoints[self.checkpoint_idx].files,
             workspace_dir.path(),
         )?;
+        for (key, host_path) in &self.overlays {
+            let dest = workspace_dir.path().join(key);
+            if !dest.exists() {
+                if let Some(parent) = dest.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+                std::os::unix::fs::symlink(host_path, &dest)?;
+            }
+        }
         let child = sandbox::sandboxed_sh(command, workspace_dir.path())?
             .current_dir(workspace_dir.path())
             .stdout(std::process::Stdio::piped())
@@ -359,7 +390,9 @@ impl Session {
             Some(ks) => {
                 for key in &ks {
                     match source_files.get(key) {
-                        Some(blob) => { merged.insert(key.clone(), Arc::clone(blob)); }
+                        Some(blob) => {
+                            merged.insert(key.clone(), Arc::clone(blob));
+                        }
                         None => anyhow::bail!("file '{}' not found in source checkpoint", key),
                     }
                 }
@@ -509,6 +542,7 @@ impl Session {
             parent: self.parent.clone(),
             label: self.label.clone(),
             origins: self.origins.clone(),
+            overlays: self.overlays.clone(),
             blobs,
             checkpoints: checkpoint_records,
         }
@@ -553,12 +587,19 @@ impl Session {
             .filter(|(_, path)| path.exists())
             .collect();
 
+        let overlays = snapshot
+            .overlays
+            .into_iter()
+            .filter(|(_, path)| path.exists())
+            .collect();
+
         let mut session = Self {
             runner: Runner::new(engine)?,
             engine: engine.clone(),
             checkpoints,
             checkpoint_idx: snapshot.checkpoint_idx,
             origins,
+            overlays,
             packages: Vec::new(),
             intern_table,
             label: snapshot.label,
@@ -786,29 +827,33 @@ fn empty_checkpoint(id: usize, files: FileMap) -> Checkpoint {
     }
 }
 
-fn read_host_entries(abs: &Path) -> anyhow::Result<Vec<(String, Vec<u8>, PathBuf)>> {
-    if abs.is_dir() {
-        walkdir::WalkDir::new(abs)
-            .into_iter()
-            .filter_map(|e| e.ok())
-            .filter(|e| e.file_type().is_file())
-            .map(|entry| {
-                let key = entry
-                    .path()
-                    .strip_prefix(abs)
-                    .unwrap()
-                    .to_string_lossy()
-                    .into_owned();
-                let bytes = std::fs::read(entry.path())?;
-                Ok((key, bytes, entry.path().to_path_buf()))
-            })
-            .collect()
-    } else {
-        let key = abs
-            .file_name()
-            .ok_or_else(|| anyhow::anyhow!("path has no filename: {}", abs.display()))?
-            .to_string_lossy()
-            .into_owned();
-        Ok(vec![(key, std::fs::read(abs)?, abs.to_path_buf())])
+fn scan_mount_path(
+    dir: &Path,
+    key_prefix: &str,
+    overlay_patterns: &[String],
+) -> anyhow::Result<(Vec<(String, Vec<u8>, PathBuf)>, Vec<(String, PathBuf)>)> {
+    let mut file_entries = vec![];
+    let mut overlay_entries = vec![];
+    for entry in std::fs::read_dir(dir)? {
+        let entry = entry?;
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let key = if key_prefix.is_empty() {
+            name.clone()
+        } else {
+            format!("{key_prefix}/{name}")
+        };
+        let path = entry.path();
+        if path.is_dir() {
+            if overlay_patterns.iter().any(|p| p == &name) {
+                overlay_entries.push((key, path));
+            } else {
+                let (sub_files, sub_overlays) = scan_mount_path(&path, &key, overlay_patterns)?;
+                file_entries.extend(sub_files);
+                overlay_entries.extend(sub_overlays);
+            }
+        } else if path.is_file() {
+            file_entries.push((key, std::fs::read(&path)?, path));
+        }
     }
+    Ok((file_entries, overlay_entries))
 }

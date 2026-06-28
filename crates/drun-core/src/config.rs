@@ -23,6 +23,10 @@ pub struct Config {
     /// Host path prefixes that may be mounted into a session. Empty means all
     /// paths are permitted.
     pub mount_allowlist: Vec<PathBuf>,
+    /// Directory names that session_mount treats as read-only host overlays
+    /// instead of loading into the workspace. Symlinked at execution time and
+    /// never checkpointed. Set to [] to disable auto-detection.
+    pub mount_overlay_paths: Vec<String>,
     /// Directory that session exports must be written to.
     pub export_root: PathBuf,
     /// Directory where session_snapshot writes .drun files.
@@ -70,6 +74,14 @@ impl Default for Config {
             max_checkpoints: Some(200),
             session_idle_timeout_secs: Some(3600),
             mount_allowlist: vec![],
+            mount_overlay_paths: vec![
+                "node_modules".to_string(),
+                ".venv".to_string(),
+                "venv".to_string(),
+                "target".to_string(),
+                "__pycache__".to_string(),
+                ".git".to_string(),
+            ],
             export_root: PathBuf::from("drun-export"),
             snapshots_dir: PathBuf::from("drun-snapshots"),
             snapshot_on_close: false,

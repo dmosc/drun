@@ -1,6 +1,8 @@
 import sys
 import os
+import site
 import atexit
+import glob
 import json
 import shutil
 import tempfile
@@ -45,6 +47,17 @@ def sync_workspace(files):
             f.write(bytes(byte_list))
 
 
+def apply_overlays(overlays):
+    for key, host_path in overlays.items():
+        dest = os.path.join(WORKSPACE_DIR, key)
+        if not os.path.lexists(dest):
+            os.makedirs(os.path.dirname(dest) or WORKSPACE_DIR, exist_ok=True)
+            os.symlink(host_path, dest)
+        for site_packages in glob.glob(os.path.join(host_path, 'lib', 'python*', 'site-packages')):
+            if site_packages not in sys.path:
+                site.addsitedir(site_packages)
+
+
 def collect_workspace():
     result = {}
     for root, _, file_names in os.walk(WORKSPACE_DIR):
@@ -86,6 +99,7 @@ for raw_line in sys.stdin:
             send({'error': (result.stderr or result.stdout).strip()})
     else:
         sync_workspace(msg.get('files', {}))
+        apply_overlays(msg.get('overlays', {}))
         os.chdir(WORKSPACE_DIR)
         stdout_writer, stderr_writer = ProgressWriter(), ProgressWriter()
         prev_stdout, prev_stderr = sys.stdout, sys.stderr
