@@ -92,6 +92,11 @@ mount_allowlist = [
   "$PWD"
 ]
 
+# Directory names that session_mount registers as read-only host overlays
+# instead of loading into the workspace. Symlinked at execution time, never
+# checkpointed. Set to [] to disable.
+mount_overlay_paths = ["node_modules", ".venv", "venv", "target", "__pycache__"]
+
 # Directory where session_export writes files.
 export_root = "$DRUN_DIR/exports"
 

@@ -46,6 +46,8 @@ pub struct SessionSnapshot {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
     pub origins: HashMap<String, PathBuf>,
+    #[serde(default)]
+    pub overlays: HashMap<String, PathBuf>,
     pub blobs: Vec<Vec<u8>>,
     pub checkpoints: Vec<CheckpointRecord>,
 }

@@ -1,7 +1,9 @@
 use crate::error::RunnerError;
 use crate::{DrunEngine, FileMap};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::io::{BufRead, BufReader, BufWriter, Write};
+use std::path::PathBuf;
 use std::process::{Child, ChildStdin, ChildStdout};
 use std::sync::{
     Arc, Mutex,
@@ -13,6 +15,7 @@ use std::time::Duration;
 struct ExecRequest<'a> {
     code: &'a str,
     files: &'a FileMap,
+    overlays: &'a HashMap<String, PathBuf>,
 }
 
 #[derive(Serialize)]
@@ -120,12 +123,17 @@ impl Runner {
         &mut self,
         code: &str,
         files: &FileMap,
+        overlays: &HashMap<String, PathBuf>,
         on_progress: &mut dyn FnMut(String),
     ) -> anyhow::Result<ExecSuccess> {
         writeln!(
             self.stdin,
             "{}",
-            serde_json::to_string(&ExecRequest { code, files })?
+            serde_json::to_string(&ExecRequest {
+                code,
+                files,
+                overlays
+            })?
         )?;
         self.stdin.flush()?;
         match self.await_response(self.engine.config.exec_timeout_ms, on_progress)? {
