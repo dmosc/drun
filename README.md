@@ -1238,6 +1238,30 @@ Never use Bash to run Python or shell commands that modify files — no
 invocations. Use drun MCP tools for all code execution.
 ```
 
+### Hard-enforcing with Claude Code hooks
+
+Drun enforces natively safe interactions with the host system.
+`Bash`, `Edit`, `Write`, and `NotebookEdit` are physically blocked 
+while any drun session is open as safer alternatives exist within the tools.
+
+**How it works:** a counter file at `~/.drun/session_count` tracks open sessions.
+A `PostToolUse` hook increments it on `create_session` and decrements it on
+`session_close`. A `PreToolUse` hook reads the counter before allowing any host
+tool call; if the count is above zero it blocks the tool use. When all sessions
+are closed the counter reaches zero and host tools are available again.
+
+`uninstall.sh` removes the hook entries from `~/.claude/settings.json`, the hook
+script, and the counter file on teardown.
+
+### Known issues
+
+**If the counter gets stuck** (e.g., the process crashed or a Claude session is exited
+before `session_close` was called), reset it manually:
+
+```bash
+echo 0 > ~/.drun/session_count
+```
+
 ---
 
 ## Examples
