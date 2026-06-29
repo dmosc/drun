@@ -63,10 +63,10 @@ pub struct SessionRollbackTool {
 
 #[mcp_tool(
     name = "session_read_file",
-    description = "Read a file from the current session checkpoint. \
-                   For small files or images, omit offset and limit to get the full content. \
-                   For large files (fetched data, CSVs, reports), use offset + limit to page \
-                   through the content without flooding context. The response includes total_bytes \
+    description = "Read a file from the current session checkpoint by its session-relative path \
+                   (e.g. src/main.py, not an absolute path). For small files or images, omit \
+                   offset and limit to get the full content. For large files, use offset + limit \
+                   to page through without flooding context. The response includes total_bytes \
                    and has_more so you know when you have reached the end.",
     idempotent_hint = true,
     destructive_hint = false,
@@ -76,7 +76,7 @@ pub struct SessionRollbackTool {
 pub struct SessionReadFileTool {
     /// Session ID from create_session
     pub session_id: String,
-    /// File path relative to /workspace.
+    /// Session-relative file path (e.g. src/main.py).
     pub path: String,
     /// Byte offset to start reading from. Omit to start from the beginning.
     pub offset: Option<u64>,
@@ -109,7 +109,11 @@ pub struct SessionDiffTool {
 
 #[mcp_tool(
     name = "session_mount",
-    description = "Copy a file or directory from the host filesystem into the session workspace. Files become available at /workspace/<filename> (or /workspace/<relative-path> for directories). Directories whose names match mount_overlay_paths (node_modules, venvs, etc.) are registered as read-only host overlays — symlinked at execution time and never loaded into memory.",
+    description = "Copy a file or directory from the host filesystem into the session. A file at \
+                   /host/foo.py is accessible as foo.py; a directory at /host/myproject/ is \
+                   accessible as myproject/. Directories whose names match mount_overlay_paths \
+                   (node_modules, venvs, etc.) are registered as read-only host overlays — \
+                   symlinked at execution time and never loaded into memory.",
     idempotent_hint = false,
     destructive_hint = false,
     read_only_hint = false
@@ -177,7 +181,9 @@ pub struct GetSessionStateTool {
 
 #[mcp_tool(
     name = "session_write_file",
-    description = "Create or overwrite a file in the session workspace. Creates a new checkpoint. Path is relative to /workspace. Set is_base64 to true to write binary files — content will be decoded from standard base64 before writing.",
+    description = "Create or overwrite a file in the session by its session-relative path \
+                   (e.g. src/main.py). Creates a new checkpoint. Set is_base64 to true to write \
+                   binary files — content will be decoded from standard base64 before writing.",
     idempotent_hint = false,
     destructive_hint = false,
     read_only_hint = false
@@ -186,7 +192,7 @@ pub struct GetSessionStateTool {
 pub struct SessionWriteFileTool {
     /// Session ID from create_session.
     pub session_id: String,
-    /// File path relative to /workspace.
+    /// Session-relative file path (e.g. src/main.py).
     pub path: String,
     pub content: String,
     pub is_base64: Option<bool>,
@@ -203,7 +209,7 @@ pub struct SessionWriteFileTool {
 pub struct SessionDeleteFileTool {
     /// Session ID from create_session.
     pub session_id: String,
-    /// File path relative to /workspace.
+    /// Session-relative file path (e.g. src/main.py).
     pub path: String,
 }
 
