@@ -599,6 +599,49 @@ impl ServerHandler for DrunHandler {
                     Ok(text(build_checkpoint_history(session)))
                 })
             }
+
+            DrunTools::CheckpointReadStdstreamsTool(t) => {
+                self.with_session(&t.session_id, |session| {
+                    let checkpoint_id = t
+                        .checkpoint_id
+                        .map(|id| id as usize)
+                        .unwrap_or_else(|| session.current().id);
+                    let checkpoint = session.history().get(checkpoint_id).ok_or_else(|| {
+                        DrunError::internal(format!("checkpoint {} does not exist", checkpoint_id))
+                            .into_tool_err()
+                    })?;
+                    let stream = t.stream.as_deref().unwrap_or("stdout");
+                    let content = match stream {
+                        "stdout" => &checkpoint.stdout,
+                        "stderr" => &checkpoint.stderr,
+                        _ => {
+                            return Err(DrunError::internal(format!(
+                                "unknown stream '{}'; use 'stdout' or 'stderr'",
+                                stream
+                            ))
+                            .into_tool_err());
+                        }
+                    };
+                    let total = content.len();
+                    let start = (t.offset.unwrap_or(0) as usize).min(total);
+                    let end = t
+                        .limit
+                        .map(|l| (start + l as usize).min(total))
+                        .unwrap_or(total);
+                    Ok(text(
+                        serde_json::json!({
+                            "stream": stream,
+                            "checkpoint_id": checkpoint_id,
+                            "offset": start,
+                            "length": end - start,
+                            "total_bytes": total,
+                            "has_more": end < total,
+                            "content": &content[start..end],
+                        })
+                        .to_string(),
+                    ))
+                })
+            }
         }
     }
 }

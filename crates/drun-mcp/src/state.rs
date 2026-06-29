@@ -20,18 +20,14 @@ struct SessionSummary {
     parent_checkpoint_id: Option<usize>,
 }
 
-const TREE_PREVIEW_LEN: usize = 200;
-
 #[derive(Serialize)]
 struct CheckpointTreeNode {
     checkpoint_id: usize,
     is_current: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     label: Option<String>,
-    #[serde(skip_serializing_if = "String::is_empty")]
-    stdout_preview: String,
-    #[serde(skip_serializing_if = "String::is_empty")]
-    stderr_preview: String,
+    stdout_bytes: usize,
+    stderr_bytes: usize,
     file_count: usize,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     forks: Vec<SessionTreeNode>,
@@ -66,17 +62,12 @@ struct SessionState {
     parent_session_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     parent_checkpoint_id: Option<usize>,
-    #[serde(skip_serializing_if = "String::is_empty")]
-    stdout: String,
-    #[serde(skip_serializing_if = "String::is_empty")]
-    stderr: String,
-    workspace: Vec<String>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    files_added: Vec<String>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    files_modified: Vec<String>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    files_removed: Vec<String>,
+    stdout_bytes: usize,
+    stderr_bytes: usize,
+    workspace_file_count: usize,
+    files_added_count: usize,
+    files_modified_count: usize,
+    files_removed_count: usize,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     committed_files: Vec<String>,
 }
@@ -86,15 +77,12 @@ struct CheckpointSummary {
     checkpoint_id: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     label: Option<String>,
-    #[serde(skip_serializing_if = "String::is_empty")]
-    stdout: String,
+    stdout_bytes: usize,
+    stderr_bytes: usize,
     file_count: usize,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    files_added: Vec<String>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    files_modified: Vec<String>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    files_removed: Vec<String>,
+    files_added_count: usize,
+    files_modified_count: usize,
+    files_removed_count: usize,
 }
 
 struct FileDelta {
@@ -169,8 +157,6 @@ pub(crate) fn build_session_state(
     committed_files: Vec<String>,
 ) -> String {
     let current = session.current();
-    let mut workspace: Vec<String> = current.files.keys().cloned().collect();
-    workspace.sort();
     let delta = file_delta(previous_files, &current.files);
     let (parent_session_id, parent_checkpoint_id) = match &session.parent {
         Some(r) => (Some(r.session_id.clone()), Some(r.checkpoint_id)),
@@ -182,12 +168,12 @@ pub(crate) fn build_session_state(
         checkpoint_id: current.id,
         parent_session_id,
         parent_checkpoint_id,
-        stdout: current.stdout.clone(),
-        stderr: current.stderr.clone(),
-        workspace,
-        files_added: delta.added,
-        files_modified: delta.modified,
-        files_removed: delta.removed,
+        stdout_bytes: current.stdout.len(),
+        stderr_bytes: current.stderr.len(),
+        workspace_file_count: current.files.len(),
+        files_added_count: delta.added.len(),
+        files_modified_count: delta.modified.len(),
+        files_removed_count: delta.removed.len(),
         committed_files,
     })
     .unwrap_or_else(|_| "{}".into())
@@ -208,23 +194,16 @@ pub(crate) fn build_checkpoint_history(session: &Session) -> String {
             CheckpointSummary {
                 checkpoint_id: checkpoint.id,
                 label: checkpoint.label.clone(),
-                stdout: checkpoint.stdout.clone(),
+                stdout_bytes: checkpoint.stdout.len(),
+                stderr_bytes: checkpoint.stderr.len(),
                 file_count: checkpoint.files.len(),
-                files_added: delta.added,
-                files_modified: delta.modified,
-                files_removed: delta.removed,
+                files_added_count: delta.added.len(),
+                files_modified_count: delta.modified.len(),
+                files_removed_count: delta.removed.len(),
             }
         })
         .collect();
     serde_json::to_string(&summaries).unwrap_or_else(|_| "[]".into())
-}
-
-fn truncate_preview(s: &str) -> String {
-    if s.len() <= TREE_PREVIEW_LEN {
-        s.to_string()
-    } else {
-        format!("{}…", &s[..TREE_PREVIEW_LEN])
-    }
 }
 
 pub(crate) fn build_snapshot_catalog(snapshots_dir: &Path) -> String {
@@ -281,8 +260,8 @@ fn build_session_node(
                 checkpoint_id: cp.id,
                 is_current: cp.id == current_id,
                 label: cp.label.clone(),
-                stdout_preview: truncate_preview(&cp.stdout),
-                stderr_preview: truncate_preview(&cp.stderr),
+                stdout_bytes: cp.stdout.len(),
+                stderr_bytes: cp.stderr.len(),
                 file_count: cp.files.len(),
                 forks,
             }
