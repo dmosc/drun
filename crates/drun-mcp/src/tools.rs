@@ -124,7 +124,7 @@ pub struct SessionMountTool {
 
 #[mcp_tool(
     name = "session_list",
-    description = "List all active sessions with their checkpoint count, installed packages, and resource limits.",
+    description = "List all active sessions with their checkpoint count and parent references.",
     idempotent_hint = true,
     destructive_hint = false,
     read_only_hint = true
@@ -147,7 +147,9 @@ pub struct SessionCloseTool {
 
 #[mcp_tool(
     name = "session_history",
-    description = "List every checkpoint in a session with its stdout and the file delta relative to the previous checkpoint. Use this to decide which checkpoint to roll back to.",
+    description = "List every checkpoint in a session with stdout_bytes/stderr_bytes and the file \
+                   delta relative to the previous checkpoint. Use checkpoint_read_stdstreams to \
+                   read the actual output. Use this to decide which checkpoint to roll back to.",
     idempotent_hint = true,
     destructive_hint = false,
     read_only_hint = true
@@ -160,7 +162,9 @@ pub struct SessionHistoryTool {
 
 #[mcp_tool(
     name = "get_session_state",
-    description = "Get the current state of a session: workspace files, installed packages, and checkpoint info.",
+    description = "Get the current state of a session: checkpoint id, stdout_bytes/stderr_bytes, \
+                   file list, and deltas since the previous checkpoint. stdout and stderr are not \
+                   returned inline — use checkpoint_read_stdstreams to page through them.",
     idempotent_hint = true,
     destructive_hint = false,
     read_only_hint = true
@@ -441,6 +445,31 @@ pub struct SessionCheckpointSquashTool {
 }
 
 #[mcp_tool(
+    name = "checkpoint_read_stdstreams",
+    description = "Read stdout or stderr from a session checkpoint with offset and limit for \
+                   pagination. Tool calls like session_bash, session_history, and get_session_state \
+                   report stdout_bytes/stderr_bytes but do not return the content inline — use this \
+                   tool to fetch it. Defaults to the current checkpoint's stdout. \
+                   Returns the same offset/length/total_bytes/has_more envelope as session_read_file.",
+    idempotent_hint = true,
+    destructive_hint = false,
+    read_only_hint = true
+)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct CheckpointReadStdstreamsTool {
+    /// Session ID from create_session.
+    pub session_id: String,
+    /// Checkpoint to read output from. Defaults to the current checkpoint.
+    pub checkpoint_id: Option<u64>,
+    /// Stream to read: "stdout" (default) or "stderr".
+    pub stream: Option<String>,
+    /// Byte offset to start reading from. Omit to start from the beginning.
+    pub offset: Option<u64>,
+    /// Maximum number of bytes to return. Omit to return all remaining bytes.
+    pub limit: Option<u64>,
+}
+
+#[mcp_tool(
     name = "session_checkpoint_drop",
     description = "Remove a range of checkpoints from history to free memory or stay under the \
                    checkpoint limit. The range is inclusive on both ends. Cannot drop the current \
@@ -489,5 +518,6 @@ tool_box!(
         SessionCheckpointSquashTool,
         SessionCheckpointDropTool,
         SessionMergeTool,
+        CheckpointReadStdstreamsTool,
     ]
 );

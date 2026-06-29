@@ -1,5 +1,3 @@
-//! Helpers for building `CallToolResult` responses: plain text and file/image content.
-
 use base64::{Engine, engine::general_purpose::STANDARD};
 use rust_mcp_sdk::schema::{CallToolResult, ContentBlock, ImageContent, TextContent};
 
