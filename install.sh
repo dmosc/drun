@@ -140,4 +140,67 @@ install_binary
 create_config
 register_mcp
 
+# ── Session guard hooks ───────────────────────────────────────────────────────
+
+HOOKS_SCRIPT="$DRUN_DIR/session_hooks.sh"
+
+cat > "$HOOKS_SCRIPT" << 'HOOKS_EOF'
+#!/bin/sh
+COUNTER_FILE="$HOME/.drun/session_count"
+count() { cat "$COUNTER_FILE" 2>/dev/null || echo 0; }
+case "$1" in
+  increment) echo $(( $(count) + 1 )) > "$COUNTER_FILE" ;;
+  decrement) c=$(count); echo $(( c > 0 ? c - 1 : 0 )) > "$COUNTER_FILE" ;;
+  guard)
+    if [ "$(count)" -gt 0 ]; then
+      echo "drun session active — use drun session tools instead of host tools."
+      exit 2
+    fi ;;
+esac
+HOOKS_EOF
+
+chmod +x "$HOOKS_SCRIPT"
+
+python3 - << PYEOF
+import json, os
+
+settings_path = os.path.expanduser("~/.claude/settings.json")
+hooks_script = "$HOOKS_SCRIPT"
+
+if os.path.exists(settings_path):
+    with open(settings_path) as f:
+        settings = json.load(f)
+else:
+    settings = {}
+
+hooks = settings.setdefault("hooks", {})
+post  = hooks.setdefault("PostToolUse", [])
+pre   = hooks.setdefault("PreToolUse",  [])
+
+new_post = [
+    {"matcher": "mcp__drun__create_session", "hooks": [{"type": "command", "command": f"{hooks_script} increment"}]},
+    {"matcher": "mcp__drun__session_close",  "hooks": [{"type": "command", "command": f"{hooks_script} decrement"}]},
+]
+new_pre = [
+    {"matcher": "Bash|Edit|Write|NotebookEdit", "hooks": [{"type": "command", "command": f"{hooks_script} guard"}]},
+]
+
+existing_post = {e["matcher"] for e in post}
+existing_pre  = {e["matcher"] for e in pre}
+
+for entry in new_post:
+    if entry["matcher"] not in existing_post:
+        post.append(entry)
+for entry in new_pre:
+    if entry["matcher"] not in existing_pre:
+        pre.append(entry)
+
+os.makedirs(os.path.dirname(os.path.abspath(settings_path)), exist_ok=True)
+with open(settings_path, "w") as f:
+    json.dump(settings, f, indent=2)
+    f.write("\n")
+
+print(f"Session guard hooks registered in {settings_path}.")
+PYEOF
+
 echo "Done! drun is ready."
