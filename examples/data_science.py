@@ -1,9 +1,15 @@
 """
 Data science agent — Iris classification benchmark.
 
-An LLM agent fetches the Iris dataset from GitHub, installs scikit-learn and
-tabulate inside the sandbox, trains three classifiers, compares their accuracy,
+The host fetches the Iris dataset from GitHub and pushes it into the sandbox
+as a file. An LLM agent then implements and trains three classifiers from
+scratch using only the Python standard library, compares their accuracy,
 and exports a Markdown report with the results.
+
+session_bash has no network access and no package-install mechanism, so
+there is no pandas/scikit-learn available inside the sandbox — the agent
+implements decision tree, random forest, and KNN classifiers itself using
+plain Python.
 
 Prerequisites:
     pip install 'drun-sandbox[chat]'
@@ -24,55 +30,57 @@ Usage:
         python examples/data_science.py
 
 Expected behavior:
-    1. Agent fetches iris.csv from raw.githubusercontent.com.
-    2. Installs pandas, scikit-learn, and tabulate inside the sandbox.
-    3. Trains Decision Tree, Random Forest, and KNN classifiers.
-    4. Reports accuracy and a feature-importance table.
-    5. Writes results.md to /workspace; the script exports it to
+    1. Host fetches iris.csv from raw.githubusercontent.com and writes it
+       into the session.
+    2. Agent implements a decision tree, a small random forest, and a KNN
+       classifier from scratch (stdlib only) and trains all three.
+    3. Reports accuracy and a feature-importance ranking.
+    4. Writes results.md, and the script exports it to
        /tmp/drun-data-science/results.md.
 """
 
 import os
 import textwrap
+import urllib.request
 
 from drun import Session
 from drun.chat import run
 
+IRIS_URL = "https://raw.githubusercontent.com/mwaskom/seaborn-data/master/iris.csv"
+
 PROMPT = textwrap.dedent("""\
     You are a data science agent operating inside a drun sandbox.
-    Your task: fetch the Iris dataset, train three classifiers, compare their
-    accuracy, and write a Markdown report.
+    iris.csv is already present in your workspace — it was fetched by the
+    host before this session started (the sandbox itself has no network
+    access, and there is no way to install pandas or scikit-learn inside
+    it). Your task: implement three classifiers from scratch using only the
+    Python standard library, compare their accuracy, and write a Markdown
+    report.
 
-    STEP 1 — Fetch the dataset
+    STEP 1 — Load the dataset
     --------------------------
-    Use urllib.request (no install needed) to download:
+    Parse iris.csv with the csv module. Use species as the label, the four
+    measurement columns as features. Shuffle with random.seed(42) and split
+    80/20 train/test.
 
-        https://raw.githubusercontent.com/mwaskom/seaborn-data/master/iris.csv
+    STEP 2 — Implement and train three classifiers (stdlib only)
+    --------------------------------------------------------------
+    a. A decision tree classifier: recursively split on the single
+       feature/threshold pair that minimizes Gini impurity, to a max depth
+       of 4.
+    b. A small random forest: 10 decision trees (same algorithm as above),
+       each trained on a bootstrap sample of the training set with a random
+       subset of 2 features considered per split; predict by majority vote.
+    c. A KNN classifier with k=5, using Euclidean distance over the four
+       features.
 
-    Save it to /workspace/iris.csv.
+    For each, compute accuracy on the test set. For the random forest, also
+    compute a feature-importance ranking (count how often each feature is
+    chosen as a split point across all trees, normalized).
 
-    STEP 2 — Install packages
-    -------------------------
-    install_package("pandas")
-    install_package("scikit-learn")
-    install_package("tabulate")
-
-    STEP 3 — Train and evaluate classifiers
-    ----------------------------------------
-    Load iris.csv with pandas. Use species as the label, the four measurement
-    columns as features. Split 80/20 train/test with random_state=42.
-
-    Train these three classifiers (all from sklearn):
-      a. DecisionTreeClassifier(random_state=42)
-      b. RandomForestClassifier(n_estimators=100, random_state=42)
-      c. KNeighborsClassifier(n_neighbors=5)
-
-    For each, compute accuracy on the test set. For the Random Forest, also
-    extract feature importances and rank the four features.
-
-    STEP 4 — Write the report
-    -------------------------
-    Write /workspace/results.md with:
+    STEP 3 — Write the report
+    ---------------------------
+    Write results.md with:
 
     # Iris Classification Benchmark
 
@@ -92,8 +100,6 @@ PROMPT = textwrap.dedent("""\
     ...
 
     Add a one-sentence conclusion naming the best classifier.
-
-    Do not snapshot — the config handles persistence settings.
 """)
 
 
@@ -101,7 +107,14 @@ def main():
     model = os.environ.get("MODEL", "claude-sonnet-4-6")
     base_url = os.environ.get("BASE_URL")
 
+    request = urllib.request.Request(
+        IRIS_URL, headers={"User-Agent": "drun-example research@example.com"}
+    )
+    with urllib.request.urlopen(request) as response:
+        iris_csv = response.read()
+
     session = Session()
+    session.write_file("iris.csv", iris_csv)
 
     run(
         session,

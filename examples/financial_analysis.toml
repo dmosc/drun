@@ -1,10 +1,9 @@
 # drun configuration — financial analysis
 #
-# Use this when the agent needs to pull live market data and SEC filings,
-# install financial packages, and export PDF/Markdown reports.
-#
-# The built-in PyPI domains (pypi.org, files.pythonhosted.org, cdn.jsdelivr.net)
-# are always available regardless of this file — no need to list them here.
+# Use this when an agent needs to analyze financial data and export
+# Markdown reports. Data fetching happens on the host (via session_fetch
+# over MCP, or directly in the example script for the Python SDK path) —
+# session_bash itself has no network access at all, on either platform.
 #
 # Usage (Python SDK):
 #   DRUN_CONFIG=examples/financial_analysis.toml \
@@ -12,9 +11,10 @@
 #
 # Usage (MCP — set in ~/.claude/settings.json or .claude/settings.json):
 #   { "env": { "DRUN_CONFIG": "/absolute/path/to/examples/financial_analysis.toml" } }
-#   Then reload the window and ask Claude to analyze a company's financials.
+#   Then reload the window and ask Claude to analyze a company's financials
+#   using session_fetch.
 
-# Financial data sources the agent may fetch from.
+# Financial data sources session_fetch may reach (MCP path only).
 domain_allowlist = [
     "data.sec.gov",
     "efts.sec.gov",
@@ -23,30 +23,17 @@ domain_allowlist = [
     "query2.finance.yahoo.com",
 ]
 
-# Raw price history, XBRL payloads, and generated reports fit comfortably here.
+# Raw XBRL payloads and generated reports fit comfortably here.
 max_workspace_mb = 512
 
 # One base session plus room for parallel company comparisons.
 max_sessions = 4
 
 # SEC EDGAR full 10-K XBRL payloads can be large and slow to parse — allow 3 min.
-exec_timeout_ms = 180_000
-
-# Financial packages are not tiny; pip may need time on a cold cache.
-install_timeout_ms = 180_000
+bash_timeout_ms = 180_000
 
 # Keep sessions alive across breaks in the analysis.
 session_idle_timeout_secs = 7200
-
-# Only permit packages relevant to financial analysis.
-# Remove or widen if you need additional libraries.
-package_allowlist = [
-    "pandas",
-    "requests",
-    "tabulate",
-    "yfinance",
-    "matplotlib",
-]
 
 # Reject dangerous shell commands before they reach the sandbox.
 bash_command_denylist = ["rm -rf", "curl", "wget", "nc"]

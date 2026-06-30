@@ -4,21 +4,27 @@ Runnable examples and configuration recipes for drun. Each recipe is a
 self-contained `.toml` file you can point `DRUN_CONFIG` at; each Python script
 is a working example you can run immediately.
 
+`session_bash` (the only execution tool) runs in a sandbox with **no network
+access and no package-install mechanism**, on either platform. Examples that
+need external data fetch it on the host (via `urllib`, before the session is
+created, or via the MCP-only `session_fetch` tool) and push it into the session
+with `write_file`/`session_write_file` or `--mount`.
+
 ---
 
 ## What's here
 
-| File                                                   | Kind             | What it shows                                                                         |
-| ------------------------------------------------------ | ---------------- | ------------------------------------------------------------------------------------- |
-| [`quickstart.py`](quickstart.py)                       | Python SDK       | Core API without an LLM: execute, rollback, install, bash, diff, export               |
-| [`financial_analysis.py`](financial_analysis.py)       | Python SDK + LLM | Agent pulls SEC EDGAR revenue data for Apple, formats a Markdown report               |
-| [`data_science.py`](data_science.py)                   | Python SDK + LLM | Agent trains three classifiers on the Iris dataset, compares accuracy                 |
-| [`fibonacci_slow.py`](fibonacci_slow.py)               | Baseline         | Naive O(2ⁿ) Fibonacci — the baseline for the benchmark example                        |
-| [`fibonacci_benchmark.py`](fibonacci_benchmark.py)     | Python SDK + LLM | Stress-tests every sandbox constraint, then benchmarks four Fibonacci implementations |
-| [`financial_analysis.toml`](financial_analysis.toml)   | Config recipe    | SEC/Yahoo Finance domains, financial packages, snapshots enabled                      |
-| [`data_science.toml`](data_science.toml)               | Config recipe    | Dataset domains, ML packages, larger workspace and timeouts                           |
-| [`heavy_workloads.toml`](heavy_workloads.toml)         | Config recipe    | 4 GB workspace, 10-minute timeouts, persistent pip cache, auto-snapshot               |
-| [`fibonacci_benchmark.toml`](fibonacci_benchmark.toml) | Config recipe    | Tight allowlists, short timeout — used by the stress test                             |
+| File                                                   | Kind             | What it shows                                                                               |
+| ------------------------------------------------------ | ---------------- | ------------------------------------------------------------------------------------------- |
+| [`quickstart.py`](quickstart.py)                       | Python SDK       | Core API without an LLM: bash, write, rollback, diff, export                                |
+| [`financial_analysis.py`](financial_analysis.py)       | Python SDK + LLM | Host fetches SEC EDGAR revenue data for Apple; agent formats a Markdown report              |
+| [`data_science.py`](data_science.py)                   | Python SDK + LLM | Host fetches the Iris dataset; agent implements and compares three classifiers from scratch |
+| [`fibonacci_slow.py`](fibonacci_slow.py)               | Baseline         | Naive O(2ⁿ) Fibonacci — the baseline for the benchmark example                              |
+| [`fibonacci_benchmark.py`](fibonacci_benchmark.py)     | Python SDK + LLM | Stress-tests every sandbox constraint, then benchmarks four Fibonacci implementations       |
+| [`financial_analysis.toml`](financial_analysis.toml)   | Config recipe    | SEC/Yahoo Finance fetch domains, generous timeout, snapshots enabled                        |
+| [`data_science.toml`](data_science.toml)               | Config recipe    | Dataset fetch domains, larger workspace and timeout                                         |
+| [`heavy_workloads.toml`](heavy_workloads.toml)         | Config recipe    | 4 GB workspace, 10-minute timeouts, auto-snapshot on close                                  |
+| [`fibonacci_benchmark.toml`](fibonacci_benchmark.toml) | Config recipe    | Tight bash denylist, short timeout — used by the stress test                                |
 
 ---
 
@@ -69,35 +75,20 @@ pip install 'drun-sandbox[chat]'
 python examples/quickstart.py
 ```
 
-This exercises the raw SDK: create a session, run Python, write a file, roll
-back to a prior state, install a package, run a bash command, diff two
-checkpoints, and export to the host. No LLM or API key required.
+This exercises the raw SDK: create a session, run a bash command, write a file,
+diff two checkpoints, roll back to a prior state, run another bash command, and
+export to the host. No LLM or API key required.
 
-Expected output:
+Expected output (checkpoint IDs will vary):
 
 ```
-[1] execute   — hello from the sandbox
-[2] write     — checkpoint 1 → version A
-[3] change    — checkpoint 3 → version B
-[4] rollback  — version A
-[5] install   —
-| operation      | description                             |
-|----------------|-----------------------------------------|
-| execute_python | sandbox-isolated Python execution       |
-| execute_bash   | sandbox-isolated shell commands         |
-| rollback       | rewind to any prior checkpoint          |
-| install        | pip-install into the session            |
-| export         | copy workspace files to the host        |
-[6] bash      — notes.txt
-[7] diff      —
---- a/notes.txt
-+++ b/notes.txt
-@@ -1 +1 @@
--version A
-\ No newline at end of file
-+version B
-\ No newline at end of file
-[8] export    — ['/tmp/drun-quickstart/notes.txt']
+[1] bash       — hello from the sandbox
+[2] write      — checkpoint 1 -> version A
+[3] change     — checkpoint 3 -> version B
+[4] diff       — unified diff of the two file states
+[5] rollback   — version A
+[6] bash       — directory listing
+[7] export     — list of exported paths
 ```
 
 ### Step 3: run a config-backed LLM example
@@ -112,8 +103,9 @@ DRUN_CONFIG=examples/financial_analysis.toml \
     python examples/financial_analysis.py
 ```
 
-The script creates a drun session, drives the LLM to fetch SEC data and produce
-a Markdown report, then exports the result to `/tmp/drun-financial/`.
+The script fetches SEC data on the host, pushes it into a drun session, drives
+the LLM to parse it and produce a Markdown report, then exports the result to
+`/tmp/drun-financial/`.
 
 ```bash
 # OpenAI
@@ -150,19 +142,19 @@ structured JSON.
 
 | Script                   | Config needed              | API key         | What to expect                                                         |
 | ------------------------ | -------------------------- | --------------- | ---------------------------------------------------------------------- |
-| `quickstart.py`          | No                         | No              | Prints 8 labeled steps demonstrating the core SDK API                  |
+| `quickstart.py`          | No                         | No              | Prints 7 labeled steps demonstrating the core SDK API                  |
 | `financial_analysis.py`  | `financial_analysis.toml`  | Yes (or Ollama) | Exports `/tmp/drun-financial/results.md` with Apple revenue table      |
 | `data_science.py`        | `data_science.toml`        | Yes (or Ollama) | Exports `/tmp/drun-data-science/results.md` with classifier comparison |
-| `fibonacci_benchmark.py` | `fibonacci_benchmark.toml` | Yes (or Ollama) | Runs 5 constraint probes then exports a benchmark table                |
+| `fibonacci_benchmark.py` | `fibonacci_benchmark.toml` | Yes (or Ollama) | Runs 4 constraint probes then exports a benchmark table                |
 
 ---
 
 ## Path 2 — MCP + Claude Code
 
 The MCP binary exposes the full drun tool suite to Claude Code:
-`create_session`, `session_execute_python`, `session_bash`, `session_fork`,
-`session_rollback`, `session_merge`, `session_fetch`, and more. Claude drives
-the sandbox directly from within your editor.
+`create_session`, `session_bash`, `session_fork`, `session_rollback`,
+`session_merge`, `session_fetch`, and more. Claude drives the sandbox directly
+from within your editor.
 
 ### Step 1: install and register
 
@@ -224,45 +216,56 @@ missing, check the Output panel (VSCode) under **Claude Code MCP** for errors.
 
 ### Step 4: run an example via a prompt
 
-Paste the contents of the `PROMPT` constant from any `.py` example directly into
-Claude Code, or give an equivalent natural-language instruction:
+Give Claude an equivalent natural-language instruction to any `.py` example's
+`PROMPT` constant. Unlike the Python SDK's chat agent, Claude over MCP has
+`session_fetch` available, so it can fetch allowlisted URLs itself —
+`session_bash` still has no network access either way.
 
 **Financial analysis:**
 
 ```
-Use drun to analyze Apple's revenue trends. Fetch the data from the SEC EDGAR
-XBRL API at data.sec.gov, install pandas and tabulate, format a year-over-year
-table, and export results.md.
+Use drun to analyze Apple's revenue trends. Use session_fetch to pull
+https://data.sec.gov/api/xbrl/companyconcept/CIK0000320193/us-gaap/Revenues.json,
+then use session_bash (stdlib only — no pandas) to filter 10-K filings, build
+a year-over-year revenue table, and write results.md.
 ```
 
 **Data science:**
 
 ```
-Use drun to benchmark three scikit-learn classifiers on the Iris dataset.
-Fetch the CSV from raw.githubusercontent.com, install the required packages,
-train the models, and export a Markdown report comparing accuracy.
+Use drun to benchmark classifiers on the Iris dataset. Use session_fetch to
+pull https://raw.githubusercontent.com/mwaskom/seaborn-data/master/iris.csv,
+then implement a decision tree, a small random forest, and a KNN classifier
+from scratch in session_bash (stdlib only — no scikit-learn), and export a
+Markdown report comparing accuracy.
 ```
 
 **Sandbox stress test:**
 
 ```
 Use drun to run the Fibonacci constraint probes: trigger a timeout with
-time.sleep(300), test domain allowlist enforcement with urllib.request, try a
-bash denylist rejection with curl, attempt a bad package install, run a
-correctness gate, then implement and benchmark four Fibonacci algorithms.
+time.sleep(300) in session_bash, confirm session_bash has no network access
+at all (even to allowlisted domains) via urllib, try a bash denylist
+rejection with curl, run a correctness gate, then implement and benchmark
+four Fibonacci algorithms.
 ```
 
 ### What Claude sees (MCP tool suite)
 
-| Category   | Tools                                                                                                    |
-| ---------- | -------------------------------------------------------------------------------------------------------- |
-| Lifecycle  | `create_session`, `session_list`, `session_close`, `session_tree`                                        |
-| Execution  | `session_execute_python`, `session_bash`, `session_install_package`, `session_get_env`, `session_cancel` |
-| Navigation | `session_rollback`, `session_fork`, `session_merge`, `session_history`, `get_session_state`              |
-| Files      | `session_read_file`, `session_write_file`, `session_delete_file`, `session_mount`, `session_diff`        |
-| Host I/O   | `session_export`, `session_commit`, `session_fetch`, `get_fetch_allowlist`, `get_allowed_packages`       |
-| Snapshots  | `session_snapshot`, `session_restore`, `list_snapshots`                                                  |
-| Labels     | `session_label`, `session_checkpoint_label`, `session_checkpoint_squash`, `session_checkpoint_drop`      |
+| Category   | Tools                                                                                                                             |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Lifecycle  | `create_session`, `session_list`, `session_close`, `session_tree`                                                                 |
+| Execution  | `session_bash`, `session_get_env`                                                                                                 |
+| Navigation | `session_rollback`, `session_fork`, `session_merge`, `session_history`, `get_session_state`                                       |
+| Files      | `session_read_file`, `session_write_file`, `session_delete_file`, `session_mount`, `session_diff`                                 |
+| Host I/O   | `session_export`, `session_commit`, `session_fetch`, `get_fetch_allowlist`                                                        |
+| Snapshots  | `session_snapshot`, `session_restore`, `list_snapshots`                                                                           |
+| Labels     | `session_label`, `session_checkpoint_label`, `session_checkpoint_squash`, `session_checkpoint_drop`, `checkpoint_read_stdstreams` |
+
+There is no `session_execute_python`, no package-install tool, and no
+`session_cancel` — only `session_bash` for execution. `session_rollback` is
+destructive past the rollback point once you continue the session; use
+`session_fork` first if you need to keep the abandoned branch.
 
 ---
 
@@ -270,7 +273,9 @@ correctness gate, then implement and benchmark four Fibonacci algorithms.
 
 Use the `drun chat` CLI to drive a local Ollama model against the sandbox. This
 is the same tool-use loop as the Python SDK path, running a local model instead
-of a cloud provider.
+of a cloud provider. The chat agent only has `execute_bash` and `write_file` —
+no fetch tool — so any external data must be pre-fetched on the host and mounted
+in with `--mount`.
 
 ### Step 1: install Ollama and pull a model
 
@@ -287,15 +292,22 @@ pip install 'drun-sandbox[chat]'
 
 This provides the `drun` CLI in addition to the Python API.
 
-### Step 3: run
+### Step 3: pre-fetch data and run
 
 ```bash
+mkdir -p /tmp/drun-inputs
+curl -s -A "drun-example research@example.com" \
+    "https://data.sec.gov/api/xbrl/companyconcept/CIK0000320193/us-gaap/Revenues.json" \
+    -o /tmp/drun-inputs/revenues.json
+
 DRUN_CONFIG=examples/financial_analysis.toml \
     drun chat \
         --model openai/qwen2.5:14b \
         --base-url http://localhost:11434/v1 \
-        "Fetch Apple revenue from data.sec.gov, install pandas and tabulate,
-         format a year-over-year table, and write results.md"
+        --mount /tmp/drun-inputs \
+        "Parse revenues.json (already in your workspace), filter for 10-K
+         annual filings, build a year-over-year revenue table using only the
+         standard library, and write results.md"
 ```
 
 **Mount host files:**
@@ -306,7 +318,8 @@ DRUN_CONFIG=examples/data_science.toml \
         --model openai/qwen2.5:14b \
         --base-url http://localhost:11434/v1 \
         --mount ./data \
-        "Load the CSV files in /workspace/data, clean them, and summarize each column"
+        "Load the CSV files in data/, summarize each column using only the
+         standard library, and write a Markdown report"
 ```
 
 **`drun chat` flags:**
@@ -327,84 +340,82 @@ Each TOML file is designed around a specific class of workload. The fields shown
 are only the ones that differ meaningfully from the defaults — unset fields fall
 back to the built-in values documented in the main README.
 
-> **Package installation always works.** PyPI, PyPI file storage, and jsDelivr
-> are injected as defaults regardless of what `domain_allowlist` says. You never
-> need to list them in your own config.
+> **`session_bash` has no network access, ever.** `domain_allowlist` only
+> governs `session_fetch` (an MCP-only, host-side tool). There is no package
+> install mechanism in either path — sandbox code must use the standard library,
+> or rely on data/packages mounted in by the host.
 
 ### `financial_analysis.toml` — live market and filing data
 
 **What it allows:**
 
-- `data.sec.gov`, `efts.sec.gov`, `www.sec.gov` — SEC EDGAR filings and XBRL
-  data
-- `query1.finance.yahoo.com`, `query2.finance.yahoo.com` — Yahoo Finance price
-  history
-- Packages: pandas, requests, tabulate, yfinance, matplotlib
+- `session_fetch` to `data.sec.gov`, `efts.sec.gov`, `www.sec.gov` (SEC EDGAR
+  filings and XBRL data), and `query1/2.finance.yahoo.com` (Yahoo Finance)
 
 **What it prevents:**
 
-- Any domain not listed above (e.g., raw.githubusercontent.com, google.com)
-- Any package not in the allowlist
-- `curl`, `wget`, `nc` via bash
-- Exec timeout: 3 minutes (for large XBRL payloads)
+- `session_fetch` to any other domain
+- `curl`, `wget`, `nc` via `session_bash` (denylisted; bash has no network
+  regardless)
+- `bash_timeout_ms`: 3 minutes (for large XBRL payloads)
 
 **Notable settings:**
 
 - `snapshot_on_close = true` — financial analysis sessions are worth keeping
 - `session_idle_timeout_secs = 7200` — long sessions for multi-step analysis
 
-### `data_science.toml` — dataset fetching and model training
+### `data_science.toml` — dataset fetching and analysis
 
 **What it allows:**
 
-- `raw.githubusercontent.com`, `archive.ics.uci.edu`, `datasets.huggingface.co`
-- Packages: pandas, numpy, matplotlib, scikit-learn, seaborn, tabulate, requests
+- `session_fetch` to `raw.githubusercontent.com`, `archive.ics.uci.edu`
 
 **What it prevents:**
 
-- Financial/market data domains, general web access
-- `curl`, `wget`, `rm -rf` via bash
+- `session_fetch` to any other domain
+- `rm -rf`, `curl`, `wget` via `session_bash`
 
 **Notable settings:**
 
-- `max_workspace_mb = 1024` — datasets and model artifacts can be large
-- `exec_timeout_ms = 180_000` — 3 minutes per execution for training loops
-- `install_timeout_ms = 300_000` — 5 minutes for large packages (numpy, scipy)
+- `max_workspace_mb = 1024` — datasets and generated reports can be large
+- `bash_timeout_ms = 60_000` — 1 minute per command for stdlib model training
 
 ### `heavy_workloads.toml` — long-running compute
 
 **What it allows:**
 
-- All PyPI packages (no `package_allowlist` set)
+- Long `session_bash` calls (no domain access either way — this recipe sets no
+  `domain_allowlist`, which only matters if you also use `session_fetch`)
 
 **What it prevents:**
 
 - More than 2 concurrent sessions (resource contention)
-- More than 25 checkpoints per session (disk usage)
+- More than 25 checkpoints per session (memory usage)
 
 **Notable settings:**
 
 - `max_workspace_mb = 4096` — 4 GB workspace
-- `exec_timeout_ms = 600_000` — 10 minutes per execution
-- `bash_timeout_ms = 600_000` — 10 minutes per bash command
-- `install_timeout_ms = 600_000` — 10 minutes for installs (PyTorch, TensorFlow)
+- `bash_timeout_ms = 600_000` — 10 minutes per `session_bash` call
 - `snapshot_on_close = true` — long sessions can be resumed from a snapshot
-- `packages_dir = "/tmp/drun-packages"` — persistent pip cache across restarts
+- `snapshots_dir = "/tmp/drun-snapshots"`
 
 ### `fibonacci_benchmark.toml` — tight sandbox for constraint testing
 
 **What it allows:**
 
-- Only pyperf and tabulate packages
-- No external domains beyond PyPI
+- Nothing beyond the workspace and mounted `examples/` directory — this recipe
+  sets `domain_allowlist = []` since the benchmark needs no `session_fetch`
+  access at all
 
 **What it prevents:**
 
-- Any other package install (rejected by MCP layer)
-- `curl`, `wget`, `nc` via bash (denylist fires before the sandbox runs)
+- `curl`, `wget`, `nc` via `session_bash` (denylist fires before the sandbox
+  runs; bash has no network regardless)
 - Executions longer than 30 seconds (tight timeout for the stress test)
 
 **Notable settings:**
 
-- `exec_timeout_ms = 30_000` — exposes the timeout probe in Phase 1
+- `bash_timeout_ms = 30_000` — exposes the timeout probe in Phase 1
+- `mount_allowlist` — set to the local `examples/` directory so the agent can
+  read `fibonacci_slow.py`
 - `snapshot_on_close = false` — all session state is fully ephemeral

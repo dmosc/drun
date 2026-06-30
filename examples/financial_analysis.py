@@ -1,9 +1,14 @@
 """
 Financial analysis agent — SEC EDGAR revenue trends.
 
-An LLM agent fetches Apple's annual revenue data from the SEC EDGAR XBRL API,
-installs pandas and tabulate inside the sandbox, formats a year-over-year
-comparison table, and exports a Markdown report.
+The host fetches Apple's annual revenue data from the SEC EDGAR XBRL API and
+pushes it into the sandbox as a file. An LLM agent then parses that JSON
+using only the Python standard library, builds a year-over-year comparison
+table, and writes a Markdown report.
+
+session_bash has no network access and no package-install mechanism, so the
+fetch happens here on the host (unsandboxed) before the session is created —
+not from inside the agent's sandboxed tool calls.
 
 Prerequisites:
     pip install 'drun-sandbox[chat]'
@@ -24,41 +29,36 @@ Usage:
         python examples/financial_analysis.py
 
 Expected behavior:
-    1. Agent fetches Apple's revenue concept from the EDGAR XBRL API.
-    2. Installs pandas and tabulate inside the sandbox.
-    3. Parses the JSON response and builds a year-over-year table.
-    4. Writes results.md to /workspace and the script exports it to
+    1. Host fetches Apple's revenue concept from the EDGAR XBRL API and
+       writes it into the session as revenues.json.
+    2. Agent parses the JSON with the standard library and builds a
+       year-over-year table.
+    3. Agent writes results.md, and the script exports it to
        /tmp/drun-financial/results.md.
-    5. Session is preserved as a .drun snapshot (snapshot_on_close = true).
+    4. Session is preserved as a .drun snapshot (snapshot_on_close = true).
 """
 
 import os
 import textwrap
+import urllib.request
 
 from drun import Session
 from drun.chat import run
 
+EDGAR_URL = (
+    "https://data.sec.gov/api/xbrl/companyconcept/CIK0000320193/us-gaap/Revenues.json"
+)
+
 PROMPT = textwrap.dedent("""\
     You are a financial analysis agent operating inside a drun sandbox.
-    Your task: pull Apple Inc.'s annual revenue from the SEC EDGAR XBRL API,
-    build a year-over-year comparison table, and write a Markdown report.
+    revenues.json is already present in your workspace — it was fetched by
+    the host before this session started (the sandbox itself has no network
+    access). Your task: parse it, build a year-over-year revenue comparison
+    table, and write a Markdown report.
 
-    STEP 1 — Fetch revenue data
-    ---------------------------
-    Use urllib.request (stdlib — no install needed) to fetch:
-
-        https://data.sec.gov/api/xbrl/companyconcept/CIK0000320193/us-gaap/Revenues.json
-
-    Store the raw JSON response in /workspace/revenues.json.
-
-    STEP 2 — Install packages
-    -------------------------
-    install_package("pandas")
-    install_package("tabulate")
-
-    STEP 3 — Parse and format
-    -------------------------
-    Load revenues.json. The response has this structure:
+    STEP 1 — Inspect the data
+    --------------------------
+    Read revenues.json. The response has this structure:
 
         {
           "entityName": "Apple Inc.",
@@ -71,15 +71,20 @@ PROMPT = textwrap.dedent("""\
         }
 
     Filter for annual filings only (form == "10-K"). Extract the most recent
-    filing per fiscal year (deduplicate by year from "end" date). Sort by year
-    ascending.
+    filing per fiscal year (deduplicate by year from "end" date). Sort by
+    year ascending.
 
+    STEP 2 — Build the table
+    -------------------------
     Build a table with columns:
         Year | Revenue (USD billions) | YoY Change
 
-    STEP 4 — Write the report
-    -------------------------
-    Write the table to /workspace/results.md as GitHub Markdown:
+    Use only the standard library (json, no pandas/tabulate — they are not
+    installable inside the sandbox).
+
+    STEP 3 — Write the report
+    --------------------------
+    Write the table to results.md as GitHub Markdown:
 
         # Apple Inc. — Annual Revenue (10-K filings)
 
@@ -88,9 +93,8 @@ PROMPT = textwrap.dedent("""\
         | 2020 | 274.5           | +5.5%      |
         ...
 
-    Add a one-sentence summary below the table naming the highest-growth year.
-
-    Do not create snapshots — the config handles that automatically.
+    Add a one-sentence summary below the table naming the highest-growth
+    year.
 """)
 
 
@@ -98,7 +102,14 @@ def main():
     model = os.environ.get("MODEL", "claude-sonnet-4-6")
     base_url = os.environ.get("BASE_URL")
 
+    request = urllib.request.Request(
+        EDGAR_URL, headers={"User-Agent": "drun-example research@example.com"}
+    )
+    with urllib.request.urlopen(request) as response:
+        revenues_json = response.read()
+
     session = Session()
+    session.write_file("revenues.json", revenues_json)
 
     run(
         session,
