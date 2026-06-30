@@ -51,8 +51,17 @@ curl -fsSL https://raw.githubusercontent.com/dmosc/drun/main/install.sh | bash
 ```
 
 1. Installs the drun MCP binary to `/usr/local/bin/drun-mcp` (skips if already
-   installed):
+   installed).
 1. Creates a config at `$PWD/.drun/config.toml` with common defaults.
+1. Creates `$PWD/.claude/settings.json` that restricts Claude to drun tools only
+   for this workspace — native file (`Read`, `Edit`, `Write`, `NotebookEdit`,
+   `Glob`, `Grep`), shell (`Bash`, `BashOutput`, `KillBash`), network
+   (`WebFetch`, `WebSearch`), and subagent delegation (`Task`) tools are all
+   blocked, and drun's MCP tools are pre-allowed so Claude isn't prompted on
+   every call.
+1. Creates `$PWD/CLAUDE.md` with instructions that tell Claude to use drun tools
+   instead of native ones, including how to bootstrap a session
+   (`create_session` then `session_mount`).
 1. Registers the MCP against `$PWD` inside your `~/.claude.json` so the config
    only applies to this specific project.
 
@@ -84,10 +93,12 @@ curl -fsSL https://raw.githubusercontent.com/dmosc/drun/main/uninstall.sh | bash
 ```
 
 1. Removes the drun MCP binary from `/usr/local/bin/drun-mcp`.
-1. Leaves the created config `$PWD/.drun/config.toml` untouched for reference.
-   You can safely delete this if not needed.
 1. Unlinks the MCP reference from all Claude Code projects where it has been
    installed.
+1. Removes `.claude/settings.json` from each project so native Claude tools are
+   restored automatically.
+1. Leaves `$PWD/.drun/config.toml` and any `CLAUDE.md` files untouched — delete
+   these manually if not needed.
 
 ### Configuration
 
