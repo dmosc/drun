@@ -43,12 +43,8 @@ The `[chat]` extra is only required for examples that drive an LLM
 ### MCP path
 
 ```bash
-# macOS Apple Silicon
+# macOS (Apple Silicon)
 curl -fsSL https://github.com/dmosc/drun/releases/latest/download/drun-mcp-macos-arm64 \
-  -o /usr/local/bin/drun-mcp && chmod +x /usr/local/bin/drun-mcp
-
-# macOS Intel
-curl -fsSL https://github.com/dmosc/drun/releases/latest/download/drun-mcp-macos-x86_64 \
   -o /usr/local/bin/drun-mcp && chmod +x /usr/local/bin/drun-mcp
 
 # Linux x86-64
