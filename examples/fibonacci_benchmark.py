@@ -2,9 +2,10 @@
 Fibonacci optimization benchmark driven by an LLM agent inside a drun sandbox.
 
 The agent first stress-tests every configured sandbox constraint, then
-implements four faster Fibonacci algorithms, benchmarks them with pyperf, and
-exports a comparison table.  The session is fully ephemeral: workspace state
-is discarded when it closes, only the exported results file survives.
+implements four faster Fibonacci algorithms, benchmarks them with a stdlib
+timing harness, and writes a comparison table.  The session is fully
+ephemeral: workspace state is discarded when it closes, only the exported
+results file survives.
 
 Prerequisites:
     pip install 'drun-sandbox[chat]'
@@ -23,21 +24,15 @@ Usage:
         MODEL=openai/qwen2.5:14b BASE_URL=http://localhost:11434/v1 \\
         python examples/fibonacci_benchmark.py
 
-    # Equivalent one-liner via the drun CLI:
-    DRUN_CONFIG=examples/fibonacci_benchmark.toml \\
-        drun chat --model claude-sonnet-4-6 --mount examples/ "$(python -c \\
-            'import examples.fibonacci_benchmark as m; print(m.PROMPT)')"
+Note on networking:
+    session_bash has zero network access on either platform, regardless of
+    domain_allowlist — that config only governs session_fetch (a separate,
+    host-side tool not used by this example, and not available via the
+    Python SDK's chat agent at all). Phase 1b demonstrates this directly.
 
-Note on package_allowlist:
-    package_allowlist is enforced at the MCP layer (Claude Code / drun-mcp).
-    The Python SDK path (this script) routes install_package directly to pip,
-    so the allowlist is not checked here.  Phase 1d demonstrates install
-    failure using a nonexistent package name instead.
-
-Note on domain_allowlist:
-    pypi.org, files.pythonhosted.org, and cdn.jsdelivr.net are always
-    permitted regardless of domain_allowlist.  The Phase 1b probe uses
-    pypi.org as the "allowed" URL and www.google.com as the "blocked" URL.
+Note on packages:
+    There is no install mechanism inside the sandbox, so this benchmark uses
+    only the standard library — no pyperf, no tabulate.
 """
 
 import os
@@ -62,70 +57,50 @@ PROMPT = textwrap.dedent("""\
 
     ── 1a. Execution timeout ──────────────────────────────────────────
 
-    Run this via execute_python:
+    Run this via execute_bash (python3 -c "..."):
 
         import time
         print("sleeping — should never finish")
         time.sleep(300)
         print("done")    # must not appear
 
-    Expected: the sandbox kills the runner after exec_timeout_ms (30 s).
-    You will see a timeout or crash error — "done" must never print.
-    After a timeout the runner is automatically rebuilt, so you can
-    continue immediately. Report the exact error message you received.
+    Expected: the sandbox kills the command after bash_timeout_ms (30 s).
+    You will see a timeout error — "done" must never print. Report the
+    exact error message you received.
 
-    ── 1b. Egress domain allowlist (Python outbound HTTP) ─────────────
+    ── 1b. No network access from session_bash ────────────────────────
 
-    Run these two fetches in a single execute_python call using only
-    urllib.request (stdlib, no install needed):
+    Run this via execute_bash (python3 -c "..."), targeting pypi.org —
+    a domain that IS allowlisted for session_fetch:
 
-      ALLOWED — https://pypi.org/pypi/pyperf/json
-        Expected: HTTP 200. Print the first 100 bytes of the response body.
+        import urllib.request
+        try:
+            urllib.request.urlopen("https://pypi.org", timeout=5)
+            print("reached network — unexpected")
+        except Exception as e:
+            print(f"no network: {type(e).__name__}: {e}")
 
-      BLOCKED — https://www.google.com/
-        Expected: the egress proxy returns 403 Forbidden because
-        www.google.com is not in domain_allowlist. Print the exact
-        exception type and message.
-
-    Use this template:
-
-        import urllib.request, urllib.error
-        for label, url in [
-            ("pypi.org (allowed)", "https://pypi.org/pypi/pyperf/json"),
-            ("google.com (blocked)", "https://www.google.com/"),
-        ]:
-            try:
-                with urllib.request.urlopen(url, timeout=10) as r:
-                    print(f"{label} -> HTTP {r.status}: {r.read(100)}")
-            except Exception as e:
-                print(f"{label} -> {type(e).__name__}: {e}")
+    Expected: a connection error, even though pypi.org is allowlisted.
+    domain_allowlist only governs session_fetch — session_bash has no
+    network access at all, for any domain. Report the exact error.
 
     ── 1c. Bash command denylist ──────────────────────────────────────
 
     Run these two commands via execute_bash:
 
-      ALLOWED — ls /workspace
+      ALLOWED — ls
         Expected: directory listing printed to stdout.
 
       DENIED — curl https://example.com
         Expected: a denylist rejection error before the command runs.
         The server matches "curl" against bash_command_denylist and
-        rejects it immediately — no network attempt is ever made.
-        Print the exact error message.
+        rejects it immediately — no execution is ever attempted (the
+        sandbox would have no network for it anyway, but the denylist
+        fires first). Print the exact error message.
 
-    ── 1d. Failed package install ─────────────────────────────────────
+    ── 1d. Correctness gate ───────────────────────────────────────────
 
-    Attempt to install a package that does not exist on PyPI:
-
-        install_package("this-package-does-not-exist-xyz-drun-test")
-
-    Expected: pip reports "No matching distribution found" (or similar).
-    This shows how install failures surface to the agent.
-    Report the error and continue — the session remains usable.
-
-    ── 1e. Correctness gate ───────────────────────────────────────────
-
-    Write and run a deliberately broken Fibonacci via execute_python:
+    Write and run a deliberately broken Fibonacci via execute_bash:
 
         def fib_broken(n):
             return n + 1   # wrong on purpose
@@ -140,16 +115,12 @@ PROMPT = textwrap.dedent("""\
     Do not keep fib_broken — it must not affect Phase 3.
 
     ═══════════════════════════════════════════════════════════════════
-    PHASE 2 — SETUP  (only after all five probes complete)
+    PHASE 2 — SETUP  (only after all four probes complete)
     ═══════════════════════════════════════════════════════════════════
 
-    6. Read fibonacci_slow.py to understand the baseline algorithm.
+    5. Read fibonacci_slow.py to understand the baseline algorithm.
 
-    7. Install the required packages:
-         install_package("pyperf")
-         install_package("tabulate")
-
-    8. Load and verify the baseline:
+    6. Load and verify the baseline via execute_bash:
          from fibonacci_slow import fibonacci
          assert fibonacci(35) == 9_227_465
 
@@ -157,13 +128,13 @@ PROMPT = textwrap.dedent("""\
     PHASE 3 — IMPLEMENT AND BENCHMARK
     ═══════════════════════════════════════════════════════════════════
 
-    9. Write a benchmark harness using pyperf.Runner configured with:
-         loops=1     (implementations span many orders of magnitude)
-         values=5
-         warmups=2
+    7. Write a benchmark harness using time.perf_counter() (stdlib — no
+       pyperf): for each implementation, run 5 trials, each trial timing
+       1 call, and report mean and standard deviation in microseconds
+       (use the statistics module).
 
        For the SLOW baseline use n=30 (not 35) to stay within the 30 s
-       exec_timeout_ms.  For every optimized implementation use n=35.
+       bash_timeout_ms.  For every optimized implementation use n=35.
 
        Correct values for the assertion:
          fibonacci(30) == 832_040
@@ -171,7 +142,7 @@ PROMPT = textwrap.dedent("""\
 
        Assert correctness for every function before timing it.
 
-    10. Implement, verify, and benchmark each candidate:
+    8. Implement, verify, and benchmark each candidate:
           a. Memoized recursion     — functools.lru_cache on the baseline logic
           b. Iterative (bottom-up)  — O(n) time, O(1) space, no recursion
           c. Matrix exponentiation  — O(log n) via 2x2 matrix multiply
@@ -179,7 +150,7 @@ PROMPT = textwrap.dedent("""\
                                         F(2k)   = F(k) * (2*F(k+1) - F(k))
                                         F(2k+1) = F(k)^2 + F(k+1)^2
 
-    11. Collect results and print a comparison table in GitHub Markdown:
+    9. Collect results and print a comparison table in GitHub Markdown:
 
           | Algorithm        | n  | Mean (us) | Std Dev (us) | Speedup vs. baseline |
           |------------------|----|-----------|--------------|----------------------|
@@ -191,7 +162,7 @@ PROMPT = textwrap.dedent("""\
 
         State the overall winner and the speedup factor over the baseline.
 
-    12. Write the table to /workspace/results.md and export it.
+    10. Write the table to results.md (the script exports it after you finish).
 
     The session is ephemeral — do not create snapshots.
 """)
@@ -211,6 +182,12 @@ def main():
         base_url=base_url,
         max_iterations=60,
     )
+
+    export_dir = os.environ.get("EXPORT_DIR", "/tmp/drun-fibonacci-results")
+    exported = session.export(export_dir)
+    if exported:
+        print(f"\nExported: {exported}")
+        print(f"Report: {export_dir}/results.md")
 
 
 if __name__ == "__main__":

@@ -1,10 +1,9 @@
-# drun configuration — data science and machine learning
+# drun configuration — data science (pure Python, no third-party packages)
 #
-# Use this when the agent needs to fetch datasets from the web, train models,
-# generate charts, and export results. Workspace and timeouts are sized up
-# relative to defaults because datasets and model training are larger and slower.
-#
-# The built-in PyPI domains are always available — no need to list them here.
+# session_bash has no network access and no package-install mechanism, so
+# this recipe assumes datasets are fetched on the host (via session_fetch
+# over MCP, or directly in the example script for the Python SDK path) and
+# analysis is done with the Python standard library only.
 #
 # Usage (Python SDK):
 #   DRUN_CONFIG=examples/data_science.toml \
@@ -13,23 +12,17 @@
 # Usage (MCP):
 #   { "env": { "DRUN_CONFIG": "/absolute/path/to/examples/data_science.toml" } }
 
-# Public dataset repositories the agent may fetch from.
+# Public dataset repositories session_fetch may reach (MCP path only).
 domain_allowlist = [
     "raw.githubusercontent.com",
     "archive.ics.uci.edu",
-    "datasets.huggingface.co",
 ]
 
-# Datasets and model artifacts can be several hundred MB.
+# Datasets and intermediate artifacts can be a few hundred MB.
 max_workspace_mb = 1024
 
-# Model training can involve heavy compute — allow up to 3 minutes per execution.
-exec_timeout_ms = 180_000
-
-# scikit-learn and matplotlib pull in numpy/scipy; allow 5 min on a cold cache.
-install_timeout_ms = 300_000
-
-# Bash commands also need more time for file operations on large datasets.
+# Training a pure-Python classifier on a small dataset is fast, but allow
+# headroom for larger datasets or slower hosts.
 bash_timeout_ms = 60_000
 
 # Data science sessions may run for hours; don't abandon them too quickly.
@@ -37,20 +30,9 @@ session_idle_timeout_secs = 14_400
 
 max_sessions = 4
 
-# Packages the agent may install.
-package_allowlist = [
-    "pandas",
-    "numpy",
-    "matplotlib",
-    "scikit-learn",
-    "seaborn",
-    "tabulate",
-    "requests",
-]
-
 bash_command_denylist = ["rm -rf", "curl", "wget"]
 
-# Results and generated plots export here.
+# Results export here.
 export_root = "/tmp/drun-data-science"
 
 # Snapshots are off for exploratory work — turn on if sessions are long-running

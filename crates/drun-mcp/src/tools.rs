@@ -46,9 +46,9 @@ pub struct SessionBashTool {
 
 #[mcp_tool(
     name = "session_rollback",
-    description = "Move the session head to a prior checkpoint without discarding history. Subsequent writes branch from the new head. Use session_fork if you want to explore a branch while keeping the original. Provide checkpoint_id or checkpoint_label; label takes precedence if both are given.",
+    description = "Move the session head to a prior checkpoint. This is destructive: the next session_bash, session_write_file, or session_delete_file call permanently discards every checkpoint after the rollback point — there is no branch kept around. If you want to keep the checkpoints you are rolling back past, call session_fork from the current head first (it creates a new, independent session at this point) before rolling back. Provide checkpoint_id or checkpoint_label; label takes precedence if both are given.",
     idempotent_hint = false,
-    destructive_hint = false,
+    destructive_hint = true,
     read_only_hint = false
 )]
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -259,7 +259,7 @@ pub struct SessionMergeTool {
 
 #[mcp_tool(
     name = "session_fork",
-    description = "Create a new session branching from an existing session at a given checkpoint. The fork inherits the workspace files and installed packages from the source. All runtime limits (timeouts, network policy, etc.) are governed by server config and are identical across all sessions. Returns a new session_id independent of the original. Provide checkpoint_id or checkpoint_label to branch from a specific point; label takes precedence. Omit both to branch from the current checkpoint.",
+    description = "Create a new session branching from an existing session at a given checkpoint. The fork inherits the workspace files from the source. All runtime limits (timeouts, network policy, etc.) are governed by server config and are identical across all sessions. Returns a new session_id independent of the original. Provide checkpoint_id or checkpoint_label to branch from a specific point; label takes precedence. Omit both to branch from the current checkpoint.",
     idempotent_hint = false,
     destructive_hint = false,
     read_only_hint = false
@@ -341,7 +341,7 @@ pub struct SessionTreeTool {}
 #[mcp_tool(
     name = "list_snapshots",
     description = "List all .drun snapshot files in the server's snapshots directory. Returns \
-                   path, size, label, checkpoint count, and installed packages for each file. \
+                   path, size, label, and checkpoint count for each file. \
                    Use session_restore to reload any entry.",
     idempotent_hint = true,
     destructive_hint = false,
@@ -353,7 +353,7 @@ pub struct ListSnapshotsTool {}
 #[mcp_tool(
     name = "session_snapshot",
     description = "Serialize a session's full checkpoint history to a .drun file on the host. \
-                   Captures all checkpoints, installed packages, and session config. \
+                   Captures all checkpoints and workspace files. \
                    Returns the path the file was written to. Use session_restore to reload it.",
     idempotent_hint = true,
     destructive_hint = false,
@@ -369,8 +369,8 @@ pub struct SessionSnapshotTool {
 
 #[mcp_tool(
     name = "session_restore",
-    description = "Load a session from a .drun snapshot file. Reinstalls packages and restores \
-                   all checkpoint history. Returns a new session_id ready for use.",
+    description = "Load a session from a .drun snapshot file, restoring all checkpoint \
+                   history and workspace files. Returns a new session_id ready for use.",
     idempotent_hint = false,
     destructive_hint = false,
     read_only_hint = false

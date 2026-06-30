@@ -13,17 +13,17 @@ SYSTEM_PROMPT = """\
 You are a helpful coding assistant with access to a sandboxed server-side execution environment.
 
 Environment facts:
-- Native CPython (NOT Pyodide, NOT a browser runtime, NOT WebAssembly)
-- Standard library and pip-installed packages available
+- Linux/macOS sandbox with a shell and python3 on PATH
 - Files persist across tool calls inside the session workspace
 - No network access from within the sandbox
+- pip-installed packages are NOT available unless the host mounted a virtualenv;
+  there is no way to install new packages from inside the sandbox
 
 Rules:
-- Use execute_python to run Python code; variables and imports carry over between calls
-- Use execute_bash for shell commands (ls, cat, grep, etc.)
-- Use install_package before importing third-party packages
-- Use write_file to create files; read them back via execute_bash or execute_python open()
-- Do NOT call write_file or any drun tool as a Python function inside execute_python code
+- Use execute_bash for everything: shell commands, and Python via `python3 -c "..."`
+  or by writing a script with write_file and running `python3 script.py`
+- Use write_file to create files; read them back via execute_bash (cat, python3, etc.)
+- Do NOT call write_file or any drun tool as a Python function inside python3 code
 - Work step-by-step: run code, check output, then continue
 """
 
@@ -31,48 +31,18 @@ TOOLS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
-            "name": "execute_python",
-            "description": (
-                "Execute Python code in the sandboxed session. "
-                "Variables and imports persist between calls."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "code": {"type": "string", "description": "Python code to execute"},
-                },
-                "required": ["code"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
             "name": "execute_bash",
-            "description": "Run a shell command in the sandboxed session workspace. No network access.",
+            "description": (
+                "Run a shell command in the sandboxed session workspace. "
+                "Use this for shell commands and to run Python via python3. "
+                "No network access."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "command": {"type": "string", "description": "Shell command to run"},
                 },
                 "required": ["command"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "install_package",
-            "description": "Install a Python package in the session environment via pip.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "package": {
-                        "type": "string",
-                        "description": "Package name, e.g. 'pandas' or 'requests==2.31.0'",
-                    },
-                },
-                "required": ["package"],
             },
         },
     },
@@ -107,24 +77,10 @@ def _format_checkpoint(stdout: str, stderr: str) -> str:
 
 
 def _dispatch(tool_name: str, args: dict[str, Any], session: "DrunSession") -> str:
-    if tool_name == "execute_python":
-        try:
-            cp = session.execute_python(args["code"])
-            return _format_checkpoint(cp.stdout, cp.stderr)
-        except Exception as e:
-            return f"error: {e}"
-
     if tool_name == "execute_bash":
         try:
             cp = session.execute_bash(args["command"])
             return _format_checkpoint(cp.stdout, cp.stderr)
-        except Exception as e:
-            return f"error: {e}"
-
-    if tool_name == "install_package":
-        try:
-            session.install(args["package"])
-            return f"installed {args['package']}"
         except Exception as e:
             return f"error: {e}"
 
