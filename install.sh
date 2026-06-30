@@ -16,7 +16,6 @@ detect_platform() {
 
   case "$os-$arch" in
     Darwin-arm64)  ASSET="drun-mcp-macos-arm64" ;;
-    Darwin-x86_64) ASSET="drun-mcp-macos-x86_64" ;;
     Linux-x86_64)  ASSET="drun-mcp-linux-x86_64" ;;
     *)
       echo "Unsupported platform: $os-$arch"
