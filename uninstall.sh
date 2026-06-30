@@ -28,6 +28,30 @@ deregister_mcp() {
   rm -f "$DRUN_REGISTRY"
 }
 
+# ── Claude Code project settings cleanup ──────────────────────────────────────
+
+cleanup_project_files() {
+ if [[ ! -f "$DRUN_REGISTRY" ]]; then
+   return
+ fi
+
+
+ while IFS= read -r project_dir; do
+   [[ -z "$project_dir" ]] && continue
+
+   local settings_file="$project_dir/.claude/settings.json"
+   if [[ -f "$settings_file" ]]; then
+     rm -f "$settings_file"
+     rmdir "$project_dir/.claude" 2>/dev/null || true
+     echo "Removed .claude/settings.json from $project_dir."
+   fi
+
+   if [[ -f "$project_dir/CLAUDE.md" ]]; then
+     echo "Left CLAUDE.md at $project_dir/CLAUDE.md — delete manually if not needed."
+   fi
+ done < "$DRUN_REGISTRY"
+}
+
 # ── binary removal ────────────────────────────────────────────────────────────
 
 remove_binary() {
@@ -48,6 +72,7 @@ remove_binary() {
 # ── main ──────────────────────────────────────────────────────────────────────
 
 deregister_mcp
+cleanup_project_files
 remove_binary
 
 echo "Done."
