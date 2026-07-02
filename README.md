@@ -44,7 +44,7 @@ Open a terminal and go to your project folder.
 cd ~/path/to/project
 ```
 
-Run the installation script which does a few of things:
+Run the installation script which does a few things:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/dmosc/drun/main/install.sh | bash
@@ -52,7 +52,11 @@ curl -fsSL https://raw.githubusercontent.com/dmosc/drun/main/install.sh | bash
 
 1. Installs the drun MCP binary to `/usr/local/bin/drun-mcp` (skips if already
    installed).
-1. Creates a config at `$PWD/.drun/config.toml` with common defaults.
+1. Creates a global config at `~/.drun/config.toml` with common defaults (skips
+   if one already exists).
+1. Starts `drun-mcp` as a persistent background daemon — via `launchd` on macOS
+   or a `systemd` user service on Linux — so a single process serves all MCP
+   clients across every terminal and editor window on the host.
 1. Creates `$PWD/.claude/settings.json` that restricts Claude to drun tools only
    for this workspace — native file (`Read`, `Edit`, `Write`, `NotebookEdit`,
    `Glob`, `Grep`), shell (`Bash`, `BashOutput`, `KillBash`), network
@@ -62,11 +66,18 @@ curl -fsSL https://raw.githubusercontent.com/dmosc/drun/main/install.sh | bash
 1. Creates `$PWD/CLAUDE.md` with instructions that tell Claude to use drun tools
    instead of native ones, including how to bootstrap a session
    (`create_session` then `session_mount`).
-1. Registers the MCP against `$PWD` inside your `~/.claude.json` so the config
-   only applies to this specific project.
+1. Registers the MCP in Claude Code pointing at the running daemon over SSE
+   (`http://127.0.0.1:7273/sse`) — one registration shared across all projects.
 
-And ultimately, validate that the MCP is live with the following command (run
-this from within the same `$PWD` where you ran the install script):
+Once installed, two endpoints are available:
+
+| Endpoint                    | Purpose                                   |
+| --------------------------- | ----------------------------------------- |
+| `http://127.0.0.1:7273/sse` | MCP transport (SSE) — used by Claude Code |
+| `http://127.0.0.1:7273/mcp` | MCP transport (streamable HTTP)           |
+| `http://127.0.0.1:7274`     | Trajectory viewer web UI                  |
+
+Validate that the MCP is live:
 
 ```bash
 claude mcp list
@@ -92,19 +103,20 @@ Run the following command to uninstall drun from your host:
 curl -fsSL https://raw.githubusercontent.com/dmosc/drun/main/uninstall.sh | bash
 ```
 
+1. Stops the background daemon and removes the `launchd` agent (macOS) or
+   `systemd` user service (Linux).
 1. Removes the drun MCP binary from `/usr/local/bin/drun-mcp`.
-1. Unlinks the MCP reference from all Claude Code projects where it has been
-   installed.
+1. Unlinks the MCP reference from Claude Code.
 1. Removes `.claude/settings.json` from each project so native Claude tools are
    restored automatically.
-1. Leaves `$PWD/.drun/config.toml` and any `CLAUDE.md` files untouched — delete
+1. Leaves `~/.drun/config.toml` and any `CLAUDE.md` files untouched; delete
    these manually if not needed.
 
 ### Configuration
 
-The behavior of the drun MCP is orchestrated via the `$PWD/.drun/config.toml`
-configuration file. This file is read once at process startup; without it,
-built-in defaults apply.
+The behavior of the drun MCP is orchestrated via `~/.drun/config.toml`, a single
+global file shared by the background daemon. It is read once at daemon startup;
+without it, built-in defaults apply.
 
 The following is a reference of all the controls available for tuning. All
 fields are optional.
@@ -127,32 +139,22 @@ fields are optional.
 | `env_allowlist`             | `[]`                                                                 | Host environment variable names exposed to agents via `session_get_env`. Empty means no variables are exposed.                                                                                                |
 | `bash_command_denylist`     | `[]`                                                                 | Command substrings always rejected by `session_bash` before execution.                                                                                                                                        |
 | `bash_command_allowlist`    | `[]`                                                                 | Command substrings permitted by `session_bash`. Empty means all commands are allowed (subject to the denylist).                                                                                               |
+| `web_port`                  | `7274`                                                               | TCP port for the trajectory viewer web UI. Set to `0` or remove the field to disable it.                                                                                                                      |
 
 #### Reloading the MCP
 
-`config.toml` is read once when the MCP process starts. Changes to the file take
-effect only after the MCP server is restarted. How to trigger that depends on
-your setup.
+`~/.drun/config.toml` is read once when the daemon starts. To apply changes,
+restart the daemon:
 
-**Claude Code CLI**
-
-Open a new `claude` session. Each invocation spawns a fresh MCP process that
-reads `config.toml` on startup, so closing and re-opening the chat is
-sufficient.
+**macOS**
 
 ```bash
-claude
+launchctl unload ~/Library/LaunchAgents/com.drun.mcp-server.plist
+launchctl load -w ~/Library/LaunchAgents/com.drun.mcp-server.plist
 ```
 
-**Claude Code in VSCode**
+**Linux**
 
-The VSCode extension keeps the MCP process running in the background across chat
-sessions within the same window. To restart it after editing `config.toml`,
-reload the VSCode window:
-
-1. Open the Command Palette (`Cmd+Shift+P` on macOS / `Ctrl+Shift+P` on Windows
-   and Linux).
-2. Run **Developer: Reload Window**.
-
-The extension restarts the MCP server on reload, picking up the updated
-configuration.
+```bash
+systemctl --user restart drun-mcp.service
+```

@@ -2,6 +2,31 @@
 set -euo pipefail
 
 DRUN_REGISTRY="$HOME/.drun/projects"
+LAUNCHD_PLIST="$HOME/Library/LaunchAgents/com.drun.mcp-server.plist"
+SYSTEMD_SERVICE="$HOME/.config/systemd/user/drun-mcp.service"
+
+# ── daemon removal ────────────────────────────────────────────────────────────
+
+remove_daemon() {
+  case "$(uname -s)" in
+    Darwin)
+      if [[ -f "$LAUNCHD_PLIST" ]]; then
+        launchctl unload "$LAUNCHD_PLIST" 2>/dev/null || true
+        rm -f "$LAUNCHD_PLIST"
+        echo "Removed launchd agent."
+      fi
+      ;;
+    Linux)
+      if [[ -f "$SYSTEMD_SERVICE" ]]; then
+        systemctl --user disable --now drun-mcp.service 2>/dev/null || true
+        rm -f "$SYSTEMD_SERVICE"
+        systemctl --user daemon-reload
+        echo "Removed systemd user service."
+      fi
+      ;;
+  esac
+  pkill -f drun-mcp 2>/dev/null || true
+}
 
 # ── Claude Code MCP deregistration ───────────────────────────────────────────
 
@@ -10,46 +35,32 @@ deregister_mcp() {
     return
   fi
 
-  claude mcp remove drun -s user 2>/dev/null && echo "Removed drun from user scope." || true
+  claude mcp remove drun 2>/dev/null && echo "Removed drun from Claude Code." || true
+}
 
+# ── Claude Code project settings cleanup ──────────────────────────────────────
+
+cleanup_project_files() {
   if [[ ! -f "$DRUN_REGISTRY" ]]; then
     return
   fi
 
   while IFS= read -r project_dir; do
     [[ -z "$project_dir" ]] && continue
-    for scope in local project; do
-      if (cd "$project_dir" && claude mcp remove drun -s "$scope" 2>/dev/null); then
-        echo "Removed drun from $project_dir ($scope scope)."
-      fi
-    done
+
+    local settings_file="$project_dir/.claude/settings.json"
+    if [[ -f "$settings_file" ]]; then
+      rm -f "$settings_file"
+      rmdir "$project_dir/.claude" 2>/dev/null || true
+      echo "Removed .claude/settings.json from $project_dir."
+    fi
+
+    if [[ -f "$project_dir/CLAUDE.md" ]]; then
+      echo "Left CLAUDE.md at $project_dir/CLAUDE.md — delete manually if not needed."
+    fi
   done < "$DRUN_REGISTRY"
 
   rm -f "$DRUN_REGISTRY"
-}
-
-# ── Claude Code project settings cleanup ──────────────────────────────────────
-
-cleanup_project_files() {
- if [[ ! -f "$DRUN_REGISTRY" ]]; then
-   return
- fi
-
-
- while IFS= read -r project_dir; do
-   [[ -z "$project_dir" ]] && continue
-
-   local settings_file="$project_dir/.claude/settings.json"
-   if [[ -f "$settings_file" ]]; then
-     rm -f "$settings_file"
-     rmdir "$project_dir/.claude" 2>/dev/null || true
-     echo "Removed .claude/settings.json from $project_dir."
-   fi
-
-   if [[ -f "$project_dir/CLAUDE.md" ]]; then
-     echo "Left CLAUDE.md at $project_dir/CLAUDE.md — delete manually if not needed."
-   fi
- done < "$DRUN_REGISTRY"
 }
 
 # ── binary removal ────────────────────────────────────────────────────────────
@@ -71,8 +82,10 @@ remove_binary() {
 
 # ── main ──────────────────────────────────────────────────────────────────────
 
+remove_daemon
 deregister_mcp
 cleanup_project_files
 remove_binary
 
 echo "Done."
+echo "Preserved: ~/.drun/config.toml, exports/, snapshots/ — remove manually if not needed."
