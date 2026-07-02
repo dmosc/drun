@@ -3,6 +3,7 @@ members = [
     "crates/drun-core",
     "crates/drun-py",
     "crates/drun-mcp",
+    "tests/integration",
 ]
 resolver = "2"
 
