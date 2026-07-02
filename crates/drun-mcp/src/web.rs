@@ -4,7 +4,7 @@ use axum::{
     Router,
     extract::{Path, Query, State},
     http::{HeaderMap, HeaderValue, StatusCode},
-    response::{Html, IntoResponse, Response},
+    response::{IntoResponse, Response},
     routing::get,
 };
 use serde::Deserialize;
@@ -65,8 +65,14 @@ fn build_router(sessions: SessionMap) -> Router {
         .with_state(AppState { sessions })
 }
 
-async fn handle_index() -> Html<&'static str> {
-    Html(EMBEDDED_INDEX_HTML)
+async fn handle_index() -> Response {
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        "content-type",
+        HeaderValue::from_static("text/html; charset=utf-8"),
+    );
+    headers.insert("cache-control", HeaderValue::from_static("no-store"));
+    (StatusCode::OK, headers, EMBEDDED_INDEX_HTML).into_response()
 }
 
 async fn handle_session_tree(State(app): State<AppState>) -> Response {

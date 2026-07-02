@@ -8,11 +8,19 @@ cargo build -p drun-mcp
 
 ## Run locally
 
-```bash
-# Kill any existing instance on ports 7273 / 7274
-pkill -f drun-mcp
+If you installed drun via `install.sh`, the launchd agent (macOS) or systemd
+service (Linux) will restart the installed binary within milliseconds of any
+`pkill`. Suspend it first so the local build can bind the ports:
 
-# Start the daemon against the repo's own config
+```bash
+# macOS — suspend the launchd agent
+launchctl unload ~/Library/LaunchAgents/com.drun.mcp-server.plist 2>/dev/null
+
+# Linux — suspend the systemd service
+systemctl --user stop drun-mcp.service
+
+# Kill any process still holding the ports, then start the local build
+pkill -f drun-mcp 2>/dev/null; sleep 0.3
 DRUN_CONFIG="$PWD/.drun/config.toml" ./target/debug/drun-mcp
 ```
 
@@ -58,18 +66,23 @@ Open a new chat tab in VSCode — it connects to the running daemon via SSE. Cal
 the session appear. Repeat in a second chat tab — both sessions surface in the
 same UI, confirming the shared `SessionMap`.
 
-## Reload after config changes
+## Reload after changes
 
 `~/.drun/config.toml` (or whichever path `DRUN_CONFIG` points to) is read once
-at startup. To apply edits, restart the process:
+at startup. The web UI HTML is compiled into the binary. Both require a rebuild
+and restart to take effect:
 
 ```bash
-# Rebuild binary.
 cargo build -p drun-mcp
+pkill -f drun-mcp 2>/dev/null; sleep 0.3; DRUN_CONFIG="$PWD/.drun/config.toml" ./target/debug/drun-mcp &
+```
 
-# Kill current process.
-pkill -f drun-mcp
+When done, restore the installed daemon:
 
-# Launch a new one.
-DRUN_CONFIG="$PWD/.drun/config.toml" ./target/debug/drun-mcp &
+```bash
+# macOS
+launchctl load -w ~/Library/LaunchAgents/com.drun.mcp-server.plist
+
+# Linux
+# systemctl --user start drun-mcp.service
 ```
