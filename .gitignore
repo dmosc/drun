@@ -3,3 +3,5 @@ venv
 *.so
 *.pyc
 .drun
+.claude
+CLAUDE.md

@@ -33,9 +33,6 @@ async fn main() -> SdkResult<()> {
 
     eprintln!("drun: MCP → http://127.0.0.1:{MCP_PORT}/mcp (streamable HTTP)");
     eprintln!("drun: MCP → http://127.0.0.1:{MCP_PORT}/sse (SSE)");
-    if let Some(web_port) = handler.config.web_port {
-        eprintln!("drun: web UI → http://127.0.0.1:{web_port}");
-    }
 
     hyper_server::create_server(
         build_server_details(),

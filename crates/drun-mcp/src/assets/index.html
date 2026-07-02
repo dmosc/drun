@@ -232,7 +232,7 @@
       width: 32px;
       height: 32px;
       border-radius: 50%;
-      border: 2px solid var(--border-hi);
+      border: 2px solid rgba(124, 106, 245, 0.28);
       background: var(--s1);
       display: flex;
       align-items: center;
@@ -240,27 +240,39 @@
       font-size: 11px;
       font-weight: 700;
       font-family: var(--mono);
-      color: var(--text-muted);
+      color: rgba(124, 106, 245, 0.42);
       margin: 0 16px;
       transition: border-color 0.12s, background 0.12s, color 0.12s, box-shadow 0.12s;
     }
 
-    .timeline-node:hover .cp-bubble {
-      border-color: var(--accent);
-      color: var(--accent);
+    .timeline-node:hover:not(.selected):not(.is-head) .cp-bubble {
+      border-color: rgba(124, 106, 245, 0.55);
+      color: rgba(124, 106, 245, 0.65);
     }
 
-    .timeline-node.is-head .cp-bubble {
-      border-color: var(--green);
-      background: var(--green-bg);
-      color: var(--green);
+    .timeline-node.is-head:not(.selected) .cp-bubble {
+      border-color: rgba(79, 217, 138, 0.38);
+      background: rgba(11, 34, 24, 0.5);
+      color: rgba(79, 217, 138, 0.5);
     }
 
-    .timeline-node.selected .cp-bubble {
+    .timeline-node.is-head:hover:not(.selected) .cp-bubble {
+      border-color: rgba(79, 217, 138, 0.62);
+      color: rgba(79, 217, 138, 0.7);
+    }
+
+    .timeline-node.selected:not(.is-head) .cp-bubble {
       border-color: var(--accent);
       background: var(--accent-bg);
       color: var(--accent);
       box-shadow: 0 0 0 3px rgba(124, 106, 245, 0.22);
+    }
+
+    .timeline-node.selected.is-head .cp-bubble {
+      border-color: var(--green);
+      background: var(--green-bg);
+      color: var(--green);
+      box-shadow: 0 0 0 3px rgba(79, 217, 138, 0.22);
     }
 
     .cp-name {
@@ -685,7 +697,7 @@
 
       const history = viewState.checkpointHistory;
 
-      document.getElementById('timeline-track').innerHTML = session.checkpoints.map(cp => {
+      document.getElementById('timeline-track').innerHTML = [...session.checkpoints].reverse().map(cp => {
         const hist       = history.find(h => h.checkpoint_id === cp.checkpoint_id);
         const isHead     = cp.is_current;
         const isSelected = cp.checkpoint_id === viewState.selectedCpId;
