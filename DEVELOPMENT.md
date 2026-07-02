@@ -64,5 +64,12 @@ same UI, confirming the shared `SessionMap`.
 at startup. To apply edits, restart the process:
 
 ```bash
-pkill -f drun-mcp && DRUN_CONFIG="$PWD/.drun/config.toml" ./target/debug/drun-mcp &
+# Rebuild binary.
+cargo build -p drun-mcp
+
+# Kill current process.
+pkill -f drun-mcp
+
+# Launch a new one.
+DRUN_CONFIG="$PWD/.drun/config.toml" ./target/debug/drun-mcp &
 ```
