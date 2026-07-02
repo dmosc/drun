@@ -10,7 +10,7 @@ cargo build -p drun-mcp
 
 ```bash
 # Kill any existing instance on ports 7273 / 7274
-pkill -f drun-mcp || true
+pkill -f drun-mcp
 
 # Start the daemon against the repo's own config
 DRUN_CONFIG="$PWD/.drun/config.toml" ./target/debug/drun-mcp
@@ -28,7 +28,7 @@ drun: web UI → http://127.0.0.1:7274
 
 ```bash
 # Remove the previously installed entry, if any
-claude mcp remove drun 2>/dev/null || true
+claude mcp remove drun 2>/dev/null
 
 # Point Claude Code at the local daemon
 claude mcp add --transport sse drun http://127.0.0.1:7273/sse
