@@ -3,6 +3,7 @@ set -euo pipefail
 
 REPO="dmosc/drun"
 VERSION="${1:-latest}"
+LAUNCHD_PLIST="$HOME/Library/LaunchAgents/com.drun.mcp-server.plist"
 
 # ── platform detection ────────────────────────────────────────────────────────
 
@@ -46,10 +47,36 @@ update_binary() {
   fi
   chmod +x "$BIN" 2>/dev/null || sudo chmod +x "$BIN"
 
-  echo "Done. drun-mcp updated at $BIN."
+  echo "drun-mcp updated at $BIN."
+}
+
+# ── daemon restart ────────────────────────────────────────────────────────────
+
+restart_daemon() {
+  case "$(uname -s)" in
+    Darwin)
+      if [[ -f "$LAUNCHD_PLIST" ]]; then
+        launchctl unload "$LAUNCHD_PLIST" 2>/dev/null || true
+        launchctl load -w "$LAUNCHD_PLIST"
+        echo "drun-mcp daemon restarted."
+      else
+        pkill -f drun-mcp 2>/dev/null || true
+        echo "No launchd agent found — killed any running drun-mcp processes."
+      fi
+      ;;
+    Linux)
+      if systemctl --user is-active drun-mcp.service &>/dev/null; then
+        systemctl --user restart drun-mcp.service
+        echo "drun-mcp daemon restarted."
+      else
+        pkill -f drun-mcp 2>/dev/null || true
+      fi
+      ;;
+  esac
 }
 
 # ── main ──────────────────────────────────────────────────────────────────────
 
 detect_platform
 update_binary
+restart_daemon

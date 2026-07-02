@@ -1,0 +1,908 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>drun · trajectory viewer</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:          #0b0d13;
+      --s1:          #11141d;
+      --s2:          #181c28;
+      --s3:          #1e2234;
+      --border:      #222638;
+      --border-hi:   #333a5a;
+      --text:        #c6cae6;
+      --text-dim:    #7a82aa;
+      --text-muted:  #444c6e;
+      --accent:      #7c6af5;
+      --accent-bg:   #1a1740;
+      --green:       #4fd98a;
+      --green-bg:    #0b2218;
+      --amber:       #f0982e;
+      --amber-bg:    #261708;
+      --red:         #e0556a;
+      --red-bg:      #25090f;
+      --mono:        'SF Mono', 'Cascadia Mono', 'Fira Code', Consolas, monospace;
+      --radius:      8px;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    /* ── Header ────────────────────────────────────────────────────────── */
+    #page-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 24px;
+      background: var(--s1);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    .header-logo {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+    }
+
+    .logo-mark { color: var(--accent); font-size: 18px; }
+
+    .logo-name {
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: -0.3px;
+    }
+
+    .logo-tagline {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .header-status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+
+    .live-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 6px var(--green);
+      flex-shrink: 0;
+    }
+
+    .live-dot.offline { background: var(--text-muted); box-shadow: none; }
+
+    /* ── Page body ─────────────────────────────────────────────────────── */
+    #page-body {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 0 24px 64px;
+    }
+
+    section { margin-top: 28px; }
+    section.hidden { display: none !important; }
+
+    .section-label {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1.2px;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+    }
+
+    .section-title-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    .section-title-row .section-label { margin-bottom: 0; }
+
+    .mono-id {
+      font-family: var(--mono);
+      font-size: 13px;
+      color: var(--text-dim);
+    }
+
+    .label-badge {
+      font-size: 12px;
+      padding: 1px 8px;
+      border-radius: 4px;
+      background: var(--accent-bg);
+      color: var(--accent);
+    }
+
+    /* ── Session cards ─────────────────────────────────────────────────── */
+    #sessions-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+      gap: 10px;
+    }
+
+    .empty-state {
+      color: var(--text-muted);
+      font-size: 13px;
+      padding: 32px 0;
+      text-align: center;
+      grid-column: 1 / -1;
+    }
+
+    .session-card {
+      background: var(--s1);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 15px;
+      cursor: pointer;
+      transition: border-color 0.12s, background 0.12s;
+      user-select: none;
+    }
+
+    .session-card:hover  { border-color: var(--border-hi); background: var(--s2); }
+    .session-card.active { border-color: var(--accent); background: var(--accent-bg); }
+
+    .card-session-id {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-bottom: 5px;
+    }
+
+    .card-session-label {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 10px;
+      min-height: 20px;
+    }
+
+    .card-session-label.unlabeled {
+      font-weight: 400;
+      font-style: italic;
+      color: var(--text-muted);
+    }
+
+    .card-badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      font-size: 11px;
+      font-family: var(--mono);
+      padding: 2px 7px;
+      border-radius: 4px;
+    }
+
+    .badge-neutral { background: var(--s3); color: var(--text-dim); border: 1px solid var(--border); }
+    .badge-fork    { background: var(--s3); color: var(--text-muted); border: 1px solid var(--border); font-size: 10px; }
+
+    /* ── Timeline ──────────────────────────────────────────────────────── */
+    .timeline-scroll { overflow-x: auto; padding-bottom: 8px; }
+
+    .timeline-track {
+      display: flex;
+      align-items: flex-start;
+      padding: 4px 0 16px;
+      min-width: max-content;
+    }
+
+    .timeline-node {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      position: relative;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .timeline-node + .timeline-node::before {
+      content: '';
+      position: absolute;
+      right: 100%;
+      top: 15px;
+      width: 32px;
+      height: 2px;
+      background: var(--border-hi);
+    }
+
+    .cp-bubble {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      border: 2px solid var(--border-hi);
+      background: var(--s1);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 700;
+      font-family: var(--mono);
+      color: var(--text-muted);
+      margin: 0 16px;
+      transition: border-color 0.12s, background 0.12s, color 0.12s, box-shadow 0.12s;
+    }
+
+    .timeline-node:hover .cp-bubble {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .timeline-node.is-head .cp-bubble {
+      border-color: var(--green);
+      background: var(--green-bg);
+      color: var(--green);
+    }
+
+    .timeline-node.selected .cp-bubble {
+      border-color: var(--accent);
+      background: var(--accent-bg);
+      color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(124, 106, 245, 0.22);
+    }
+
+    .cp-name {
+      margin-top: 6px;
+      font-size: 10px;
+      font-family: var(--mono);
+      color: var(--text-muted);
+      text-align: center;
+      max-width: 72px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .cp-name.labeled { color: var(--accent); }
+
+    .cp-delta-row {
+      display: flex;
+      gap: 3px;
+      margin-top: 4px;
+      min-height: 14px;
+    }
+
+    .dp {
+      font-size: 9px;
+      font-weight: 700;
+      font-family: var(--mono);
+      padding: 1px 4px;
+      border-radius: 3px;
+    }
+
+    .dp-a { color: var(--green); background: var(--green-bg); }
+    .dp-m { color: var(--amber); background: var(--amber-bg); }
+    .dp-r { color: var(--red);   background: var(--red-bg);   }
+
+    .fork-tag {
+      position: absolute;
+      top: -8px;
+      right: 6px;
+      font-size: 9px;
+      color: var(--accent);
+      background: var(--accent-bg);
+      padding: 1px 5px;
+      border-radius: 3px;
+      border: 1px solid var(--accent);
+      white-space: nowrap;
+    }
+
+    /* ── Checkpoint detail ─────────────────────────────────────────────── */
+    .detail-grid {
+      display: grid;
+      grid-template-columns: 260px 1fr;
+      gap: 14px;
+    }
+
+    @media (max-width: 720px) {
+      .detail-grid { grid-template-columns: 1fr; }
+    }
+
+    .panel {
+      background: var(--s1);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .panel-head {
+      padding: 9px 14px;
+      border-bottom: 1px solid var(--border);
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.9px;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-shrink: 0;
+    }
+
+    .panel-head-counts {
+      font-size: 11px;
+      font-family: var(--mono);
+      font-weight: 400;
+      text-transform: none;
+      letter-spacing: 0;
+    }
+
+    .panel-body {
+      overflow-y: auto;
+      flex: 1;
+      max-height: 300px;
+    }
+
+    .file-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 14px;
+      font-family: var(--mono);
+      font-size: 12px;
+    }
+
+    .file-sigil {
+      width: 12px;
+      font-weight: 700;
+      flex-shrink: 0;
+      text-align: center;
+    }
+
+    .sigil-a { color: var(--green); }
+    .sigil-m { color: var(--amber); }
+    .sigil-r { color: var(--red); }
+
+    .file-path {
+      color: var(--text-dim);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .panel-empty {
+      padding: 14px;
+      font-size: 12px;
+      color: var(--text-muted);
+      font-style: italic;
+    }
+
+    /* ── Output tabs ───────────────────────────────────────────────────── */
+    .tab-bar {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+      padding: 0 14px;
+      flex-shrink: 0;
+    }
+
+    .tab-btn {
+      background: none;
+      border: none;
+      padding: 9px 12px;
+      font-size: 12px;
+      font-family: var(--mono);
+      color: var(--text-muted);
+      cursor: pointer;
+      position: relative;
+      transition: color 0.1s;
+    }
+
+    .tab-btn:hover { color: var(--text-dim); }
+
+    .tab-btn.active {
+      color: var(--accent);
+    }
+
+    .tab-btn.active::after {
+      content: '';
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      height: 2px;
+      background: var(--accent);
+    }
+
+    .tab-hint {
+      margin-left: 4px;
+      font-size: 10px;
+      color: var(--text-muted);
+    }
+
+    .tab-pane { display: none; }
+    .tab-pane.active { display: block; }
+
+    .output-scroll {
+      overflow: auto;
+      max-height: 260px;
+      padding: 12px 14px;
+    }
+
+    .output-pre {
+      font-family: var(--mono);
+      font-size: 12px;
+      line-height: 1.6;
+      color: var(--text-dim);
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    .output-empty {
+      font-size: 12px;
+      color: var(--text-muted);
+      font-style: italic;
+    }
+
+    .diff-block { overflow-x: auto; }
+
+    .diff-line { display: block; font-family: var(--mono); font-size: 12px; line-height: 1.6; white-space: pre; }
+    .diff-line.added   { color: var(--green); background: var(--green-bg); }
+    .diff-line.removed { color: var(--red);   background: var(--red-bg);   }
+    .diff-line.meta    { color: var(--text-muted); }
+    .diff-line.hunk    { color: var(--accent); }
+    .diff-line.context { color: var(--text-muted); }
+
+    .loading-note {
+      padding: 12px 14px;
+      font-size: 12px;
+      color: var(--text-muted);
+      font-style: italic;
+    }
+  </style>
+</head>
+<body>
+  <header id="page-header">
+    <div class="header-logo">
+      <span class="logo-mark">◆</span>
+      <span class="logo-name">drun</span>
+      <span class="logo-tagline">trajectory viewer</span>
+    </div>
+    <div class="header-status">
+      <span class="live-dot" id="live-dot"></span>
+      <span id="status-label">connecting…</span>
+    </div>
+  </header>
+
+  <div id="page-body">
+    <section id="sessions-section">
+      <div class="section-label">sessions</div>
+      <div id="sessions-grid"></div>
+    </section>
+
+    <section id="timeline-section" class="hidden">
+      <div class="section-title-row">
+        <span class="section-label">checkpoints</span>
+        <span class="mono-id" id="timeline-session-id"></span>
+        <span class="label-badge" id="timeline-session-label" style="display:none"></span>
+      </div>
+      <div class="timeline-scroll">
+        <div class="timeline-track" id="timeline-track"></div>
+      </div>
+    </section>
+
+    <section id="detail-section" class="hidden">
+      <div class="section-title-row">
+        <span class="section-label">checkpoint</span>
+        <span class="mono-id" id="detail-heading"></span>
+      </div>
+      <div class="detail-grid">
+
+        <div class="panel" id="files-panel">
+          <div class="panel-head">
+            files
+            <span class="panel-head-counts" id="files-counts"></span>
+          </div>
+          <div class="panel-body" id="files-body">
+            <div class="loading-note">select a checkpoint</div>
+          </div>
+        </div>
+
+        <div class="panel" id="output-panel">
+          <div class="tab-bar">
+            <button class="tab-btn active" data-tab="stdout">
+              stdout<span class="tab-hint" id="hint-stdout"></span>
+            </button>
+            <button class="tab-btn" data-tab="stderr">
+              stderr<span class="tab-hint" id="hint-stderr"></span>
+            </button>
+            <button class="tab-btn" data-tab="diff">diff</button>
+          </div>
+          <div id="pane-stdout" class="tab-pane active">
+            <div class="output-scroll"><span class="loading-note">loading…</span></div>
+          </div>
+          <div id="pane-stderr" class="tab-pane">
+            <div class="output-scroll"><span class="loading-note">loading…</span></div>
+          </div>
+          <div id="pane-diff" class="tab-pane">
+            <div class="output-scroll"><span class="loading-note">loading…</span></div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+  </div>
+
+  <script>
+    // ── State ────────────────────────────────────────────────────────────────
+
+    const viewState = {
+      sessionTree:        [],
+      flatSessions:       [],
+      selectedSessionId:  null,
+      checkpointHistory:  [],
+      selectedCpId:       null,
+      outputCache:        new Map(),   // `${sessionId}:${cpId}` → { stdout, stderr, diff, fileNames }
+      activeTab:          'stdout',
+    };
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
+
+    function escHtml(str) {
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function shortId(sessionId) {
+      return sessionId.length > 14 ? sessionId.slice(0, 14) + '…' : sessionId;
+    }
+
+    function fmtBytes(n) {
+      if (n === 0) return '0 B';
+      if (n < 1024) return `${n} B`;
+      if (n < 1048576) return `${(n / 1024).toFixed(1)} KB`;
+      return `${(n / 1048576).toFixed(1)} MB`;
+    }
+
+    function flattenTree(tree) {
+      const result = [];
+      function walk(node) {
+        result.push(node);
+        for (const cp of node.checkpoints)
+          for (const fork of (cp.forks || []))
+            walk(fork);
+      }
+      for (const root of tree) walk(root);
+      return result;
+    }
+
+    function findSession(sessionId) {
+      return viewState.flatSessions.find(s => s.session_id === sessionId) || null;
+    }
+
+    function currentCpIdForSession(session) {
+      const head = session.checkpoints.find(c => c.is_current);
+      return head ? head.checkpoint_id : null;
+    }
+
+    function extractFileNamesFromDiff(diffText) {
+      const added = [], modified = [], removed = [];
+      const lines = diffText.split('\n');
+      for (let i = 0; i < lines.length - 1; i++) {
+        const line = lines[i];
+        if (!line.startsWith('--- ')) continue;
+        const nextLine = lines[i + 1];
+        if (!nextLine.startsWith('+++ ')) continue;
+        const fromPath = line.slice(4).replace(/^a\//, '');
+        const toPath   = nextLine.slice(4).replace(/^b\//, '');
+        if (fromPath === '/dev/null') {
+          added.push(toPath);
+        } else if (toPath === '/dev/null') {
+          removed.push(fromPath);
+        } else {
+          modified.push(fromPath);
+        }
+        i++;
+      }
+      return { added, modified, removed };
+    }
+
+    // ── API ──────────────────────────────────────────────────────────────────
+
+    async function fetchJson(url) {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`${res.status} ${url}`);
+      return res.json();
+    }
+
+    async function fetchText(url) {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`${res.status} ${url}`);
+      return res.text();
+    }
+
+    // ── Rendering: sessions ──────────────────────────────────────────────────
+
+    function renderSessionGrid() {
+      const grid = document.getElementById('sessions-grid');
+      const sessions = viewState.flatSessions;
+
+      if (sessions.length === 0) {
+        grid.innerHTML = '<div class="empty-state">No active sessions — start an agent to see trajectory data here.</div>';
+        return;
+      }
+
+      grid.innerHTML = sessions.map(s => {
+        const isActive  = s.session_id === viewState.selectedSessionId;
+        const headCpId  = currentCpIdForSession(s);
+        const totalCps  = s.checkpoints.length;
+        const isForked  = !!s.parent_session_id;
+
+        return `
+          <div class="session-card ${isActive ? 'active' : ''}" onclick="onSessionClick('${escHtml(s.session_id)}')">
+            <div class="card-session-id">${escHtml(shortId(s.session_id))}</div>
+            <div class="card-session-label ${s.label ? '' : 'unlabeled'}">
+              ${s.label ? escHtml(s.label) : 'unlabeled'}
+            </div>
+            <div class="card-badges">
+              <span class="badge badge-neutral">cp ${headCpId ?? '—'} / ${totalCps - 1}</span>
+              ${isForked ? `<span class="badge badge-fork" title="forked from ${escHtml(s.parent_session_id)} @ cp${s.parent_checkpoint_id}">⑂ ${escHtml(shortId(s.parent_session_id))}</span>` : ''}
+            </div>
+          </div>`;
+      }).join('');
+    }
+
+    // ── Rendering: timeline ──────────────────────────────────────────────────
+
+    function renderTimeline() {
+      const session = findSession(viewState.selectedSessionId);
+      if (!session) return;
+
+      document.getElementById('timeline-section').classList.remove('hidden');
+      document.getElementById('timeline-session-id').textContent = shortId(session.session_id);
+
+      const labelEl = document.getElementById('timeline-session-label');
+      if (session.label) {
+        labelEl.textContent = session.label;
+        labelEl.style.display = '';
+      } else {
+        labelEl.style.display = 'none';
+      }
+
+      const history = viewState.checkpointHistory;
+
+      document.getElementById('timeline-track').innerHTML = session.checkpoints.map(cp => {
+        const hist       = history.find(h => h.checkpoint_id === cp.checkpoint_id);
+        const isHead     = cp.is_current;
+        const isSelected = cp.checkpoint_id === viewState.selectedCpId;
+        const forkCount  = (cp.forks || []).length;
+
+        const deltaPills = hist ? [
+          hist.files_added_count   > 0 ? `<span class="dp dp-a">+${hist.files_added_count}</span>` : '',
+          hist.files_modified_count > 0 ? `<span class="dp dp-m">~${hist.files_modified_count}</span>` : '',
+          hist.files_removed_count > 0 ? `<span class="dp dp-r">-${hist.files_removed_count}</span>` : '',
+        ].join('') : '';
+
+        return `
+          <div class="timeline-node ${isHead ? 'is-head' : ''} ${isSelected ? 'selected' : ''}"
+               onclick="onCheckpointClick(${cp.checkpoint_id})">
+            ${forkCount > 0 ? `<span class="fork-tag">⑂ ×${forkCount}</span>` : ''}
+            <div class="cp-bubble">${cp.checkpoint_id}</div>
+            <div class="cp-name ${cp.label ? 'labeled' : ''}">${cp.label ? escHtml(cp.label) : ''}&nbsp;</div>
+            <div class="cp-delta-row">${deltaPills}</div>
+          </div>`;
+      }).join('');
+    }
+
+    // ── Rendering: checkpoint detail ─────────────────────────────────────────
+
+    function renderCheckpointDetail() {
+      const cpId      = viewState.selectedCpId;
+      const sessionId = viewState.selectedSessionId;
+      if (cpId == null) { document.getElementById('detail-section').classList.add('hidden'); return; }
+
+      document.getElementById('detail-section').classList.remove('hidden');
+
+      const session  = findSession(sessionId);
+      const treeCp   = session?.checkpoints.find(c => c.checkpoint_id === cpId);
+      const hist     = viewState.checkpointHistory.find(h => h.checkpoint_id === cpId);
+      const cacheKey = `${sessionId}:${cpId}`;
+      const cached   = viewState.outputCache.get(cacheKey);
+
+      // Heading
+      const labelSuffix = treeCp?.label ? ` · "${escHtml(treeCp.label)}"` : '';
+      document.getElementById('detail-heading').innerHTML = `#${cpId}${labelSuffix}`;
+
+      // File counts badge
+      if (hist) {
+        const parts = [];
+        if (hist.files_added_count    > 0) parts.push(`<span style="color:var(--green)">+${hist.files_added_count}</span>`);
+        if (hist.files_modified_count > 0) parts.push(`<span style="color:var(--amber)">~${hist.files_modified_count}</span>`);
+        if (hist.files_removed_count  > 0) parts.push(`<span style="color:var(--red)">-${hist.files_removed_count}</span>`);
+        parts.push(`<span style="color:var(--text-muted)">${hist.file_count} total</span>`);
+        document.getElementById('files-counts').innerHTML = parts.join('<span style="color:var(--border-hi)"> · </span>');
+      }
+
+      // Files body — use parsed names from diff if available, fall back to count summary
+      const filesBody = document.getElementById('files-body');
+      if (cached?.fileNames) {
+        const { added, modified, removed } = cached.fileNames;
+        if (added.length + modified.length + removed.length === 0) {
+          filesBody.innerHTML = '<div class="panel-empty">no file changes</div>';
+        } else {
+          const rows = [
+            ...added.map(f    => fileRow('+', 'sigil-a', f)),
+            ...modified.map(f => fileRow('~', 'sigil-m', f)),
+            ...removed.map(f  => fileRow('-', 'sigil-r', f)),
+          ];
+          filesBody.innerHTML = rows.join('');
+        }
+      } else if (hist) {
+        const rows = [];
+        if (hist.files_added_count    > 0) rows.push(fileRow('+', 'sigil-a', `${hist.files_added_count} added`));
+        if (hist.files_modified_count > 0) rows.push(fileRow('~', 'sigil-m', `${hist.files_modified_count} modified`));
+        if (hist.files_removed_count  > 0) rows.push(fileRow('-', 'sigil-r', `${hist.files_removed_count} removed`));
+        if (rows.length === 0) rows.push('<div class="panel-empty">no file changes</div>');
+        filesBody.innerHTML = rows.join('');
+      } else {
+        filesBody.innerHTML = '<div class="loading-note">loading…</div>';
+      }
+
+      // Stdout / stderr hints
+      if (hist) {
+        document.getElementById('hint-stdout').textContent = hist.stdout_bytes ? ` ${fmtBytes(hist.stdout_bytes)}` : '';
+        document.getElementById('hint-stderr').textContent = hist.stderr_bytes ? ` ${fmtBytes(hist.stderr_bytes)}` : '';
+      }
+
+      // Output panes
+      renderOutputPane('stdout', cached?.stdout);
+      renderOutputPane('stderr', cached?.stderr);
+      renderDiffPane(cached?.diff);
+    }
+
+    function fileRow(sigil, sigilClass, path) {
+      return `<div class="file-row"><span class="file-sigil ${sigilClass}">${sigil}</span><span class="file-path">${escHtml(path)}</span></div>`;
+    }
+
+    function renderOutputPane(stream, content) {
+      const pane = document.getElementById(`pane-${stream}`);
+      if (content === undefined) {
+        pane.innerHTML = '<div class="output-scroll"><span class="loading-note">loading…</span></div>';
+        return;
+      }
+      pane.innerHTML = `<div class="output-scroll">${
+        content ? `<pre class="output-pre">${escHtml(content)}</pre>` : '<span class="output-empty">no output</span>'
+      }</div>`;
+    }
+
+    function renderDiffPane(diffText) {
+      const pane = document.getElementById('pane-diff');
+      if (diffText === undefined) {
+        pane.innerHTML = '<div class="output-scroll"><span class="loading-note">loading…</span></div>';
+        return;
+      }
+      if (!diffText) {
+        pane.innerHTML = '<div class="output-scroll"><span class="output-empty">no changes from previous checkpoint</span></div>';
+        return;
+      }
+      const lines = diffText.split('\n').map(line => {
+        if      (line.startsWith('+++) ') || line.startsWith('--- ')) return `<span class="diff-line meta">${escHtml(line)}</span>`;
+        else if (line.startsWith('+'))   return `<span class="diff-line added">${escHtml(line)}</span>`;
+        else if (line.startsWith('-'))   return `<span class="diff-line removed">${escHtml(line)}</span>`;
+        else if (line.startsWith('@@')) return `<span class="diff-line hunk">${escHtml(line)}</span>`;
+        else                             return `<span class="diff-line context">${escHtml(line)}</span>`;
+      });
+      pane.innerHTML = `<div class="output-scroll"><div class="diff-block">${lines.join('')}</div></div>`;
+    }
+
+    // ── Event handlers ───────────────────────────────────────────────────────
+
+    async function onSessionClick(sessionId) {
+      if (viewState.selectedSessionId === sessionId) return;
+      viewState.selectedSessionId = sessionId;
+      viewState.selectedCpId      = null;
+      viewState.checkpointHistory = [];
+
+      renderSessionGrid();
+      document.getElementById('detail-section').classList.add('hidden');
+      renderTimeline();
+
+      try {
+        viewState.checkpointHistory = await fetchJson(`/api/sessions/${sessionId}/history`);
+        renderTimeline();
+      } catch (e) {
+        console.error('Failed to load history:', e);
+      }
+    }
+
+    async function onCheckpointClick(cpId) {
+      if (viewState.selectedCpId === cpId) return;
+      viewState.selectedCpId = cpId;
+
+      renderTimeline();
+      renderCheckpointDetail();
+      switchTab('stdout');
+
+      const sessionId = viewState.selectedSessionId;
+      const cacheKey  = `${sessionId}:${cpId}`;
+      if (viewState.outputCache.has(cacheKey)) return;
+
+      try {
+        const [stdout, stderr, diff] = await Promise.all([
+          fetchText(`/api/sessions/${sessionId}/checkpoints/${cpId}/stdout`),
+          fetchText(`/api/sessions/${sessionId}/checkpoints/${cpId}/stderr`),
+          cpId > 0
+            ? fetchText(`/api/sessions/${sessionId}/diff?from=${cpId - 1}&to=${cpId}`)
+            : Promise.resolve(''),
+        ]);
+
+        const fileNames = extractFileNamesFromDiff(diff);
+        viewState.outputCache.set(cacheKey, { stdout, stderr, diff, fileNames });
+      } catch (e) {
+        console.error('Failed to load checkpoint output:', e);
+        viewState.outputCache.set(cacheKey, { stdout: '', stderr: '', diff: '', fileNames: { added: [], modified: [], removed: [] } });
+      }
+
+      if (viewState.selectedCpId === cpId) renderCheckpointDetail();
+    }
+
+    function switchTab(tabName) {
+      viewState.activeTab = tabName;
+      document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.tab === tabName);
+      });
+      document.querySelectorAll('.tab-pane').forEach(pane => {
+        pane.classList.toggle('active', pane.id === `pane-${tabName}`);
+      });
+    }
+
+    document.getElementById('output-panel').addEventListener('click', e => {
+      const btn = e.target.closest('.tab-btn');
+      if (btn) switchTab(btn.dataset.tab);
+    });
+
+    // ── Refresh loop ─────────────────────────────────────────────────────────
+
+    async function refresh() {
+      try {
+        const tree = await fetchJson('/api/sessions/tree');
+        viewState.sessionTree  = tree;
+        viewState.flatSessions = flattenTree(tree);
+
+        document.getElementById('live-dot').classList.remove('offline');
+        document.getElementById('status-label').textContent = `updated ${new Date().toLocaleTimeString()}`;
+
+        renderSessionGrid();
+
+        if (viewState.selectedSessionId && findSession(viewState.selectedSessionId)) {
+          try {
+            viewState.checkpointHistory = await fetchJson(`/api/sessions/${viewState.selectedSessionId}/history`);
+          } catch (_) {}
+          renderTimeline();
+          if (viewState.selectedCpId != null) renderCheckpointDetail();
+        }
+      } catch (e) {
+        document.getElementById('live-dot').classList.add('offline');
+        document.getElementById('status-label').textContent = 'disconnected';
+      }
+    }
+
+    refresh();
+    setInterval(refresh, 2000);
+  </script>
+</body>
+</html>

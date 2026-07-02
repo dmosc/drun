@@ -45,6 +45,8 @@ pub struct Config {
     /// Shell command substrings that are permitted. Empty means all commands
     /// are allowed (except for the ones listed in denylist).
     pub bash_command_allowlist: Vec<String>,
+    /// TCP port for the embedded web UI. Set to None to disable the web server.
+    pub web_port: Option<u16>,
 }
 
 impl Default for Config {
@@ -77,6 +79,7 @@ impl Default for Config {
             bash_timeout_ms: 30_000,
             bash_command_denylist: vec![],
             bash_command_allowlist: vec![],
+            web_port: Some(7274),
         }
     }
 }
