@@ -314,25 +314,6 @@
 
     .cp-fork-link:hover { background: rgba(124, 106, 245, 0.2); }
 
-    .fork-origin-banner {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      margin-bottom: 10px;
-      font-size: 11px;
-      color: var(--text-muted);
-    }
-
-    .fork-origin-link {
-      color: var(--accent);
-      font-family: var(--mono);
-      font-size: 11px;
-      cursor: pointer;
-      text-decoration: underline;
-      text-underline-offset: 2px;
-    }
-
-    .fork-origin-link:hover { color: var(--text); }
 
     /* ── Checkpoint detail ─────────────────────────────────────────────── */
     .detail-grid {
@@ -522,7 +503,6 @@
         <span class="mono-id" id="timeline-session-id"></span>
         <span class="label-badge" id="timeline-session-label" style="display:none"></span>
       </div>
-      <div class="fork-origin-banner" id="fork-origin-banner" style="display:none"></div>
       <div class="timeline-scroll">
         <div class="timeline-track" id="timeline-track"></div>
       </div>
@@ -709,28 +689,17 @@
         labelEl.style.display = 'none';
       }
 
-      const originBanner = document.getElementById('fork-origin-banner');
-      if (session.parent_session_id) {
-        const pid  = escHtml(session.parent_session_id);
-        const pcid = session.parent_checkpoint_id;
-        originBanner.style.display = '';
-        originBanner.innerHTML = `<span>⑂ forked from</span><span class="fork-origin-link" onclick="onForkOriginClick('${pid}',${pcid})">${escHtml(shortId(session.parent_session_id))} @ cp${pcid}</span>`;
-      } else {
-        originBanner.style.display = 'none';
-      }
-
       const history = viewState.checkpointHistory;
-
       document.getElementById('timeline-track').innerHTML = [...session.checkpoints].reverse().map(cp => {
-        const hist       = history.find(h => h.checkpoint_id === cp.checkpoint_id);
         const isHead     = cp.is_current;
         const isSelected = cp.checkpoint_id === viewState.selectedCpId;
         const forks      = cp.forks || [];
 
         const stateClass = isHead ? 'is-head' : '';
-        const forksHtml  = forks.length > 0
+
+        const forksHtml = forks.length > 0
           ? `<div class="cp-forks">${forks.map(f =>
-              `<span class="cp-fork-link" onclick="event.stopPropagation();onSessionClick('${escHtml(f.session_id)}')" title="${escHtml(f.session_id)}">⑂ ${escHtml(shortId(f.session_id))}</span>`
+              `<span class="cp-fork-link" onclick="event.stopPropagation();onSessionClick('${escHtml(f.session_id)}')" title="${escHtml(f.session_id)}">↑ ${escHtml(shortId(f.session_id))}</span>`
             ).join('')}</div>`
           : '';
 
@@ -894,43 +863,6 @@
       }
 
       if (viewState.selectedCpId === cpId) renderCheckpointDetail();
-    }
-
-    async function onForkOriginClick(parentSessionId, parentCpId) {
-      viewState.selectedSessionId = parentSessionId;
-      viewState.selectedCpId      = parentCpId;
-      viewState.checkpointHistory = [];
-
-      renderSessionGrid();
-      renderTimeline();
-      renderCheckpointDetail();
-      switchTab('stdout');
-
-      try {
-        viewState.checkpointHistory = await fetchJson(`/api/sessions/${parentSessionId}/history`);
-        renderTimeline();
-      } catch (e) {
-        console.error('Failed to load history:', e);
-      }
-
-      const cacheKey = `${parentSessionId}:${parentCpId}`;
-      if (!viewState.outputCache.has(cacheKey)) {
-        try {
-          const [stdout, stderr, diff] = await Promise.all([
-            fetchText(`/api/sessions/${parentSessionId}/checkpoints/${parentCpId}/stdout`),
-            fetchText(`/api/sessions/${parentSessionId}/checkpoints/${parentCpId}/stderr`),
-            parentCpId > 0
-              ? fetchText(`/api/sessions/${parentSessionId}/diff?from=${parentCpId - 1}&to=${parentCpId}`)
-              : Promise.resolve(''),
-          ]);
-          const fileNames = extractFileNamesFromDiff(diff);
-          viewState.outputCache.set(cacheKey, { stdout, stderr, diff, fileNames });
-        } catch (e) {
-          viewState.outputCache.set(cacheKey, { stdout: '', stderr: '', diff: '', fileNames: { added: [], modified: [], removed: [] } });
-        }
-      }
-
-      if (viewState.selectedCpId === parentCpId) renderCheckpointDetail();
     }
 
     function switchTab(tabName) {
