@@ -38,38 +38,47 @@ document as the current source of truth of what's production-ready.
 
 - [Claude Code](https://code.claude.com/docs/en/quickstart#step-1-install-claude-code).
 
-Open a terminal and go to your project folder.
+#### Global install (once per machine)
+
+Run the install script from the root of a project you want to use drun in:
 
 ```bash
 cd ~/path/to/project
-```
-
-Run the installation script which does a few things:
-
-```bash
 curl -fsSL https://raw.githubusercontent.com/dmosc/drun/main/install.sh | bash
 ```
 
-1. Installs the drun MCP binary to `/usr/local/bin/drun-mcp` (skips if already
-   installed).
-1. Creates a global config at `~/.drun/config.toml` with common defaults (skips
-   if one already exists).
-1. Starts `drun-mcp` as a persistent background daemon — via `launchd` on macOS
-   or a `systemd` user service on Linux — so a single process serves all MCP
-   clients across every terminal and editor window on the host.
-1. Creates `$PWD/.claude/settings.json` that restricts Claude to drun tools only
-   for this workspace — native file (`Read`, `Edit`, `Write`, `NotebookEdit`,
-   `Glob`, `Grep`), shell (`Bash`, `BashOutput`, `KillBash`), network
-   (`WebFetch`, `WebSearch`), and subagent delegation (`Task`) tools are all
-   blocked, and drun's MCP tools are pre-allowed so Claude isn't prompted on
-   every call.
-1. Creates `$PWD/CLAUDE.md` with instructions that tell Claude to use drun tools
-   instead of native ones, including how to bootstrap a session
-   (`create_session` then `session_mount`).
-1. Registers the MCP in Claude Code pointing at the running daemon over SSE
+The following are installed globally on the first run (skipped automatically on
+subsequent runs):
+
+1. The drun MCP binary to `/usr/local/bin/drun-mcp`.
+2. A global config at `~/.drun/config.toml` with sensible defaults.
+3. `drun-mcp` as a persistent background daemon — via `launchd` on macOS or
+   `systemd` on Linux — so a single process serves all Claude Code windows and
+   terminals on the host simultaneously.
+4. The MCP registration in Claude Code pointing at the running daemon over SSE
    (`http://127.0.0.1:7273/sse`) — one registration shared across all projects.
 
-Once installed, two endpoints are available:
+#### Per-project setup
+
+Each time you run the script from a project directory, it also creates two files
+scoped to that project (skipped if they already exist):
+
+5. `.claude/settings.json` — restricts Claude to drun tools only for this
+   workspace. Native file (`Read`, `Edit`, `Write`, `NotebookEdit`, `Glob`,
+   `Grep`), shell (`Bash`, `BashOutput`, `KillBash`), network (`WebFetch`,
+   `WebSearch`), and subagent delegation (`Task`) tools are all blocked, and
+   drun's MCP tools are pre-allowed so Claude isn't prompted on every call.
+6. `CLAUDE.md` — instructions that tell Claude to use drun tools instead of
+   native ones, including how to bootstrap a session (`create_session` then
+   `session_mount`).
+
+This restriction is intentionally per-project. You wouldn't want native tools
+blocked globally across every workspace — only in projects where you've opted
+into the drun sandbox. To enable drun for an additional project, just run the
+same install script from that project's root directory; the global steps are
+skipped and only the two project files are created.
+
+Once installed, the following endpoints are available:
 
 | Endpoint                    | Purpose                                   |
 | --------------------------- | ----------------------------------------- |
@@ -92,7 +101,7 @@ Run the following commands to upgrade drun's MCP to the latest release:
 curl -fsSL https://raw.githubusercontent.com/dmosc/drun/main/update.sh | bash
 
 # Update to a specific version
-curl -fsSL https://raw.githubusercontent.com/dmosc/drun/main/update.sh | bash -s -- v0.1.1
+curl -fsSL https://raw.githubusercontent.com/dmosc/drun/main/update.sh | bash -s -- v0.3.1
 ```
 
 #### Uninstalling
@@ -139,7 +148,7 @@ fields are optional.
 | `env_allowlist`             | `[]`                                                                 | Host environment variable names exposed to agents via `session_get_env`. Empty means no variables are exposed.                                                                                                |
 | `bash_command_denylist`     | `[]`                                                                 | Command substrings always rejected by `session_bash` before execution.                                                                                                                                        |
 | `bash_command_allowlist`    | `[]`                                                                 | Command substrings permitted by `session_bash`. Empty means all commands are allowed (subject to the denylist).                                                                                               |
-| `web_port`                  | `7274`                                                               | TCP port for the trajectory viewer web UI. Set to `0` or remove the field to disable it.                                                                                                                      |
+| `web_port`                  | `7274`                                                               | TCP port for the trajectory viewer web UI. Set to `0`, or remove the field from the config file, to disable it.                                                                                               |
 
 #### Reloading the MCP
 

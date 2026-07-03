@@ -114,7 +114,7 @@ bash_command_denylist = []
 # Shell command substrings that are permitted (empty = all allowed except denylist).
 bash_command_allowlist = []
 
-# TCP port for the embedded trajectory viewer web UI. Set to 0 or remove to disable.
+# TCP port for the embedded trajectory viewer web UI. Set to 0, or remove the field, to disable.
 web_port = 7274
 EOF
 

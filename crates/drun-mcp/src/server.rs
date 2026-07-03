@@ -554,6 +554,11 @@ impl ServerHandler for DrunHandler {
             }
 
             DrunTools::SessionMergeTool(t) => {
+                if t.session_id == t.source_session_id {
+                    return Err(
+                        DrunError::internal("cannot merge a session with itself").into_tool_err()
+                    );
+                }
                 let source_arc = self
                     .sessions
                     .lock()
@@ -675,7 +680,12 @@ fn host_from_url(url: &str) -> Option<String> {
         .or_else(|| url.strip_prefix("http://"))?;
     let authority = s.split('/').next().filter(|h| !h.is_empty())?;
     let host = if authority.starts_with('[') {
-        authority.to_string()
+        // IPv6: "[::1]" or "[::1]:port" — extract up to and including ']'
+        let end = authority
+            .find(']')
+            .map(|i| i + 1)
+            .unwrap_or(authority.len());
+        authority[..end].to_string()
     } else {
         authority.split(':').next()?.to_string()
     };

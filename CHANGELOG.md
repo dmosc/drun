@@ -4,107 +4,125 @@ All notable changes to drun are documented here.
 
 ---
 
+## v0.3.1 — 2026-07-01
+
+### Web UI
+
+- Added per-checkpoint fork chips (↑ child-session) on the timeline so you can
+  navigate to sessions that branched off from any checkpoint.
+- Fixed fork badge (⑂ parent-id) on session cards: the badge was missing for
+  forked sessions whose parent was still alive because the tree serializer was
+  omitting `parent_session_id` for nested sessions (only orphan roots carried
+  it).
+- Fixed diff pane: `+++ b/file` header lines were rendered green (as additions)
+  due to a typo in the `startsWith` check; they now render muted as metadata.
+- Checkpoint dots are green for the current head, purple for all others.
+- Removed file-modification pills (+N ~N -N) from timeline nodes; file change
+  counts are now in the checkpoint detail panel header.
+- Added `Cache-Control: no-store` to the HTML response so browsers never serve a
+  stale page after a daemon restart.
+
+### MCP server
+
+- Fixed `session_merge` with `session_id == source_session_id`: now returns a
+  clear "cannot merge a session with itself" error instead of `session_busy`.
+- Fixed `host_from_url` IPv6 parsing: URLs like `http://[::1]/path` previously
+  included the port suffix in the extracted host string, breaking allowlist
+  matching.
+- `web_port = 0` in config now disables the web UI as documented.
+
+---
+
+## v0.3.0 — 2026-06-24
+
+### MCP transport
+
+- Switched from stdio to a persistent HTTP/SSE daemon on `127.0.0.1:7273`. A
+  single `drun-mcp` process now serves all Claude Code windows and terminal
+  sessions on the host simultaneously.
+- Added Streamable HTTP endpoint (`/mcp`) alongside the SSE endpoint (`/sse`).
+- `install.sh` registers drun as a `launchd` agent (macOS) or `systemd` user
+  service (Linux) so the daemon starts on login and restarts automatically.
+
+### Web UI
+
+- Added embedded trajectory viewer at `http://127.0.0.1:7274` — live-polling
+  session and checkpoint state, per-checkpoint diff and stdout/stderr viewer.
+
+---
+
+## v0.2.3 — 2026-06-21
+
+- Added `session_label` and `session_checkpoint_label`: attach human-readable
+  names to sessions and checkpoints; labels appear in history and tree output
+  and can be used in place of IDs for rollback, diff, and fork.
+- Added `session_checkpoint_squash`: collapse a range of checkpoints into one,
+  keeping the terminal file state and combining stdout/stderr.
+- Added `session_checkpoint_drop`: remove a range of checkpoints to free memory
+  or stay under the checkpoint limit.
+- Locked drun-initialized workspaces to MCP-only tool access via a generated
+  `.claude/settings.json` that blocks native file, shell, and network tools.
+
+---
+
+## v0.2.2 — 2026-06-19
+
+- Added `session_merge`: overlay files from one session's checkpoint onto
+  another, creating a new checkpoint. Useful for combining parallel
+  explorations.
+- Replaced inline stdout/stderr content in MCP responses with byte-count
+  metadata (`stdout_bytes`, `stderr_bytes`). Use `checkpoint_read_stdstreams` to
+  page through the actual output without flooding the context window.
+- Added `checkpoint_read_stdstreams`: paginated stdout/stderr reader with the
+  same `offset`/`limit`/`total_bytes`/`has_more` envelope as
+  `session_read_file`.
+
+---
+
+## v0.2.0 — 2026-06-17
+
+### Execution sandbox
+
+- **Breaking**: replaced the Pyodide/Deno WebAssembly Python executor with a
+  native bash sandbox. `session_execute` and `session_install_package` are gone;
+  `session_bash` is the single execution primitive.
+- macOS: `sandbox-exec` with an SBPL profile that denies everything except
+  reads, workspace writes, and process management. Network is denied by default.
+- Linux: `bubblewrap` (`bwrap`) with a read-only host root, writable workspace,
+  isolated `/tmp`, and `--unshare-net`.
+- Timeout enforced by a dedicated kill thread (`bash_timeout_ms`; default 30 s).
+- stdout is streamed line-by-line via MCP progress notifications while the
+  command runs.
+
+### Files
+
+- Added `mount_overlay_paths` config: large directories (`node_modules`,
+  `.venv`, `venv`, `target`, `__pycache__`, `.git`) are symlinked into the
+  workspace at execution time instead of being copied into the checkpoint graph.
+- Added `session_snapshot` / `session_restore`: serialize and reload a session's
+  full checkpoint history to/from a zstd-compressed `.drun` file.
+- Added `session_get_env`: read named host environment variables inside a
+  session, gated by `env_allowlist` in server config.
+- Added `get_fetch_allowlist`: return the server's fetch domain allowlist so
+  agents can check what hosts are available before constructing requests.
+
+---
+
 ## v0.1.1 — 2026-06-15
 
-### Python SDK (`drun-sandbox`)
+_(Pyodide/Deno architecture — superseded by v0.2.0)_
 
-- Added `drun chat` CLI command: runs a local or cloud LLM in an agentic
-  tool-use loop with access to four sandbox tools — `execute_python`,
-  `execute_bash`, `install_package`, and `write_file`
-- Added `drun.chat.run()` for programmatic access to the same loop from Python
-- Added `[chat]` optional dependency group (`litellm>=1.0`) for multi-provider
-  LLM routing
-- Added `drun` console script entry point via `pyproject.toml`
-- System prompt explicitly declares the CPython (non-WebAssembly) execution
-  environment and tool-use rules to prevent model hallucination
-- Assistant messages are serialized as plain dicts in exact OpenAI wire format,
-  ensuring tool call ID association is preserved across all litellm backends
-  including Ollama's OpenAI-compatible `/v1` endpoint
+- Added `drun chat` CLI command and `drun.chat.run()` Python API: runs a local
+  or cloud LLM in an agentic loop with four sandbox tools.
+- Added `[chat]` optional dependency group (`litellm>=1.0`).
 
 ---
 
 ## v0.1.0 — 2026-06-14
 
-Initial public release.
+_(Pyodide/Deno architecture — superseded by v0.2.0)_
 
-### MCP server
-
-25 tools across 7 categories exposed over stdio MCP:
-
-- **Lifecycle** — `create_session`, `session_list`, `session_close`,
-  `session_tree`
-- **Execution** — `session_execute`, `session_install_package`,
-  `session_get_env`
-- **Navigation** — `session_rollback`, `session_fork`, `session_history`,
-  `get_session_state`
-- **Files** — `session_read_file`, `session_write_file`, `session_delete_file`,
-  `session_mount`, `session_diff`
-- **Host I/O** — `session_export`, `session_commit`, `session_fetch`,
-  `get_fetch_allowlist`, `get_allowed_packages`
-- **Snapshots** — `session_snapshot`, `session_restore`
-- **Labels** — `session_label`, `session_checkpoint_label`
-
-### Execution sandbox
-
-- Python runs inside [Pyodide](https://pyodide.org) (WebAssembly CPython) hosted
-  in [Deno](https://deno.land) — no syscalls, no host filesystem access, no
-  process spawning from Python code
-- Working directory set to `/workspace` before each execution
-- stdout and stderr capped at 1 MB per execution
-- Per-session execution timeout with `KeyboardInterrupt` delivery and automatic
-  runner recovery after crash or timeout
-
-### Checkpoint model
-
-- Full workspace snapshot on every `session_execute`
-- Rollback, fork, diff, and label at any checkpoint
-- Per-session checkpoint limit (default 200)
-- Snapshot serialization to `.drun` files with magic-byte integrity check
-
-### Operator controls
-
-- Network allowlist: restricts outbound HTTP from both `session_fetch` and
-  Python code; PyPI CDNs always included for package installs
-- Mount allowlist: canonicalized prefix check on all `session_mount` source
-  paths
-- Export root: `session_export` and `session_snapshot` confined to a configured
-  directory
-- Package allowlist: `session_install_package` restricted to an explicit list
-- Env allowlist: `session_get_env` restricted to named variables
-- Conservative compile-time defaults when no config file is provided (512 MB
-  workspace, 50 sessions, 200 checkpoints, 1 h idle timeout)
-
-### Security fixes
-
-- Agents cannot override the server's network allowlist at session creation time
-- `session_restore` revalidates the snapshot's network policy against the server
-  config before creating a live session
-- Path traversal via `..` components blocked at write, export, commit, and
-  snapshot
-- `session_fetch` streams the response body and aborts before fully buffering
-  responses that exceed the workspace limit
-- Per-process temp file for the Deno runner (prevents TOCTOU races between
-  concurrent server instances)
-- `session_snapshot` output path validated against `snapshots_dir` when
-  configured
-- `session_busy` error returned immediately on concurrent `session_execute`
-  calls instead of deadlocking
-- Default fetch timeout of 60 seconds
-
-### Installation
-
-- `install.sh` — one-liner for macOS (arm64, x86_64) and Linux (x86_64);
-  installs Deno if missing; registers with Claude Code
-- `update.sh` — upgrade to latest or a specific tagged release in place
-- `uninstall.sh` — removes the binary and deregisters from Claude Code across
-  all MCP scopes
-
-### Known limitations
-
-- Deno `--allow-read` and `--allow-write` are global (not path-scoped); see
-  [security model](docs/security.md#known-limitation-deno-filesystem-access)
-- No Windows support
-- No tool-call cancellation (a cancelled MCP request does not interrupt the
-  running Deno subprocess)
-- Package installs have no progress streaming; large packages appear to hang for
-  1–5 minutes
+Initial public release. Python execution via Pyodide (WebAssembly CPython)
+hosted in Deno; no syscalls, no host filesystem access from Python code. 25 MCP
+tools across lifecycle, execution, navigation, files, host I/O, snapshots, and
+labels categories.

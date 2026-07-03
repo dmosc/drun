@@ -689,7 +689,6 @@
         labelEl.style.display = 'none';
       }
 
-      const history = viewState.checkpointHistory;
       document.getElementById('timeline-track').innerHTML = [...session.checkpoints].reverse().map(cp => {
         const isHead     = cp.is_current;
         const isSelected = cp.checkpoint_id === viewState.selectedCpId;
@@ -805,7 +804,7 @@
         return;
       }
       const lines = diffText.split('\n').map(line => {
-        if      (line.startsWith('+++) ') || line.startsWith('--- ')) return `<span class="diff-line meta">${escHtml(line)}</span>`;
+        if      (line.startsWith('+++ ') || line.startsWith('--- ')) return `<span class="diff-line meta">${escHtml(line)}</span>`;
         else if (line.startsWith('+'))   return `<span class="diff-line added">${escHtml(line)}</span>`;
         else if (line.startsWith('-'))   return `<span class="diff-line removed">${escHtml(line)}</span>`;
         else if (line.startsWith('@@')) return `<span class="diff-line hunk">${escHtml(line)}</span>`;

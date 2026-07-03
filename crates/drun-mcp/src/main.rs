@@ -26,7 +26,7 @@ async fn main() -> SdkResult<()> {
     let handler = DrunHandler::new(Config::load());
     handler.start_idle_reaper();
 
-    if let Some(web_port) = handler.config.web_port {
+    if let Some(web_port) = handler.config.web_port.filter(|&p| p != 0) {
         let web_sessions = std::sync::Arc::clone(&handler.sessions);
         tokio::spawn(web::WebServer::new(web_sessions, web_port).serve());
     }
