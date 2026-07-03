@@ -187,88 +187,9 @@ install_daemon() {
   esac
 }
 
-# ── Claude Code project settings ─────────────────────────────────────────────
-
-create_claude_settings() {
-  local settings_dir="$PWD/.claude"
-  local settings_file="$settings_dir/settings.json"
-
-  mkdir -p "$settings_dir"
-
-  if [[ -f "$settings_file" ]]; then
-    echo "Existing .claude/settings.json kept at $settings_file."
-    return
-  fi
-
-  cat > "$settings_file" <<'EOF'
-{
-  "permissions": {
-    "deny": [
-      "Bash", "BashOutput", "KillBash",
-      "Edit", "Write", "NotebookEdit",
-      "Read", "Glob", "Grep",
-      "WebFetch", "WebSearch",
-      "Task"
-    ],
-    "allow": ["mcp__drun__*"]
-  }
-}
-EOF
-
-  echo "Created .claude/settings.json."
-}
-
-create_claude_md() {
-  local claude_md="$PWD/CLAUDE.md"
-
-  if [[ -f "$claude_md" ]]; then
-    echo "Existing CLAUDE.md kept at $claude_md."
-    return
-  fi
-
-  cat > "$claude_md" <<EOF
-# Agent instructions
-
-This project uses [drun](https://github.com/dmosc/drun) as a sandboxed runtime.
-Native file, shell, and network tools (\`Bash\`, \`Edit\`, \`Write\`,
-\`NotebookEdit\`, \`Read\`, \`Glob\`, \`Grep\`, \`WebFetch\`, \`WebSearch\`,
-\`Task\`) are disabled for this workspace — they would otherwise read or write
-the host directly, bypassing the sandbox. Use the drun MCP tools (prefixed
-\`mcp__drun__\`) for everything.
-
-## Getting started
-
-1. Call \`create_session\` — sessions start with an empty workspace.
-2. Call \`session_mount\` with path \`$PWD\` to load this project's files into
-   the session. Re-mount any other host paths you need the same way.
-3. From there, work entirely through drun tools — there is no host file or
-   shell access outside of them.
-
-## Core tools
-
-- **\`session_bash\`** — run shell commands in the sandboxed workspace
-  (also covers listing/searching files — e.g. \`ls\`, \`grep\`, \`find\`)
-- **\`session_read_file\`** / **\`session_write_file\`** / **\`session_delete_file\`**
-  — read, write, and delete files in the session
-- **\`session_mount\`** — load a host file or directory into the session
-- **\`session_fetch\`** — make HTTP requests from the sandbox (subject to
-  the server's domain_allowlist)
-- **\`session_export\`** — write session files back out to the host
-- **\`session_diff\`** / **\`session_rollback\`** / **\`session_fork\`**
-  — inspect and navigate checkpoint history (session_rollback is
-  destructive past the rollback point once you continue the session — use
-  session_fork first if you need to keep that history)
-EOF
-
-  echo "Created CLAUDE.md."
-}
-
 # ── Claude Code MCP registration ──────────────────────────────────────────────
 
 register_mcp() {
-  local registry="$DRUN_HOME/projects"
-  grep -qxF "$PWD" "$registry" 2>/dev/null || echo "$PWD" >> "$registry"
-
   if ! command -v claude &>/dev/null; then
     echo ""
     echo "Claude Code CLI not found. Add drun manually:"
@@ -291,10 +212,11 @@ detect_platform
 install_binary
 create_config
 install_daemon
-create_claude_settings
-create_claude_md
 register_mcp
 
+echo ""
 echo "Done! drun is ready."
 echo "  MCP  → $MCP_URL"
 echo "  UI   → http://127.0.0.1:7274"
+echo ""
+echo "To enable drun in a project, cd into it and run: drun-mcp init"

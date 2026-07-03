@@ -1,5 +1,6 @@
 mod errors;
 mod handler;
+mod init;
 mod reaper;
 mod response;
 mod server;
@@ -23,6 +24,11 @@ const MCP_PORT: u16 = 7273;
 
 #[tokio::main]
 async fn main() -> SdkResult<()> {
+    if std::env::args().nth(1).as_deref() == Some("init") {
+        init::run();
+        return Ok(());
+    }
+
     let handler = DrunHandler::new(Config::load());
     handler.start_idle_reaper();
 

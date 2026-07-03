@@ -40,15 +40,11 @@ document as the current source of truth of what's production-ready.
 
 #### Global install (once per machine)
 
-Run the install script from the root of a project you want to use drun in:
-
 ```bash
-cd ~/path/to/project
 curl -fsSL https://raw.githubusercontent.com/dmosc/drun/main/install.sh | bash
 ```
 
-The following are installed globally on the first run (skipped automatically on
-subsequent runs):
+Installs globally (each step is skipped if already done):
 
 1. The drun MCP binary to `/usr/local/bin/drun-mcp`.
 2. A global config at `~/.drun/config.toml` with sensible defaults.
@@ -60,23 +56,25 @@ subsequent runs):
 
 #### Per-project setup
 
-Each time you run the script from a project directory, it also creates two files
-scoped to that project (skipped if they already exist):
+From the root of any project you want drun to manage:
 
-5. `.claude/settings.json` — restricts Claude to drun tools only for this
+```bash
+drun-mcp init
+```
+
+Creates two files in the current directory (skipped if they already exist):
+
+1. `.claude/settings.json` — restricts Claude to drun tools only for this
    workspace. Native file (`Read`, `Edit`, `Write`, `NotebookEdit`, `Glob`,
    `Grep`), shell (`Bash`, `BashOutput`, `KillBash`), network (`WebFetch`,
    `WebSearch`), and subagent delegation (`Task`) tools are all blocked, and
    drun's MCP tools are pre-allowed so Claude isn't prompted on every call.
-6. `CLAUDE.md` — instructions that tell Claude to use drun tools instead of
-   native ones, including how to bootstrap a session (`create_session` then
-   `session_mount`).
+2. `CLAUDE.md` — tells Claude to use drun tools instead of native ones and how
+   to bootstrap a session (`create_session` then `session_mount`).
 
-This restriction is intentionally per-project. You wouldn't want native tools
-blocked globally across every workspace — only in projects where you've opted
-into the drun sandbox. To enable drun for an additional project, just run the
-same install script from that project's root directory; the global steps are
-skipped and only the two project files are created.
+This restriction is intentionally per-project — you wouldn't want native tools
+blocked globally across every workspace. Run `drun-mcp init` from any project
+root to opt that project into the drun sandbox.
 
 Once installed, the following endpoints are available:
 

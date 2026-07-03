@@ -24,6 +24,38 @@ pkill -f drun-mcp 2>/dev/null; sleep 0.3
 DRUN_CONFIG="$PWD/.drun/config.toml" ./target/debug/drun-mcp
 ```
 
+## Test drun init
+
+`drun init` is a subcommand on the binary (not the MCP server). It can be tested
+without suspending the daemon — it exits immediately after writing files and
+does not bind any ports.
+
+```bash
+# Run init against the local build from any project directory
+cd ~/path/to/some-project
+/path/to/drun/target/debug/drun-mcp init
+```
+
+Expected output:
+
+```
+drun: created .claude/settings.json
+drun: created CLAUDE.md
+drun: initialized for /path/to/some-project
+```
+
+Running it a second time in the same directory should skip the files that
+already exist:
+
+```
+drun: .claude/settings.json already exists, skipping
+drun: CLAUDE.md already exists, skipping
+drun: initialized for /path/to/some-project
+```
+
+The project path is appended to `~/.drun/projects` (checked for duplicates
+before writing).
+
 Expected startup output:
 
 ```

@@ -4,6 +4,25 @@ All notable changes to drun are documented here.
 
 ---
 
+## v0.3.2 — 2026-07-02
+
+### `drun init` subcommand
+
+Per-project setup is now a first-class binary subcommand. Run `drun-mcp init`
+from any project root to scaffold the two project-local files:
+
+- `.claude/settings.json` — restricts Claude to drun MCP tools for this
+  workspace; blocks native file, shell, network, and agent delegation tools.
+- `CLAUDE.md` — tells Claude how to bootstrap and use drun in the project.
+
+The project path is recorded in `~/.drun/projects` so `uninstall.sh` can clean
+up `.claude/settings.json` files across all initialized projects.
+
+`install.sh` is now strictly global (binary, config, daemon, MCP registration).
+It no longer touches the current directory or creates project-local files.
+
+---
+
 ## v0.3.1 — 2026-07-01
 
 ### Web UI
