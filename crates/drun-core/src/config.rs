@@ -122,3 +122,38 @@ impl Config {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn exact_match_is_allowed() {
+        let config = Config {
+            domain_allowlist: vec!["pypi.org".to_string()],
+            ..Config::default()
+        };
+        assert!(config.domain_allowed("pypi.org"));
+        assert!(!config.domain_allowed("evil.org"));
+    }
+
+    #[test]
+    fn wildcard_star_allows_everything() {
+        let config = Config {
+            domain_allowlist: vec!["*".to_string()],
+            ..Config::default()
+        };
+        assert!(config.domain_allowed("anything.example"));
+    }
+
+    #[test]
+    fn subdomain_wildcard_matches_subdomains_only() {
+        let config = Config {
+            domain_allowlist: vec!["*.example.com".to_string()],
+            ..Config::default()
+        };
+        assert!(config.domain_allowed("api.example.com"));
+        assert!(!config.domain_allowed("example.com")); // bare domain, not a subdomain
+        assert!(!config.domain_allowed("api.evil.com"));
+    }
+}
