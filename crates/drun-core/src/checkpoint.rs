@@ -21,3 +21,14 @@ pub struct CheckpointRef {
     pub session_id: String,
     pub checkpoint_id: usize,
 }
+
+impl CheckpointRef {
+    /// Splits an optional parent reference into the (session_id, checkpoint_id)
+    /// pair shape serializable views represent it as.
+    pub fn split(parent: &Option<CheckpointRef>) -> (Option<String>, Option<usize>) {
+        match parent {
+            Some(r) => (Some(r.session_id.clone()), Some(r.checkpoint_id)),
+            None => (None, None),
+        }
+    }
+}

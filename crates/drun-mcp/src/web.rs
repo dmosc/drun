@@ -77,7 +77,7 @@ async fn handle_index() -> Response {
 
 async fn handle_session_tree(State(app): State<AppState>) -> Response {
     let sessions = app.sessions.lock().unwrap();
-    json_response(state::build_session_tree(&sessions))
+    json_response(&state::SessionTreeNode::forest(&sessions))
 }
 
 async fn handle_checkpoint_history(
@@ -85,7 +85,7 @@ async fn handle_checkpoint_history(
     Path(session_id): Path<String>,
 ) -> Response {
     with_session(&app.sessions, &session_id, |session| {
-        json_response(state::build_checkpoint_history(session))
+        json_response(&state::CheckpointSummary::history(session))
     })
 }
 
@@ -171,8 +171,9 @@ fn read_checkpoint_stream(
     })
 }
 
-fn json_response(json: String) -> Response {
+fn json_response(value: &impl serde::Serialize) -> Response {
     let mut headers = HeaderMap::new();
     headers.insert("content-type", HeaderValue::from_static("application/json"));
-    (StatusCode::OK, headers, json).into_response()
+    let body = serde_json::to_string(value).unwrap_or_else(|_| "null".into());
+    (StatusCode::OK, headers, body).into_response()
 }

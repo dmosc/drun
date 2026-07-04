@@ -3,10 +3,9 @@
 
 use crate::errors::DrunError;
 use crate::handler::DrunHandler;
-use crate::response::{file_content, text};
+use crate::response::{file_content, json, text};
 use crate::state::{
-    build_checkpoint_history, build_session_list, build_session_state, build_session_tree,
-    build_snapshot_catalog,
+    CheckpointSummary, SessionState, SessionSummary, SessionTreeNode, SnapshotEntry,
 };
 use crate::tools::{
     CheckpointReadStdstreamsTool, DrunTools, GetSessionStateTool, SessionBashTool,
@@ -98,12 +97,12 @@ impl DrunHandler {
         let session_id = Uuid::new_v4().to_string();
         let session =
             Session::new(&self.config).map_err(|e| DrunError::internal(e).into_tool_err())?;
-        let state = build_session_state(&session_id, &session, None, vec![]);
+        let state = SessionState::compute(&session_id, &session, None, vec![]);
         self.sessions
             .lock()
             .unwrap()
             .insert(session_id, Arc::new(Mutex::new(session)));
-        Ok(text(state))
+        Ok(json(&state))
     }
 
     fn handle_session_fork(&self, t: SessionForkTool) -> Result<CallToolResult, CallToolError> {
@@ -123,17 +122,17 @@ impl DrunHandler {
                 .map_err(|e| DrunError::internal(e).into_tool_err())?
         };
         let fork_id = Uuid::new_v4().to_string();
-        let state = build_session_state(&fork_id, &forked_session, None, vec![]);
+        let state = SessionState::compute(&fork_id, &forked_session, None, vec![]);
         self.sessions
             .lock()
             .unwrap()
             .insert(fork_id, Arc::new(Mutex::new(forked_session)));
-        Ok(text(state))
+        Ok(json(&state))
     }
 
     fn handle_session_list(&self) -> Result<CallToolResult, CallToolError> {
         let sessions = self.sessions.lock().unwrap().clone();
-        Ok(text(build_session_list(&sessions)))
+        Ok(json(&SessionSummary::all(&sessions)))
     }
 
     fn handle_session_close(&self, t: SessionCloseTool) -> Result<CallToolResult, CallToolError> {
@@ -161,7 +160,7 @@ impl DrunHandler {
         t: SessionHistoryTool,
     ) -> Result<CallToolResult, CallToolError> {
         self.with_session(&t.session_id, |session| {
-            Ok(text(build_checkpoint_history(session)))
+            Ok(json(&CheckpointSummary::history(session)))
         })
     }
 
@@ -170,7 +169,7 @@ impl DrunHandler {
         t: GetSessionStateTool,
     ) -> Result<CallToolResult, CallToolError> {
         self.with_session(&t.session_id, |session| {
-            Ok(text(build_session_state(
+            Ok(json(&SessionState::compute(
                 &t.session_id,
                 session,
                 None,
@@ -193,7 +192,7 @@ impl DrunHandler {
                     let _ = progress_tx.send(chunk);
                 })
                 .map_err(|e| DrunError::from_exec(e).into_tool_err())?;
-            Ok(text(build_session_state(
+            Ok(json(&SessionState::compute(
                 &t.session_id,
                 session,
                 Some(&previous_files),
@@ -217,7 +216,7 @@ impl DrunHandler {
             session
                 .rollback(checkpoint_id)
                 .map_err(|e| DrunError::internal(e).into_tool_err())?;
-            Ok(text(build_session_state(
+            Ok(json(&SessionState::compute(
                 &t.session_id,
                 session,
                 Some(&previous_files),
@@ -280,7 +279,7 @@ impl DrunHandler {
             session
                 .write_file(&t.path, bytes)
                 .map_err(|e| DrunError::internal(e).into_tool_err())?;
-            Ok(text(build_session_state(
+            Ok(json(&SessionState::compute(
                 &t.session_id,
                 session,
                 Some(&previous_files),
@@ -298,7 +297,7 @@ impl DrunHandler {
             session
                 .delete_file(&t.path)
                 .map_err(|e| DrunError::internal(e).into_tool_err())?;
-            Ok(text(build_session_state(
+            Ok(json(&SessionState::compute(
                 &t.session_id,
                 session,
                 Some(&previous_files),
@@ -313,7 +312,7 @@ impl DrunHandler {
             session
                 .mount(std::path::Path::new(&t.path))
                 .map_err(|e| DrunError::internal(e).into_tool_err())?;
-            Ok(text(build_session_state(
+            Ok(json(&SessionState::compute(
                 &t.session_id,
                 session,
                 Some(&previous_files),
@@ -352,7 +351,7 @@ impl DrunHandler {
                 .iter()
                 .map(|p| p.to_string_lossy().into_owned())
                 .collect();
-            Ok(text(build_session_state(
+            Ok(json(&SessionState::compute(
                 &t.session_id,
                 session,
                 None,
@@ -363,11 +362,11 @@ impl DrunHandler {
 
     fn handle_session_tree(&self) -> Result<CallToolResult, CallToolError> {
         let sessions = self.sessions.lock().unwrap().clone();
-        Ok(text(build_session_tree(&sessions)))
+        Ok(json(&SessionTreeNode::forest(&sessions)))
     }
 
     fn handle_list_snapshots(&self) -> Result<CallToolResult, CallToolError> {
-        Ok(text(build_snapshot_catalog(&self.config.snapshots_dir)))
+        Ok(json(&SnapshotEntry::catalog(&self.config.snapshots_dir)))
     }
 
     fn handle_session_export(&self, t: SessionExportTool) -> Result<CallToolResult, CallToolError> {
@@ -576,18 +575,18 @@ impl DrunHandler {
         let restored = Session::from_snapshot(&self.config, snapshot)
             .map_err(|e| DrunError::internal(e).into_tool_err())?;
         let session_id = Uuid::new_v4().to_string();
-        let state = build_session_state(&session_id, &restored, None, vec![]);
+        let state = SessionState::compute(&session_id, &restored, None, vec![]);
         self.sessions
             .lock()
             .unwrap()
             .insert(session_id, Arc::new(Mutex::new(restored)));
-        Ok(text(state))
+        Ok(json(&state))
     }
 
     fn handle_session_label(&self, t: SessionLabelTool) -> Result<CallToolResult, CallToolError> {
         self.with_session_mut(&t.session_id, |session| {
             session.set_label(t.label);
-            Ok(text(build_session_state(
+            Ok(json(&SessionState::compute(
                 &t.session_id,
                 session,
                 None,
@@ -608,7 +607,7 @@ impl DrunHandler {
             session
                 .set_checkpoint_label(checkpoint_id, t.label)
                 .map_err(|e| DrunError::internal(e).into_tool_err())?;
-            Ok(text(build_checkpoint_history(session)))
+            Ok(json(&CheckpointSummary::history(session)))
         })
     }
 
@@ -624,7 +623,7 @@ impl DrunHandler {
                     t.label,
                 )
                 .map_err(|e| DrunError::internal(e).into_tool_err())?;
-            Ok(text(build_checkpoint_history(session)))
+            Ok(json(&CheckpointSummary::history(session)))
         })
     }
 
@@ -647,7 +646,7 @@ impl DrunHandler {
             session
                 .merge_from(&source, source_checkpoint_id, t.keys)
                 .map_err(|e| DrunError::internal(e).into_tool_err())?;
-            Ok(text(build_session_state(
+            Ok(json(&SessionState::compute(
                 &t.session_id,
                 session,
                 None,
@@ -664,7 +663,7 @@ impl DrunHandler {
             session
                 .drop_checkpoints(t.from_checkpoint_id as usize, t.to_checkpoint_id as usize)
                 .map_err(|e| DrunError::internal(e).into_tool_err())?;
-            Ok(text(build_checkpoint_history(session)))
+            Ok(json(&CheckpointSummary::history(session)))
         })
     }
 

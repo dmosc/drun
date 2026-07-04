@@ -1,8 +1,13 @@
 use base64::{Engine, engine::general_purpose::STANDARD};
 use rust_mcp_sdk::schema::{CallToolResult, ContentBlock, ImageContent, TextContent};
+use serde::Serialize;
 
 pub fn text(s: impl Into<String>) -> CallToolResult {
     CallToolResult::text_content(vec![TextContent::from(s.into())])
+}
+
+pub fn json(value: &impl Serialize) -> CallToolResult {
+    text(serde_json::to_string(value).unwrap_or_else(|_| "null".into()))
 }
 
 pub fn file_content(path: &str, bytes: &[u8]) -> CallToolResult {
