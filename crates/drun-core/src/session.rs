@@ -213,6 +213,21 @@ impl Session {
             .map(|c| c.id)
     }
 
+    pub fn resolve_checkpoint(
+        &self,
+        id: Option<u64>,
+        label: Option<&str>,
+    ) -> anyhow::Result<Option<usize>> {
+        match (id, label) {
+            (_, Some(lbl)) => self
+                .checkpoint_by_label(lbl)
+                .map(Some)
+                .ok_or_else(|| anyhow::anyhow!("no checkpoint with label '{lbl}'")),
+            (Some(id), None) => Ok(Some(id as usize)),
+            (None, None) => Ok(None),
+        }
+    }
+
     pub fn squash_checkpoints(
         &mut self,
         from_id: usize,

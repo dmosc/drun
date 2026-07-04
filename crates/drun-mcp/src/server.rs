@@ -116,8 +116,9 @@ impl DrunHandler {
             .clone();
         let forked_session = {
             let source = source_arc.lock().unwrap();
-            let checkpoint_id =
-                Self::resolve_checkpoint(&source, t.checkpoint_id, t.checkpoint_label.as_deref())?;
+            let checkpoint_id = source
+                .resolve_checkpoint(t.checkpoint_id, t.checkpoint_label.as_deref())
+                .map_err(|e| DrunError::internal(e).into_tool_err())?;
             Session::from_session(&self.config, &t.session_id, &source, checkpoint_id)
                 .map_err(|e| DrunError::internal(e).into_tool_err())?
         };
@@ -206,12 +207,12 @@ impl DrunHandler {
         t: SessionRollbackTool,
     ) -> Result<CallToolResult, CallToolError> {
         self.with_session_mut(&t.session_id, |session| {
-            let checkpoint_id =
-                Self::resolve_checkpoint(session, t.checkpoint_id, t.checkpoint_label.as_deref())?
-                    .ok_or_else(|| {
-                        DrunError::internal("provide checkpoint_id or checkpoint_label")
-                            .into_tool_err()
-                    })?;
+            let checkpoint_id = session
+                .resolve_checkpoint(t.checkpoint_id, t.checkpoint_label.as_deref())
+                .map_err(|e| DrunError::internal(e).into_tool_err())?
+                .ok_or_else(|| {
+                    DrunError::internal("provide checkpoint_id or checkpoint_label").into_tool_err()
+                })?;
             let previous_files = session.current().files.clone();
             session
                 .rollback(checkpoint_id)
@@ -323,18 +324,14 @@ impl DrunHandler {
 
     fn handle_session_diff(&self, t: SessionDiffTool) -> Result<CallToolResult, CallToolError> {
         self.with_session(&t.session_id, |session| {
-            let from = Self::resolve_checkpoint(
-                session,
-                t.from_checkpoint_id,
-                t.from_checkpoint_label.as_deref(),
-            )?
-            .unwrap_or(0);
-            let to = Self::resolve_checkpoint(
-                session,
-                t.to_checkpoint_id,
-                t.to_checkpoint_label.as_deref(),
-            )?
-            .unwrap_or_else(|| session.current().id);
+            let from = session
+                .resolve_checkpoint(t.from_checkpoint_id, t.from_checkpoint_label.as_deref())
+                .map_err(|e| DrunError::internal(e).into_tool_err())?
+                .unwrap_or(0);
+            let to = session
+                .resolve_checkpoint(t.to_checkpoint_id, t.to_checkpoint_label.as_deref())
+                .map_err(|e| DrunError::internal(e).into_tool_err())?
+                .unwrap_or_else(|| session.current().id);
             let diff = session
                 .diff(from, to)
                 .map_err(|e| DrunError::internal(e).into_tool_err())?;
@@ -643,11 +640,9 @@ impl DrunHandler {
             .ok_or_else(|| DrunError::session_not_found(&t.source_session_id).into_tool_err())?
             .clone();
         let source = source_arc.lock().unwrap();
-        let source_checkpoint_id = Self::resolve_checkpoint(
-            &source,
-            t.source_checkpoint_id,
-            t.source_checkpoint_label.as_deref(),
-        )?;
+        let source_checkpoint_id = source
+            .resolve_checkpoint(t.source_checkpoint_id, t.source_checkpoint_label.as_deref())
+            .map_err(|e| DrunError::internal(e).into_tool_err())?;
         self.with_session_mut(&t.session_id, |session| {
             session
                 .merge_from(&source, source_checkpoint_id, t.keys)
@@ -717,20 +712,6 @@ impl DrunHandler {
                 .to_string(),
             ))
         })
-    }
-
-    fn resolve_checkpoint(
-        session: &Session,
-        id: Option<u64>,
-        label: Option<&str>,
-    ) -> Result<Option<usize>, CallToolError> {
-        match (id, label) {
-            (_, Some(lbl)) => session.checkpoint_by_label(lbl).map(Some).ok_or_else(|| {
-                DrunError::internal(format!("no checkpoint with label '{lbl}'")).into_tool_err()
-            }),
-            (Some(id), None) => Ok(Some(id as usize)),
-            (None, None) => Ok(None),
-        }
     }
 
     fn spawn_progress_forwarder(
