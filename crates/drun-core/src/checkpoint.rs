@@ -28,7 +28,7 @@ impl Checkpoint {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct CheckpointRef {
     pub session_id: String,
     pub checkpoint_id: usize,

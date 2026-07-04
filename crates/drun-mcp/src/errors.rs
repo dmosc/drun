@@ -132,3 +132,65 @@ impl From<DrunError> for CallToolError {
         CallToolError(body.into())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn session_not_found_has_stable_code_and_mentions_the_id() {
+        let err = DrunError::session_not_found("abc123");
+        assert_eq!(err.code, "session_not_found");
+        assert!(err.message.contains("abc123"));
+    }
+
+    #[test]
+    fn session_idle_attaches_idle_and_limit_seconds_as_detail() {
+        let err = DrunError::session_idle("abc123", 120, 60);
+        assert_eq!(err.code, "session_idle");
+        assert_eq!(
+            err.detail,
+            Some(serde_json::json!({ "idle_secs": 120, "limit_secs": 60 }))
+        );
+    }
+
+    #[test]
+    fn session_limit_reached_attaches_limit_as_detail() {
+        let err = DrunError::session_limit_reached(50);
+        assert_eq!(err.code, "session_limit_reached");
+        assert_eq!(err.detail, Some(serde_json::json!({ "limit": 50 })));
+    }
+
+    #[test]
+    fn most_constructors_have_no_detail_payload() {
+        assert_eq!(DrunError::session_not_found("x").detail, None);
+        assert_eq!(DrunError::fetch_denied("http://x").detail, None);
+        assert_eq!(DrunError::file_not_found("a.txt").detail, None);
+    }
+
+    #[test]
+    fn from_exec_maps_timeout_to_execution_timeout_code() {
+        let err = anyhow::Error::from(RunnerError::Timeout { timeout_ms: 3000 });
+        let drun_err = DrunError::from_exec(err);
+        assert_eq!(drun_err.code, "execution_timeout");
+        assert_eq!(
+            drun_err.detail,
+            Some(serde_json::json!({ "timeout_ms": 3000 }))
+        );
+    }
+
+    #[test]
+    fn from_exec_maps_command_denied_to_command_denied_code() {
+        let err = anyhow::Error::from(RunnerError::CommandDenied("blocked: rm".to_string()));
+        let drun_err = DrunError::from_exec(err);
+        assert_eq!(drun_err.code, "command_denied");
+        assert_eq!(drun_err.message, "blocked: rm");
+    }
+
+    #[test]
+    fn from_exec_falls_back_to_internal_error_for_unrecognized_errors() {
+        let err = anyhow::anyhow!("some unrelated failure");
+        let drun_err = DrunError::from_exec(err);
+        assert_eq!(drun_err.code, "internal_error");
+    }
+}

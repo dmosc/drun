@@ -14,3 +14,20 @@ impl std::fmt::Display for RunnerError {
 }
 
 impl std::error::Error for RunnerError {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn timeout_display_includes_timeout_ms() {
+        let err = RunnerError::Timeout { timeout_ms: 5000 };
+        assert_eq!(err.to_string(), "execution timed out after 5000ms");
+    }
+
+    #[test]
+    fn command_denied_display_is_the_inner_message() {
+        let err = RunnerError::CommandDenied("rm -rf / blocked".to_string());
+        assert_eq!(err.to_string(), "rm -rf / blocked");
+    }
+}
