@@ -16,6 +16,18 @@ pub struct Checkpoint {
     pub label: Option<String>,
 }
 
+impl Checkpoint {
+    pub(crate) fn empty(id: usize, files: FileMap) -> Checkpoint {
+        Checkpoint {
+            id,
+            stdout: String::new(),
+            stderr: String::new(),
+            files,
+            label: None,
+        }
+    }
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 pub struct CheckpointRef {
     pub session_id: String,

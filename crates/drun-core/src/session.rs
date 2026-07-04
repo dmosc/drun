@@ -29,7 +29,7 @@ impl Session {
     pub fn new(config: &Config) -> anyhow::Result<Self> {
         Ok(Self {
             config: config.clone(),
-            checkpoints: vec![empty_checkpoint(0, HashMap::new())],
+            checkpoints: vec![Checkpoint::empty(0, HashMap::new())],
             checkpoint_idx: 0,
             origins: HashMap::new(),
             overlays: HashMap::new(),
@@ -61,7 +61,7 @@ impl Session {
 
         let mut session = Self::new(config)?;
         for arc in forked_files.values() {
-            let hash = file_content_hash(arc);
+            let hash = Self::file_content_hash(arc);
             session
                 .intern_table
                 .entry(hash)
@@ -102,7 +102,7 @@ impl Session {
         }
 
         let (file_entries, overlay_entries) = if abs.is_dir() {
-            scan_mount_path(&abs, "", &self.config.mount_overlay_paths)?
+            Self::scan_mount_path(&abs, "", &self.config.mount_overlay_paths)?
         } else {
             let key = abs
                 .file_name()
@@ -503,7 +503,7 @@ impl Session {
         let mut intern_table: HashMap<u64, Weak<Vec<u8>>> = HashMap::new();
         for cp in &checkpoints {
             for arc in cp.files.values() {
-                let hash = file_content_hash(arc);
+                let hash = Self::file_content_hash(arc);
                 intern_table
                     .entry(hash)
                     .or_insert_with(|| Arc::downgrade(arc));
@@ -545,7 +545,7 @@ impl Session {
     }
 
     fn intern_bytes(&mut self, bytes: Vec<u8>) -> Arc<Vec<u8>> {
-        let hash = file_content_hash(&bytes);
+        let hash = Self::file_content_hash(&bytes);
         if let Some(weak) = self.intern_table.get(&hash)
             && let Some(existing_arc) = weak.upgrade()
             && existing_arc.as_slice() == bytes.as_slice()
@@ -560,7 +560,7 @@ impl Session {
     fn intern_file_map(&mut self, file_map: FileMap) -> FileMap {
         let mut result = FileMap::with_capacity(file_map.len());
         for (key, arc) in file_map {
-            let hash = file_content_hash(&arc);
+            let hash = Self::file_content_hash(&arc);
             let interned_arc = if let Some(weak) = self.intern_table.get(&hash) {
                 if let Some(existing_arc) = weak.upgrade() {
                     if Arc::ptr_eq(&existing_arc, &arc) || existing_arc.as_slice() == arc.as_slice()
@@ -720,6 +720,44 @@ impl Session {
         }
         Ok(BashOutput { stdout, stderr })
     }
+
+    fn file_content_hash(bytes: &[u8]) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        bytes.hash(&mut hasher);
+        hasher.finish()
+    }
+
+    fn scan_mount_path(
+        dir: &Path,
+        key_prefix: &str,
+        overlay_patterns: &[String],
+    ) -> anyhow::Result<(ScannedFiles, ScannedOverlays)> {
+        let mut file_entries = vec![];
+        let mut overlay_entries = vec![];
+        for entry in std::fs::read_dir(dir)? {
+            let entry = entry?;
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let key = if key_prefix.is_empty() {
+                name.clone()
+            } else {
+                format!("{key_prefix}/{name}")
+            };
+            let path = entry.path();
+            if path.is_dir() {
+                if overlay_patterns.iter().any(|p| p == &name) {
+                    overlay_entries.push((key, path));
+                } else {
+                    let (sub_files, sub_overlays) =
+                        Self::scan_mount_path(&path, &key, overlay_patterns)?;
+                    file_entries.extend(sub_files);
+                    overlay_entries.extend(sub_overlays);
+                }
+            } else if path.is_file() {
+                file_entries.push((key, std::fs::read(&path)?, path));
+            }
+        }
+        Ok((file_entries, overlay_entries))
+    }
 }
 
 struct BashOutput {
@@ -727,57 +765,11 @@ struct BashOutput {
     stderr: String,
 }
 
-fn file_content_hash(bytes: &[u8]) -> u64 {
-    let mut hasher = DefaultHasher::new();
-    bytes.hash(&mut hasher);
-    hasher.finish()
-}
-
-fn empty_checkpoint(id: usize, files: FileMap) -> Checkpoint {
-    Checkpoint {
-        id,
-        stdout: String::new(),
-        stderr: String::new(),
-        files,
-        label: None,
-    }
-}
-
-/// (workspace key, file bytes, host path) for regular files discovered under a mount.
+/// (workspace key, file bytes, host path) for regular files discovered under a
+/// mount.
 type ScannedFiles = Vec<(String, Vec<u8>, PathBuf)>;
 /// (workspace key, host path) for directories matching `mount_overlay_paths`.
 type ScannedOverlays = Vec<(String, PathBuf)>;
-
-fn scan_mount_path(
-    dir: &Path,
-    key_prefix: &str,
-    overlay_patterns: &[String],
-) -> anyhow::Result<(ScannedFiles, ScannedOverlays)> {
-    let mut file_entries = vec![];
-    let mut overlay_entries = vec![];
-    for entry in std::fs::read_dir(dir)? {
-        let entry = entry?;
-        let name = entry.file_name().to_string_lossy().into_owned();
-        let key = if key_prefix.is_empty() {
-            name.clone()
-        } else {
-            format!("{key_prefix}/{name}")
-        };
-        let path = entry.path();
-        if path.is_dir() {
-            if overlay_patterns.iter().any(|p| p == &name) {
-                overlay_entries.push((key, path));
-            } else {
-                let (sub_files, sub_overlays) = scan_mount_path(&path, &key, overlay_patterns)?;
-                file_entries.extend(sub_files);
-                overlay_entries.extend(sub_overlays);
-            }
-        } else if path.is_file() {
-            file_entries.push((key, std::fs::read(&path)?, path));
-        }
-    }
-    Ok((file_entries, overlay_entries))
-}
 
 #[cfg(test)]
 mod tests {
@@ -785,6 +777,13 @@ mod tests {
 
     fn session() -> Session {
         Session::new(&Config::default()).unwrap()
+    }
+
+    fn file_map(pairs: &[(&str, &[u8])]) -> FileMap {
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), Arc::new(v.to_vec())))
+            .collect()
     }
 
     #[test]
@@ -881,5 +880,96 @@ mod tests {
         let committed = s.commit(None).unwrap();
         assert_eq!(committed, vec![host_path.canonicalize().unwrap()]);
         assert_eq!(std::fs::read(&host_path).unwrap(), b"changed again");
+    }
+
+    #[test]
+    fn file_content_hash_is_deterministic() {
+        assert_eq!(
+            Session::file_content_hash(b"hello"),
+            Session::file_content_hash(b"hello")
+        );
+    }
+
+    #[test]
+    fn file_content_hash_differs_for_different_content() {
+        assert_ne!(
+            Session::file_content_hash(b"hello"),
+            Session::file_content_hash(b"world")
+        );
+    }
+
+    #[test]
+    fn file_content_hash_handles_empty_bytes() {
+        assert_eq!(
+            Session::file_content_hash(b""),
+            Session::file_content_hash(b"")
+        );
+    }
+
+    #[test]
+    fn checkpoint_empty_has_given_id_and_files_with_empty_streams() {
+        let files = file_map(&[("a.txt", b"hi")]);
+        let checkpoint = Checkpoint::empty(3, files.clone());
+        assert_eq!(
+            checkpoint,
+            Checkpoint {
+                id: 3,
+                stdout: String::new(),
+                stderr: String::new(),
+                files,
+                label: None,
+            }
+        );
+    }
+
+    #[test]
+    fn scan_mount_path_reads_a_flat_file() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.txt"), b"hello").unwrap();
+        let (files, overlays) = Session::scan_mount_path(dir.path(), "", &[]).unwrap();
+        assert_eq!(files.len(), 1);
+        let (key, bytes, host_path) = &files[0];
+        assert_eq!(key.as_str(), "a.txt");
+        assert_eq!(bytes.as_slice(), b"hello");
+        assert_eq!(*host_path, dir.path().join("a.txt"));
+        assert!(overlays.is_empty());
+    }
+
+    #[test]
+    fn scan_mount_path_builds_slash_joined_keys_for_nested_files() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("sub")).unwrap();
+        std::fs::write(dir.path().join("sub/b.txt"), b"nested").unwrap();
+
+        let (files, _) = Session::scan_mount_path(dir.path(), "", &[]).unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].0.as_str(), "sub/b.txt");
+    }
+
+    #[test]
+    fn scan_mount_path_treats_matching_directories_as_overlays_not_files() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("node_modules")).unwrap();
+        std::fs::write(dir.path().join("node_modules/pkg.js"), b"ignored").unwrap();
+        std::fs::write(dir.path().join("real.txt"), b"kept").unwrap();
+
+        let overlay_patterns = vec!["node_modules".to_string()];
+        let (files, overlays) =
+            Session::scan_mount_path(dir.path(), "", &overlay_patterns).unwrap();
+
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].0.as_str(), "real.txt");
+        assert_eq!(overlays.len(), 1);
+        assert_eq!(overlays[0].0.as_str(), "node_modules");
+        assert_eq!(overlays[0].1, dir.path().join("node_modules"));
+    }
+
+    #[test]
+    fn scan_mount_path_respects_key_prefix() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.txt"), b"hi").unwrap();
+
+        let (files, _) = Session::scan_mount_path(dir.path(), "prefix", &[]).unwrap();
+        assert_eq!(files[0].0.as_str(), "prefix/a.txt");
     }
 }
