@@ -288,11 +288,11 @@ pub(crate) fn build_session_tree(sessions: &HashMap<String, Arc<Mutex<Session>>>
     let mut roots: Vec<(&str, &Session)> = Vec::new();
 
     for (id, session) in &locked_sessions {
-        let session: &Session = &*session;
+        let session: &Session = session;
         let parent_exists = session
             .parent
             .as_ref()
-            .map_or(false, |r| sessions.contains_key(&r.session_id));
+            .is_some_and(|r| sessions.contains_key(&r.session_id));
         if parent_exists {
             let r = session.parent.as_ref().unwrap();
             children

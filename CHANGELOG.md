@@ -4,6 +4,43 @@ All notable changes to drun are documented here.
 
 ---
 
+## Unreleased
+
+### Reliability fixes
+
+- Fixed `session_checkpoint_squash` and `session_checkpoint_drop` allowing
+  checkpoint 0 (the mounted baseline) into their range. Since `session_commit`
+  and `session_diff`'s defaults both read checkpoint 0 as "the state before the
+  sandbox touched anything," squashing or dropping it silently moved that
+  baseline forward — `session_commit` could then skip writing back files that
+  had genuinely changed since the real mount. Both tools now reject ranges
+  starting at checkpoint 0 with a clear error.
+- Fixed idle sessions being unrecoverable: once a session crossed
+  `session_idle_timeout_secs`, every call — including `session_snapshot`,
+  `session_export`, `session_commit`, and `session_read_file` — was rejected
+  with `session_idle`, even though the whole point of those calls is to rescue a
+  session's state before the reaper evicts it. Read and recovery calls are no
+  longer gated by the idle check; only calls that would do new work
+  (`session_bash`, `session_write_file`, etc.) are.
+- Fixed `session_bash` discarding checkpoints ahead of a rollback point _before_
+  running the command, so a command that failed after rollback (timeout,
+  oversized output, spawn error) permanently lost those checkpoints even though
+  nothing new was ever committed. Forward history is now only discarded once a
+  run actually succeeds.
+- Fixed `session_merge` not discarding checkpoints ahead of a rollback point,
+  unlike `session_bash`/`session_write_file`/`session_delete_file` — merging
+  after a rollback left orphaned checkpoints reachable by ID, contradicting
+  `session_rollback`'s documented destructive semantics. `session_merge` now
+  truncates forward history like the other mutating tools.
+- Read-only MCP calls (`with_session`) and the web UI's session lookup no longer
+  block indefinitely waiting on a session's lock — they now return
+  `session_busy` / `503` immediately on contention, matching the behavior
+  mutating calls already had.
+- Added a first unit test module for `drun-core`'s `Session`, covering the four
+  fixes above.
+
+---
+
 ## v0.3.2 — 2026-07-02
 
 ### `drun init` subcommand

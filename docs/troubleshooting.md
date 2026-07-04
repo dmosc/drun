@@ -105,9 +105,29 @@ Sessions are evicted after the configured idle timeout
 (`session_idle_timeout_secs`, default 1 hour). A session that was idle for
 longer than the timeout will have been cleaned up by the reaper.
 
-**Fix:** Use `session_snapshot` to persist long-lived sessions before they go
-idle, and `session_restore` to reload them. Alternatively, increase the idle
-timeout in config.
+Crossing the idle timeout does not immediately destroy the session; it is a
+two-stage process:
+
+1. Once a session has been idle longer than `session_idle_timeout_secs`, calls
+   that would do new work (`session_bash`, `session_write_file`,
+   `session_mount`, `session_rollback`, `session_merge`, label/squash/drop,
+   etc.) start returning `session_idle` instead of running.
+2. Read and recovery calls like `get_session_state`, `session_history`,
+   `session_read_file`, `session_diff`, `session_commit`, `session_export`,
+   `session_snapshot` and/ or `checkpoint_read_stdstreams`, keep working on an
+   idle session. Use one of these to pull the session's state out before it is
+   physically evicted.
+3. The idle reaper sweeps roughly every
+   `max(session_idle_timeout_secs / 2,
+   30)` seconds and removes sessions
+   still over the limit at that point, after which every call returns
+   `session_not_found`.
+
+**Fix:** As soon as you see `session_idle`, call `session_snapshot` (or
+`session_export` / `session_commit`) to persist the session before the next
+reaper sweep evicts it, then `session_restore` to reload it into a fresh
+session. Alternatively, increase the idle timeout in config so long analyses
+don't cross it in the first place.
 
 ---
 

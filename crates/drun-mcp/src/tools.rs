@@ -46,7 +46,7 @@ pub struct SessionBashTool {
 
 #[mcp_tool(
     name = "session_rollback",
-    description = "Move the session head to a prior checkpoint. This is destructive: the next session_bash, session_write_file, or session_delete_file call permanently discards every checkpoint after the rollback point — there is no branch kept around. If you want to keep the checkpoints you are rolling back past, call session_fork from the current head first (it creates a new, independent session at this point) before rolling back. Provide checkpoint_id or checkpoint_label; label takes precedence if both are given.",
+    description = "Move the session head to a prior checkpoint. This is destructive: the next session_bash, session_write_file, session_delete_file, or session_merge call that succeeds permanently discards every checkpoint after the rollback point — there is no branch kept around. A call that fails (denied command, timeout, over a limit) leaves history untouched. If you want to keep the checkpoints you are rolling back past, call session_fork from the current head first (it creates a new, independent session at this point) before rolling back. Provide checkpoint_id or checkpoint_label; label takes precedence if both are given.",
     idempotent_hint = false,
     destructive_hint = true,
     read_only_hint = false
@@ -237,7 +237,9 @@ pub struct SessionExportTool {
                    the best parts of two parallel explorations. Provide keys to merge only \
                    specific files; omit to merge all files from the source. Accepts \
                    checkpoint_id or checkpoint_label on the source; label takes precedence. \
-                   Defaults to the source session's current checkpoint.",
+                   Defaults to the source session's current checkpoint. Like session_bash and \
+                   session_write_file, this discards any checkpoints ahead of the current head \
+                   left by a prior session_rollback.",
     idempotent_hint = false,
     destructive_hint = false,
     read_only_hint = false
@@ -432,8 +434,10 @@ pub struct SessionCheckpointLabelTool {
     name = "session_checkpoint_squash",
     description = "Collapse a range of checkpoints into one, keeping the terminal file state and \
                    merging all stdout/stderr. Useful for cleaning up exploration history before \
-                   committing to a direction. The range is inclusive on both ends. Returns the \
-                   updated checkpoint history.",
+                   committing to a direction. The range is inclusive on both ends and must start \
+                   at checkpoint 1 or later — checkpoint 0 is the mounted baseline that \
+                   session_commit and session_diff compare against, so it can never be folded \
+                   into a squash. Returns the updated checkpoint history.",
     idempotent_hint = false,
     destructive_hint = true,
     read_only_hint = false
@@ -478,8 +482,10 @@ pub struct CheckpointReadStdstreamsTool {
 #[mcp_tool(
     name = "session_checkpoint_drop",
     description = "Remove a range of checkpoints from history to free memory or stay under the \
-                   checkpoint limit. The range is inclusive on both ends. Cannot drop the current \
-                   checkpoint. Returns the updated checkpoint history.",
+                   checkpoint limit. The range is inclusive on both ends and must start at \
+                   checkpoint 1 or later — checkpoint 0 is the mounted baseline that \
+                   session_commit and session_diff compare against, so it can never be dropped. \
+                   Cannot drop the current checkpoint. Returns the updated checkpoint history.",
     idempotent_hint = false,
     destructive_hint = true,
     read_only_hint = false

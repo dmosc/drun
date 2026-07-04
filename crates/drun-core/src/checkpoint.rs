@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 pub type FileMap = HashMap<String, Arc<Vec<u8>>>;
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Checkpoint {
     pub id: usize,
     pub stdout: String,

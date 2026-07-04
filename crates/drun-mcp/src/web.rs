@@ -143,7 +143,14 @@ fn with_session(
                 .into_response();
         }
     };
-    handler(&session_arc.lock().unwrap())
+    match session_arc.try_lock() {
+        Ok(guard) => handler(&guard),
+        Err(_) => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            format!("session '{session_id}' is currently executing; retry shortly"),
+        )
+            .into_response(),
+    }
 }
 
 fn read_checkpoint_stream(

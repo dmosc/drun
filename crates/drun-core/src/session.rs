@@ -137,7 +137,7 @@ impl Session {
         let arc = self.intern_bytes(content);
         files.insert(path.to_string(), arc);
         self.check_workspace_size(&files)?;
-        self.push_files_as_checkpoint(files)?;
+        self.push_checkpoint(files, String::new(), String::new())?;
         Ok(())
     }
 
@@ -146,7 +146,7 @@ impl Session {
         if files.remove(path).is_none() {
             anyhow::bail!("'{}' not in current checkpoint", path);
         }
-        self.push_files_as_checkpoint(files)
+        self.push_checkpoint(files, String::new(), String::new())
     }
 
     pub fn execute_bash(
@@ -155,7 +155,6 @@ impl Session {
         on_stdout: &mut dyn FnMut(String),
     ) -> anyhow::Result<&Checkpoint> {
         self.check_command_policy(command)?;
-        self.checkpoints.truncate(self.checkpoint_idx + 1);
         let workspace_dir = tempfile::TempDir::new()?;
         workspace::materialize(
             &self.checkpoints[self.checkpoint_idx].files,
@@ -179,17 +178,7 @@ impl Session {
         let collected_files = workspace::collect(workspace_dir.path())?;
         let interned_files = self.intern_file_map(collected_files);
         self.check_workspace_size(&interned_files)?;
-        self.check_checkpoint_limit()?;
-        let id = self.checkpoints.len();
-        self.checkpoints.push(Checkpoint {
-            id,
-            stdout,
-            stderr,
-            files: interned_files,
-            label: None,
-        });
-        self.checkpoint_idx = id;
-        Ok(self.checkpoints.last().unwrap())
+        self.push_checkpoint(interned_files, stdout, stderr)
     }
 
     pub fn rollback(&mut self, checkpoint_idx: usize) -> anyhow::Result<()> {
@@ -230,6 +219,10 @@ impl Session {
         to_id: usize,
         label: Option<String>,
     ) -> anyhow::Result<&Checkpoint> {
+        anyhow::ensure!(
+            from_id >= 1,
+            "checkpoint 0 is the mounted baseline and cannot be squashed; start the range at checkpoint 1 or later"
+        );
         anyhow::ensure!(
             from_id <= to_id,
             "from_id {} must be <= to_id {}",
@@ -276,6 +269,10 @@ impl Session {
     }
 
     pub fn drop_checkpoints(&mut self, from_id: usize, to_id: usize) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            from_id >= 1,
+            "checkpoint 0 is the mounted baseline and cannot be dropped; start the range at checkpoint 1 or later"
+        );
         anyhow::ensure!(
             from_id <= to_id,
             "from_id {} must be <= to_id {}",
@@ -334,17 +331,7 @@ impl Session {
             }
         }
         self.check_workspace_size(&merged)?;
-        self.check_checkpoint_limit()?;
-        let id = self.checkpoints.len();
-        self.checkpoints.push(Checkpoint {
-            id,
-            stdout: String::new(),
-            stderr: String::new(),
-            files: merged,
-            label: None,
-        });
-        self.checkpoint_idx = id;
-        Ok(self.checkpoints.last().unwrap())
+        self.push_checkpoint(merged, String::new(), String::new())
     }
 
     pub fn export(
@@ -544,12 +531,11 @@ impl Session {
 
     fn intern_bytes(&mut self, bytes: Vec<u8>) -> Arc<Vec<u8>> {
         let hash = file_content_hash(&bytes);
-        if let Some(weak) = self.intern_table.get(&hash) {
-            if let Some(existing_arc) = weak.upgrade() {
-                if existing_arc.as_slice() == bytes.as_slice() {
-                    return existing_arc;
-                }
-            }
+        if let Some(weak) = self.intern_table.get(&hash)
+            && let Some(existing_arc) = weak.upgrade()
+            && existing_arc.as_slice() == bytes.as_slice()
+        {
+            return existing_arc;
         }
         let arc = Arc::new(bytes);
         self.intern_table.insert(hash, Arc::downgrade(&arc));
@@ -582,23 +568,34 @@ impl Session {
         result
     }
 
-    fn push_files_as_checkpoint(&mut self, files: FileMap) -> anyhow::Result<&Checkpoint> {
+    fn push_checkpoint(
+        &mut self,
+        files: FileMap,
+        stdout: String,
+        stderr: String,
+    ) -> anyhow::Result<&Checkpoint> {
         self.check_checkpoint_limit()?;
         self.checkpoints.truncate(self.checkpoint_idx + 1);
         let id = self.checkpoints.len();
-        self.checkpoints.push(empty_checkpoint(id, files));
+        self.checkpoints.push(Checkpoint {
+            id,
+            stdout,
+            stderr,
+            files,
+            label: None,
+        });
         self.checkpoint_idx = id;
         Ok(self.checkpoints.last().unwrap())
     }
 
     fn check_checkpoint_limit(&self) -> anyhow::Result<()> {
-        if let Some(max) = self.config.max_checkpoints {
-            if self.checkpoints.len() >= max {
-                anyhow::bail!(
-                    "checkpoint limit of {} reached; close or snapshot this session and start a new one",
-                    max
-                );
-            }
+        if let Some(max) = self.config.max_checkpoints
+            && self.checkpoints.len() >= max
+        {
+            anyhow::bail!(
+                "checkpoint limit of {} reached; close or snapshot this session and start a new one",
+                max
+            );
         }
         Ok(())
     }
@@ -731,11 +728,16 @@ fn empty_checkpoint(id: usize, files: FileMap) -> Checkpoint {
     }
 }
 
+/// (workspace key, file bytes, host path) for regular files discovered under a mount.
+type ScannedFiles = Vec<(String, Vec<u8>, PathBuf)>;
+/// (workspace key, host path) for directories matching `mount_overlay_paths`.
+type ScannedOverlays = Vec<(String, PathBuf)>;
+
 fn scan_mount_path(
     dir: &Path,
     key_prefix: &str,
     overlay_patterns: &[String],
-) -> anyhow::Result<(Vec<(String, Vec<u8>, PathBuf)>, Vec<(String, PathBuf)>)> {
+) -> anyhow::Result<(ScannedFiles, ScannedOverlays)> {
     let mut file_entries = vec![];
     let mut overlay_entries = vec![];
     for entry in std::fs::read_dir(dir)? {
@@ -760,4 +762,109 @@ fn scan_mount_path(
         }
     }
     Ok((file_entries, overlay_entries))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn session() -> Session {
+        Session::new(&Config::default()).unwrap()
+    }
+
+    #[test]
+    fn failed_bash_after_rollback_does_not_discard_forward_checkpoints() {
+        let config = Config {
+            max_workspace_mb: Some(1),
+            ..Config::default()
+        };
+        let mut s = Session::new(&config).unwrap();
+        s.write_file("a.txt", b"1".to_vec()).unwrap(); // checkpoint 1
+        s.write_file("a.txt", b"2".to_vec()).unwrap(); // checkpoint 2
+        assert_eq!(s.history().len(), 3);
+        s.rollback(1).unwrap();
+
+        // Writes a 2 MB file — execution succeeds, but the post-run
+        // workspace-size check must fail. Before the fix, execute_bash
+        // truncated forward history *before* running the command, so this
+        // failure would have permanently discarded checkpoint 2 even though
+        // nothing new was ever committed.
+        let result = s.execute_bash("head -c 2000000 /dev/zero > big.bin", &mut |_| {});
+        assert!(result.is_err());
+        assert_eq!(
+            s.history().len(),
+            3,
+            "checkpoint 2 must survive a failed run"
+        );
+        assert_eq!(s.current().id, 1, "head must stay put on failure");
+    }
+
+    #[test]
+    fn merge_after_rollback_discards_forward_checkpoints_like_other_mutators() {
+        let mut s = session();
+        s.write_file("a.txt", b"1".to_vec()).unwrap(); // checkpoint 1
+        s.write_file("a.txt", b"2".to_vec()).unwrap(); // checkpoint 2
+        assert_eq!(s.history().len(), 3);
+        s.rollback(1).unwrap();
+
+        let mut source = session();
+        source.write_file("b.txt", b"src".to_vec()).unwrap();
+
+        s.merge_from(&source, None, None).unwrap();
+
+        // Checkpoint 2 (a.txt = "2") must be gone, not left dangling past a
+        // new head at id 2 — merge now truncates forward history exactly
+        // like session_bash / session_write_file / session_delete_file.
+        assert_eq!(s.history().len(), 3);
+        assert_eq!(s.current().id, 2);
+        assert_eq!(s.current().files.get("a.txt").unwrap().as_slice(), b"1");
+        assert_eq!(s.current().files.get("b.txt").unwrap().as_slice(), b"src");
+    }
+
+    #[test]
+    fn squash_cannot_include_checkpoint_zero() {
+        let mut s = session();
+        s.write_file("a.txt", b"1".to_vec()).unwrap();
+        s.write_file("a.txt", b"2".to_vec()).unwrap();
+        let err = s.squash_checkpoints(0, 1, None).unwrap_err();
+        assert!(err.to_string().contains("checkpoint 0"));
+        // The mounted baseline must still be squashable-range-adjacent but
+        // untouched: a range starting at 1 is fine.
+        assert!(s.squash_checkpoints(1, 2, None).is_ok());
+    }
+
+    #[test]
+    fn drop_cannot_include_checkpoint_zero() {
+        let mut s = session();
+        s.write_file("a.txt", b"1".to_vec()).unwrap();
+        s.write_file("a.txt", b"2".to_vec()).unwrap();
+        let err = s.drop_checkpoints(0, 0).unwrap_err();
+        assert!(err.to_string().contains("checkpoint 0"));
+    }
+
+    #[test]
+    fn commit_diffs_against_the_true_mounted_baseline_after_squash() {
+        // Regression guard for the checkpoint-0 protection above: commit()
+        // and diff() both read checkpoints[0] as "what was on disk before
+        // the sandbox touched it". If a squash/drop were ever allowed to
+        // consume checkpoint 0, this baseline would silently become
+        // whatever the squash's terminal state was instead.
+        let dir = tempfile::tempdir().unwrap();
+        let host_path = dir.path().join("mounted.txt");
+        std::fs::write(&host_path, b"original").unwrap();
+
+        let mut s = session();
+        s.mount(&host_path).unwrap();
+        s.write_file("mounted.txt", b"changed".to_vec()).unwrap();
+        s.write_file("mounted.txt", b"changed again".to_vec())
+            .unwrap();
+
+        // Squashing checkpoints 1..=2 is allowed and must not touch checkpoint 0.
+        s.squash_checkpoints(1, 2, None).unwrap();
+        assert!(s.diff(0, s.current().id).unwrap().contains("original"));
+
+        let committed = s.commit(None).unwrap();
+        assert_eq!(committed, vec![host_path.canonicalize().unwrap()]);
+        assert_eq!(std::fs::read(&host_path).unwrap(), b"changed again");
+    }
 }

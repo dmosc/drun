@@ -50,10 +50,10 @@ impl ServerHandler for DrunHandler {
         let tool = DrunTools::try_from(params)?;
         match tool {
             DrunTools::CreateSessionTool(_) => {
-                if let Some(max) = self.config.max_sessions {
-                    if self.sessions.lock().unwrap().len() >= max {
-                        return Err(DrunError::session_limit_reached(max).into_tool_err());
-                    }
+                if let Some(max) = self.config.max_sessions
+                    && self.sessions.lock().unwrap().len() >= max
+                {
+                    return Err(DrunError::session_limit_reached(max).into_tool_err());
                 }
                 let session_id = Uuid::new_v4().to_string();
                 let session = Session::new(&self.config)
@@ -76,16 +76,11 @@ impl ServerHandler for DrunHandler {
                     .clone();
                 let forked_session = {
                     let source = source_arc.lock().unwrap();
-                    let checkpoint_id = match (t.checkpoint_id, t.checkpoint_label.as_deref()) {
-                        (_, Some(lbl)) => {
-                            Some(source.checkpoint_by_label(lbl).ok_or_else(|| {
-                                DrunError::internal(format!("no checkpoint with label '{lbl}'"))
-                                    .into_tool_err()
-                            })?)
-                        }
-                        (Some(id), None) => Some(id as usize),
-                        (None, None) => None,
-                    };
+                    let checkpoint_id = resolve_checkpoint(
+                        &source,
+                        t.checkpoint_id,
+                        t.checkpoint_label.as_deref(),
+                    )?;
                     Session::from_session(&self.config, &t.session_id, &source, checkpoint_id)
                         .map_err(|e| DrunError::internal(e).into_tool_err())?
                 };
@@ -155,19 +150,12 @@ impl ServerHandler for DrunHandler {
             }
 
             DrunTools::SessionRollbackTool(t) => self.with_session_mut(&t.session_id, |session| {
-                let checkpoint_id = match (t.checkpoint_id, t.checkpoint_label.as_deref()) {
-                    (_, Some(lbl)) => session.checkpoint_by_label(lbl).ok_or_else(|| {
-                        DrunError::internal(format!("no checkpoint with label '{lbl}'"))
-                            .into_tool_err()
-                    })?,
-                    (Some(id), None) => id as usize,
-                    (None, None) => {
-                        return Err(DrunError::internal(
-                            "provide checkpoint_id or checkpoint_label",
-                        )
-                        .into_tool_err());
-                    }
-                };
+                let checkpoint_id =
+                    resolve_checkpoint(session, t.checkpoint_id, t.checkpoint_label.as_deref())?
+                        .ok_or_else(|| {
+                            DrunError::internal("provide checkpoint_id or checkpoint_label")
+                                .into_tool_err()
+                        })?;
                 let previous_files = session.current().files.clone();
                 session
                     .rollback(checkpoint_id)
@@ -262,22 +250,18 @@ impl ServerHandler for DrunHandler {
             }),
 
             DrunTools::SessionDiffTool(t) => self.with_session(&t.session_id, |session| {
-                let from = match (t.from_checkpoint_id, t.from_checkpoint_label.as_deref()) {
-                    (_, Some(lbl)) => session.checkpoint_by_label(lbl).ok_or_else(|| {
-                        DrunError::internal(format!("no checkpoint with label '{lbl}'"))
-                            .into_tool_err()
-                    })?,
-                    (Some(id), None) => id as usize,
-                    (None, None) => 0,
-                };
-                let to = match (t.to_checkpoint_id, t.to_checkpoint_label.as_deref()) {
-                    (_, Some(lbl)) => session.checkpoint_by_label(lbl).ok_or_else(|| {
-                        DrunError::internal(format!("no checkpoint with label '{lbl}'"))
-                            .into_tool_err()
-                    })?,
-                    (Some(id), None) => id as usize,
-                    (None, None) => session.current().id,
-                };
+                let from = resolve_checkpoint(
+                    session,
+                    t.from_checkpoint_id,
+                    t.from_checkpoint_label.as_deref(),
+                )?
+                .unwrap_or(0);
+                let to = resolve_checkpoint(
+                    session,
+                    t.to_checkpoint_id,
+                    t.to_checkpoint_label.as_deref(),
+                )?
+                .unwrap_or_else(|| session.current().id);
                 let diff = session
                     .diff(from, to)
                     .map_err(|e| DrunError::internal(e).into_tool_err())?;
@@ -359,7 +343,7 @@ impl ServerHandler for DrunHandler {
                     return Err(DrunError::session_not_found(&t.session_id).into_tool_err());
                 }
                 let url_is_allowed =
-                    host_from_url(&t.url).map_or(false, |h| self.config.domain_allowed(&h));
+                    host_from_url(&t.url).is_some_and(|h| self.config.domain_allowed(&h));
                 if !url_is_allowed {
                     return Err(DrunError::fetch_denied(&t.url).into_tool_err());
                 }
@@ -404,24 +388,19 @@ impl ServerHandler for DrunHandler {
                     .map(|mb| mb * 1024 * 1024)
                     .unwrap_or(256 * 1024 * 1024);
                 let mut body_bytes: Vec<u8> = Vec::new();
-                loop {
-                    match response
-                        .chunk()
-                        .await
-                        .map_err(|e| DrunError::internal(e).into_tool_err())?
-                    {
-                        Some(chunk) => {
-                            body_bytes.extend_from_slice(&chunk);
-                            if body_bytes.len() as u64 > max_body {
-                                return Err(DrunError::internal(format!(
-                                    "response body exceeds the {} MB limit; use a smaller download \
-                                     or raise max_workspace_mb in server config",
-                                    max_body / 1024 / 1024
-                                ))
-                                .into_tool_err());
-                            }
-                        }
-                        None => break,
+                while let Some(chunk) = response
+                    .chunk()
+                    .await
+                    .map_err(|e| DrunError::internal(e).into_tool_err())?
+                {
+                    body_bytes.extend_from_slice(&chunk);
+                    if body_bytes.len() as u64 > max_body {
+                        return Err(DrunError::internal(format!(
+                            "response body exceeds the {} MB limit; use a smaller download \
+                             or raise max_workspace_mb in server config",
+                            max_body / 1024 / 1024
+                        ))
+                        .into_tool_err());
                     }
                 }
 
@@ -569,17 +548,11 @@ impl ServerHandler for DrunHandler {
                     })?
                     .clone();
                 let source = source_arc.lock().unwrap();
-                let source_checkpoint_id =
-                    match (t.source_checkpoint_id, t.source_checkpoint_label.as_deref()) {
-                        (_, Some(lbl)) => {
-                            Some(source.checkpoint_by_label(lbl).ok_or_else(|| {
-                                DrunError::internal(format!("no checkpoint with label '{lbl}'"))
-                                    .into_tool_err()
-                            })?)
-                        }
-                        (Some(id), None) => Some(id as usize),
-                        (None, None) => None,
-                    };
+                let source_checkpoint_id = resolve_checkpoint(
+                    &source,
+                    t.source_checkpoint_id,
+                    t.source_checkpoint_label.as_deref(),
+                )?;
                 self.with_session_mut(&t.session_id, |session| {
                     session
                         .merge_from(&source, source_checkpoint_id, t.keys)
@@ -648,6 +621,20 @@ impl ServerHandler for DrunHandler {
                 })
             }
         }
+    }
+}
+
+fn resolve_checkpoint(
+    session: &Session,
+    id: Option<u64>,
+    label: Option<&str>,
+) -> Result<Option<usize>, CallToolError> {
+    match (id, label) {
+        (_, Some(lbl)) => session.checkpoint_by_label(lbl).map(Some).ok_or_else(|| {
+            DrunError::internal(format!("no checkpoint with label '{lbl}'")).into_tool_err()
+        }),
+        (Some(id), None) => Ok(Some(id as usize)),
+        (None, None) => Ok(None),
     }
 }
 

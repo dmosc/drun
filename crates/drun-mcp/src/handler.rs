@@ -38,9 +38,10 @@ impl DrunHandler {
             .get(session_id)
             .ok_or_else(|| CallToolError::from(DrunError::session_not_found(session_id)))?
             .clone();
-        let guard = session.lock().unwrap();
-        self.check_idle(session_id, &guard)?;
-        f(&guard)
+        match session.try_lock() {
+            Ok(guard) => f(&guard),
+            Err(_) => Err(DrunError::session_busy(session_id).into_tool_err()),
+        }
     }
 
     pub(crate) fn with_session_mut(
