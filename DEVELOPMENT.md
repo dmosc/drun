@@ -6,6 +6,32 @@
 cargo build -p drun-mcp
 ```
 
+## Test
+
+```bash
+cargo test --workspace
+```
+
+## Coverage
+
+Coverage is measured with
+[cargo-llvm-cov](https://github.com/taiki-e/cargo-llvm-cov). One-time setup:
+
+```bash
+rustup component add llvm-tools-preview
+cargo install cargo-llvm-cov --locked
+```
+
+Then, from the repo root:
+
+```bash
+# Per-file summary in the terminal
+cargo llvm-cov --workspace --summary-only
+
+# Full line-by-line HTML report
+cargo llvm-cov --workspace --html --open
+```
+
 ## Run locally
 
 If you installed drun via `install.sh`, the launchd agent (macOS) or systemd
