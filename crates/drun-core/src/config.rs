@@ -2,9 +2,9 @@
 //! have defaults so the server runs without any config file.
 
 use serde::Deserialize;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Clone, Debug, PartialEq)]
 #[serde(default)]
 pub struct Config {
     /// Domains permitted for session_fetch calls. Use ["*"] to allow all.
@@ -99,27 +99,37 @@ impl Config {
     }
 
     pub fn load() -> Self {
-        let Some(path) = std::env::var("DRUN_CONFIG").ok().map(PathBuf::from) else {
+        let path = std::env::var("DRUN_CONFIG").ok().map(PathBuf::from);
+        Self::load_from(path.as_deref())
+    }
+
+    fn load_from(path: Option<&Path>) -> Self {
+        let Some(path) = path else {
             return Self::default();
         };
-        match std::fs::read_to_string(&path).map(|s| toml::from_str::<Config>(&s)) {
-            Ok(Ok(mut config)) => {
-                for domain in Self::default().domain_allowlist {
-                    if !config.domain_allowlist.contains(&domain) {
-                        config.domain_allowlist.push(domain);
-                    }
-                }
-                config
+        let contents = match std::fs::read_to_string(path) {
+            Ok(contents) => contents,
+            Err(e) => {
+                eprintln!("drun: failed to read config at {}: {e}", path.display());
+                return Self::default();
             }
-            Ok(Err(e)) => {
+        };
+        match toml::from_str::<Config>(&contents) {
+            Ok(config) => config.with_builtin_domains(),
+            Err(e) => {
                 eprintln!("drun: failed to parse config at {}: {e}", path.display());
                 Self::default()
             }
-            Err(e) => {
-                eprintln!("drun: failed to read config at {}: {e}", path.display());
-                Self::default()
+        }
+    }
+
+    fn with_builtin_domains(mut self) -> Self {
+        for domain in Self::default().domain_allowlist {
+            if !self.domain_allowlist.contains(&domain) {
+                self.domain_allowlist.push(domain);
             }
         }
+        self
     }
 }
 
@@ -155,5 +165,155 @@ mod tests {
         assert!(config.domain_allowed("api.example.com"));
         assert!(!config.domain_allowed("example.com")); // bare domain, not a subdomain
         assert!(!config.domain_allowed("api.evil.com"));
+    }
+
+    #[test]
+    fn subdomain_wildcard_matches_multiple_levels_deep() {
+        let config = Config {
+            domain_allowlist: vec!["*.example.com".to_string()],
+            ..Config::default()
+        };
+        assert!(config.domain_allowed("a.b.example.com"));
+    }
+
+    #[test]
+    fn subdomain_wildcard_rejects_lookalike_suffix() {
+        let config = Config {
+            domain_allowlist: vec!["*.example.com".to_string()],
+            ..Config::default()
+        };
+        assert!(!config.domain_allowed("evilexample.com"));
+    }
+
+    #[test]
+    fn empty_allowlist_denies_everything() {
+        let config = Config {
+            domain_allowlist: vec![],
+            ..Config::default()
+        };
+        assert!(!config.domain_allowed("pypi.org"));
+    }
+
+    #[test]
+    fn any_matching_pattern_in_a_mixed_list_allows() {
+        let config = Config {
+            domain_allowlist: vec!["pypi.org".to_string(), "*.example.com".to_string()],
+            ..Config::default()
+        };
+        assert!(config.domain_allowed("pypi.org"));
+        assert!(config.domain_allowed("api.example.com"));
+        assert!(!config.domain_allowed("evil.org"));
+    }
+
+    #[test]
+    fn default_matches_documented_values() {
+        let config = Config::default();
+        assert_eq!(
+            config.domain_allowlist,
+            vec!["cdn.jsdelivr.net", "files.pythonhosted.org", "pypi.org"]
+        );
+        assert_eq!(config.fetch_timeout_ms, 60_000);
+        assert_eq!(config.connect_timeout_ms, 30_000);
+        assert_eq!(config.bash_timeout_ms, 30_000);
+        assert_eq!(config.max_workspace_mb, Some(512));
+        assert_eq!(config.max_sessions, Some(50));
+        assert_eq!(config.max_checkpoints, Some(200));
+        assert_eq!(config.session_idle_timeout_secs, Some(3600));
+        assert_eq!(config.web_port, Some(7274));
+        assert!(config.mount_allowlist.is_empty());
+        assert!(config.env_allowlist.is_empty());
+        assert!(config.bash_command_denylist.is_empty());
+        assert!(config.bash_command_allowlist.is_empty());
+        assert!(!config.snapshot_on_close);
+        assert_eq!(config.export_root, PathBuf::from("drun-export"));
+        assert_eq!(config.snapshots_dir, PathBuf::from("drun-snapshots"));
+        assert_eq!(
+            config.mount_overlay_paths,
+            vec![
+                "node_modules",
+                ".venv",
+                "venv",
+                "target",
+                "__pycache__",
+                ".git"
+            ]
+        );
+    }
+
+    #[test]
+    fn with_builtin_domains_keeps_builtins_alongside_user_domains() {
+        let config = Config {
+            domain_allowlist: vec!["custom.example.com".to_string()],
+            ..Config::default()
+        }
+        .with_builtin_domains();
+
+        assert!(
+            config
+                .domain_allowlist
+                .contains(&"custom.example.com".to_string())
+        );
+        for builtin in Config::default().domain_allowlist {
+            assert!(
+                config.domain_allowlist.contains(&builtin),
+                "expected built-in domain '{builtin}' to survive a user-supplied allowlist"
+            );
+        }
+    }
+
+    #[test]
+    fn with_builtin_domains_does_not_duplicate_domains_already_present() {
+        let config = Config {
+            domain_allowlist: vec!["pypi.org".to_string()],
+            ..Config::default()
+        }
+        .with_builtin_domains();
+
+        let occurrences = config
+            .domain_allowlist
+            .iter()
+            .filter(|d| *d == "pypi.org")
+            .count();
+        assert_eq!(occurrences, 1);
+    }
+
+    fn load_from_toml(contents: &str) -> Config {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(&path, contents).unwrap();
+        Config::load_from(Some(&path))
+    }
+
+    #[test]
+    fn load_from_none_returns_defaults() {
+        assert_eq!(Config::load_from(None), Config::default());
+    }
+
+    #[test]
+    fn load_from_missing_file_returns_defaults() {
+        let config = Config::load_from(Some(Path::new("/nonexistent/drun-config-test.toml")));
+        assert_eq!(config, Config::default());
+    }
+
+    #[test]
+    fn load_from_malformed_toml_returns_defaults() {
+        let config = load_from_toml("this is not valid toml {{{");
+        assert_eq!(config, Config::default());
+    }
+
+    #[test]
+    fn load_from_valid_toml_overrides_fields_and_merges_builtin_domains() {
+        let config =
+            load_from_toml("bash_timeout_ms = 5000\ndomain_allowlist = [\"custom.example.com\"]\n");
+        assert_eq!(config.bash_timeout_ms, 5000);
+        // Untouched fields still come from #[serde(default)] -> Config::default().
+        assert_eq!(config.fetch_timeout_ms, Config::default().fetch_timeout_ms);
+        // domain_allowlist is additive, not a replacement (see with_builtin_domains).
+        assert!(
+            config
+                .domain_allowlist
+                .contains(&"custom.example.com".to_string())
+        );
+        assert!(config.domain_allowlist.contains(&"pypi.org".to_string()));
     }
 }
