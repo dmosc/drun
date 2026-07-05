@@ -18,3 +18,6 @@ which = "7"
 toml = "0.8"
 similar = "2"
 zstd.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

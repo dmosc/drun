@@ -40,7 +40,15 @@ impl DrunHandler {
             .clone();
         match session.try_lock() {
             Ok(guard) => f(&guard),
-            Err(_) => Err(DrunError::session_busy(session_id).into_tool_err()),
+            Err(std::sync::TryLockError::WouldBlock) => {
+                Err(DrunError::session_busy(session_id).into_tool_err())
+            }
+            Err(std::sync::TryLockError::Poisoned(poisoned)) => {
+                eprintln!(
+                    "drun: session '{session_id}' recovered from a poisoned lock (a prior call panicked)"
+                );
+                f(&poisoned.into_inner())
+            }
         }
     }
 
@@ -56,14 +64,21 @@ impl DrunHandler {
             .get(session_id)
             .ok_or_else(|| CallToolError::from(DrunError::session_not_found(session_id)))?
             .clone();
-        match session.try_lock() {
-            Ok(mut guard) => {
-                self.check_idle(session_id, &guard)?;
-                guard.last_activity = std::time::Instant::now();
-                f(&mut guard)
+        let mut guard = match session.try_lock() {
+            Ok(guard) => guard,
+            Err(std::sync::TryLockError::WouldBlock) => {
+                return Err(DrunError::session_busy(session_id).into_tool_err());
             }
-            Err(_) => Err(DrunError::session_busy(session_id).into_tool_err()),
-        }
+            Err(std::sync::TryLockError::Poisoned(poisoned)) => {
+                eprintln!(
+                    "drun: session '{session_id}' recovered from a poisoned lock (a prior call panicked)"
+                );
+                poisoned.into_inner()
+            }
+        };
+        self.check_idle(session_id, &guard)?;
+        guard.last_activity = std::time::Instant::now();
+        f(&mut guard)
     }
 
     fn check_idle(&self, session_id: &str, session: &Session) -> Result<(), CallToolError> {
@@ -127,6 +142,66 @@ mod tests {
             .with_session(&session_id, |_session| Ok(text("ok")))
             .unwrap_err();
         assert!(err.to_string().contains("session_busy"));
+    }
+
+    #[test]
+    fn with_session_recovers_from_a_poisoned_lock_instead_of_staying_busy_forever() {
+        let (handler, session_id) = handler_with_session();
+        let session_arc = handler
+            .sessions
+            .lock()
+            .unwrap()
+            .get(&session_id)
+            .unwrap()
+            .clone();
+
+        // Poison the mutex the same way a real bug would: panic while
+        // holding its guard.
+        let arc_for_panic = session_arc.clone();
+        let _ = std::thread::spawn(move || {
+            let _guard = arc_for_panic.lock().unwrap();
+            panic!("simulated panic while holding the session lock");
+        })
+        .join();
+        assert!(session_arc.is_poisoned());
+
+        // Repeated calls must keep recovering and succeeding, not
+        // permanently report session_busy.
+        for _ in 0..2 {
+            let result = handler.with_session(&session_id, |_session| Ok(text("ok")));
+            assert!(
+                result.is_ok(),
+                "a poisoned session must recover, not stay busy forever"
+            );
+        }
+    }
+
+    #[test]
+    fn with_session_mut_recovers_from_a_poisoned_lock_instead_of_staying_busy_forever() {
+        let (handler, session_id) = handler_with_session();
+        let session_arc = handler
+            .sessions
+            .lock()
+            .unwrap()
+            .get(&session_id)
+            .unwrap()
+            .clone();
+
+        let arc_for_panic = session_arc.clone();
+        let _ = std::thread::spawn(move || {
+            let _guard = arc_for_panic.lock().unwrap();
+            panic!("simulated panic while holding the session lock");
+        })
+        .join();
+        assert!(session_arc.is_poisoned());
+
+        for _ in 0..2 {
+            let result = handler.with_session_mut(&session_id, |_session| Ok(text("ok")));
+            assert!(
+                result.is_ok(),
+                "a poisoned session must recover, not stay busy forever"
+            );
+        }
     }
 
     #[test]

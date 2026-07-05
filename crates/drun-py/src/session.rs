@@ -228,6 +228,15 @@ mod tests {
     }
 
     #[test]
+    fn checkpoint_label_set_from_python_can_be_read_back_from_python() {
+        let session = test_session();
+        session
+            .set_checkpoint_label(0, "start".to_string())
+            .unwrap();
+        assert_eq!(session.current().label.as_deref(), Some("start"));
+    }
+
+    #[test]
     fn rollback_moves_the_current_checkpoint_back() {
         let session = test_session();
         session

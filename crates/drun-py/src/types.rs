@@ -13,6 +13,8 @@ pub struct DrunCheckpoint {
     pub stderr: String,
     #[pyo3(get)]
     pub files: HashMap<String, Vec<u8>>,
+    #[pyo3(get)]
+    pub label: Option<String>,
 }
 
 pub fn checkpoint_to_py(c: &drun_core::Checkpoint) -> DrunCheckpoint {
@@ -25,6 +27,7 @@ pub fn checkpoint_to_py(c: &drun_core::Checkpoint) -> DrunCheckpoint {
             .iter()
             .map(|(k, arc)| (k.clone(), (**arc).clone()))
             .collect(),
+        label: c.label.clone(),
     }
 }
 
@@ -54,5 +57,6 @@ mod tests {
             py_checkpoint.files.get("a.txt"),
             Some(&b"contents".to_vec())
         );
+        assert_eq!(py_checkpoint.label.as_deref(), Some("milestone"));
     }
 }

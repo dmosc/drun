@@ -2,6 +2,7 @@
 //! SBPL profile; on Linux uses bubblewrap (bwrap). Both strategies confine
 //! the command to the session workspace with no network access.
 
+use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::Command;
 
@@ -35,6 +36,9 @@ pub(crate) fn sandboxed_sh(command: &str, workspace_dir: &Path) -> anyhow::Resul
 
     let mut cmd = Command::new("sandbox-exec");
     cmd.arg("-p").arg(profile).arg("sh").arg("-c").arg(command);
+    // New process group set globally allows cleanup workflows to wipe out all
+    // spawned processes and subprocesses, ensuring that none remains alive.
+    cmd.process_group(0);
     Ok(cmd)
 }
 
@@ -71,6 +75,9 @@ pub(crate) fn sandboxed_sh(command: &str, workspace_dir: &Path) -> anyhow::Resul
         "-c",
         command,
     ]);
+    // New process group set globally allows cleanup workflows to wipe out all
+    // spawned processes and subprocesses, ensuring that none remains alive.
+    cmd.process_group(0);
     Ok(cmd)
 }
 

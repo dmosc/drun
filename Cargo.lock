@@ -373,6 +373,7 @@ name = "drun-core"
 version = "0.3.2"
 dependencies = [
  "anyhow",
+ "libc",
  "serde",
  "serde_json",
  "similar",

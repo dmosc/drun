@@ -280,6 +280,7 @@ impl Session {
         } else if self.checkpoint_idx > to_id {
             self.checkpoint_idx -= removed_count;
         }
+        self.prune_intern_table();
         Ok(&self.checkpoints[self.checkpoint_idx])
     }
 
@@ -312,6 +313,7 @@ impl Session {
         if self.checkpoint_idx > to_id {
             self.checkpoint_idx -= removed_count;
         }
+        self.prune_intern_table();
         Ok(())
     }
 
@@ -544,6 +546,17 @@ impl Session {
         &self.checkpoints
     }
 
+    fn prune_intern_table(&mut self) {
+        let mut live = HashMap::with_capacity(self.intern_table.len());
+        for checkpoint in &self.checkpoints {
+            for arc in checkpoint.files.values() {
+                let hash = Self::file_content_hash(arc);
+                live.entry(hash).or_insert_with(|| Arc::downgrade(arc));
+            }
+        }
+        self.intern_table = live;
+    }
+
     fn intern_bytes(&mut self, bytes: Vec<u8>) -> Arc<Vec<u8>> {
         let hash = Self::file_content_hash(&bytes);
         if let Some(weak) = self.intern_table.get(&hash)
@@ -590,7 +603,10 @@ impl Session {
         stderr: String,
     ) -> anyhow::Result<&Checkpoint> {
         self.check_checkpoint_limit()?;
-        self.checkpoints.truncate(self.checkpoint_idx + 1);
+        let discarding_forward_history = self.checkpoints.len() > self.checkpoint_idx + 1;
+        if discarding_forward_history {
+            self.checkpoints.truncate(self.checkpoint_idx + 1);
+        }
         let id = self.checkpoints.len();
         self.checkpoints.push(Checkpoint {
             id,
@@ -600,6 +616,9 @@ impl Session {
             label: None,
         });
         self.checkpoint_idx = id;
+        if discarding_forward_history {
+            self.prune_intern_table();
+        }
         Ok(self.checkpoints.last().unwrap())
     }
 
@@ -677,6 +696,7 @@ impl Session {
         on_stdout: &mut dyn FnMut(String),
     ) -> anyhow::Result<BashOutput> {
         let bash_timeout_ms = self.config.bash_timeout_ms;
+        let pgid = child.id() as i32;
         let child_stderr = child.stderr.take().unwrap();
         let child_stdout = child.stdout.take().unwrap();
         let child = Arc::new(Mutex::new(child));
@@ -690,6 +710,7 @@ impl Session {
                 .is_err()
             {
                 timed_out_flag.store(true, Ordering::Relaxed);
+                Self::kill_process_group(pgid);
                 let _ = child_for_timeout.lock().unwrap().kill();
             }
         });
@@ -713,6 +734,7 @@ impl Session {
         let _ = cancel_tx.send(());
         let stderr = stderr_thread.join().unwrap_or_default();
         let _ = child.lock().unwrap().wait();
+        Self::kill_process_group(pgid);
         if timed_out.load(Ordering::Relaxed) {
             return Err(anyhow::Error::from(RunnerError::Timeout {
                 timeout_ms: self.config.bash_timeout_ms,
@@ -720,6 +742,16 @@ impl Session {
         }
         Ok(BashOutput { stdout, stderr })
     }
+
+    #[cfg(unix)]
+    fn kill_process_group(pgid: i32) {
+        unsafe {
+            libc::kill(-pgid, libc::SIGKILL);
+        }
+    }
+
+    #[cfg(not(unix))]
+    fn kill_process_group(_pgid: i32) {}
 
     fn file_content_hash(bytes: &[u8]) -> u64 {
         let mut hasher = DefaultHasher::new();
@@ -821,6 +853,39 @@ mod tests {
         assert!(received.contains("streamed"));
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn execute_bash_kills_backgrounded_processes_once_the_command_finishes() {
+        let mut s = session();
+        // Redirect the backgrounded job's pid into a tempfile for us to
+        // reference in the test.
+        s.execute_bash(
+            "sleep 5 >/dev/null 2>&1 & printf '%s' $! > pid.txt",
+            &mut |_| {},
+        )
+        .unwrap();
+        let pid: i32 = std::str::from_utf8(s.current().files.get("pid.txt").unwrap())
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+
+        // Poll briefly to let the kernel kill the process before asserting.
+        let mut still_alive = true;
+        for _ in 0..20 {
+            // Check whether pid still exists (doesn't actually kill it).
+            if unsafe { libc::kill(pid, 0) } != 0 {
+                still_alive = false;
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        assert!(
+            !still_alive,
+            "a process backgrounded by the command must not outlive execute_bash"
+        );
+    }
+
     #[test]
     fn execute_bash_rejects_a_denylisted_command_without_running_it() {
         let config = Config {
@@ -882,6 +947,43 @@ mod tests {
         assert_eq!(s.current().id, 2);
         assert_eq!(s.current().files.get("a.txt").unwrap().as_slice(), b"1");
         assert_eq!(s.current().files.get("b.txt").unwrap().as_slice(), b"src");
+    }
+
+    #[test]
+    fn rollback_then_write_prunes_intern_table_of_discarded_content() {
+        let mut s = session();
+        s.write_file("a.txt", b"one".to_vec()).unwrap(); // checkpoint 1
+        s.write_file("a.txt", b"two".to_vec()).unwrap(); // checkpoint 2
+        assert_eq!(s.intern_table.len(), 2, "one and two are both live");
+
+        s.rollback(0).unwrap();
+        s.write_file("a.txt", b"three".to_vec()).unwrap();
+
+        assert_eq!(s.intern_table.len(), 1, "only three is still live");
+    }
+
+    #[test]
+    fn squash_checkpoints_prunes_intern_table_of_the_absorbed_intermediate_content() {
+        let mut s = session();
+        s.write_file("a.txt", b"one".to_vec()).unwrap(); // checkpoint 1
+        s.write_file("a.txt", b"two".to_vec()).unwrap(); // checkpoint 2
+        assert_eq!(s.intern_table.len(), 2);
+
+        s.squash_checkpoints(1, 2, None).unwrap();
+
+        assert_eq!(s.intern_table.len(), 1, "only two survives the squash");
+    }
+
+    #[test]
+    fn drop_checkpoints_prunes_intern_table_of_the_dropped_content() {
+        let mut s = session();
+        s.write_file("a.txt", b"one".to_vec()).unwrap(); // checkpoint 1
+        s.write_file("a.txt", b"two".to_vec()).unwrap(); // checkpoint 2
+        assert_eq!(s.intern_table.len(), 2);
+
+        s.drop_checkpoints(1, 1).unwrap();
+
+        assert_eq!(s.intern_table.len(), 1, "only two survives the drop");
     }
 
     #[test]
