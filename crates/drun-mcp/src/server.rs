@@ -1505,4 +1505,145 @@ mod tests {
             .unwrap_err();
         assert!(err.to_string().contains("fetch_denied"));
     }
+
+    fn fetch_test_config(mock_uri: &str) -> Config {
+        Config {
+            domain_allowlist: vec![DrunHandler::host_from_url(mock_uri).unwrap()],
+            ..Config::default()
+        }
+    }
+
+    #[tokio::test]
+    async fn session_fetch_saves_the_response_body_under_the_default_download_path() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let mock_server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/data.json"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_raw(r#"{"ok":true}"#, "application/json"),
+            )
+            .mount(&mock_server)
+            .await;
+
+        let handler = DrunHandler::new(fetch_test_config(&mock_server.uri()));
+        insert_session(&handler, "s1");
+        let result = handler
+            .handle_session_fetch(SessionFetchTool {
+                session_id: "s1".to_string(),
+                url: format!("{}/data.json", mock_server.uri()),
+                method: None,
+                headers: None,
+                body: None,
+                save_to: None,
+            })
+            .await
+            .unwrap();
+
+        let json = result_json(&result);
+        assert_eq!(json["status"], 200);
+        assert_eq!(json["content_type"], "application/json");
+        assert_eq!(json["saved_to"], "downloads/data.json");
+
+        let sessions = handler.sessions.lock().unwrap();
+        let session = sessions.get("s1").unwrap().lock().unwrap();
+        let saved = session.current().files.get("downloads/data.json").unwrap();
+        assert_eq!(saved.as_slice(), br#"{"ok":true}"#);
+    }
+
+    #[tokio::test]
+    async fn session_fetch_honors_an_explicit_save_to_path_and_method() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let mock_server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/submit"))
+            .respond_with(ResponseTemplate::new(201).set_body_string("created"))
+            .mount(&mock_server)
+            .await;
+
+        let handler = DrunHandler::new(fetch_test_config(&mock_server.uri()));
+        insert_session(&handler, "s1");
+        let result = handler
+            .handle_session_fetch(SessionFetchTool {
+                session_id: "s1".to_string(),
+                url: format!("{}/submit", mock_server.uri()),
+                method: Some("post".to_string()),
+                headers: None,
+                body: Some("payload".to_string()),
+                save_to: Some("out/response.txt".to_string()),
+            })
+            .await
+            .unwrap();
+
+        let json = result_json(&result);
+        assert_eq!(json["status"], 201);
+        assert_eq!(json["saved_to"], "out/response.txt");
+
+        let sessions = handler.sessions.lock().unwrap();
+        let session = sessions.get("s1").unwrap().lock().unwrap();
+        assert_eq!(
+            session
+                .current()
+                .files
+                .get("out/response.txt")
+                .unwrap()
+                .as_slice(),
+            b"created"
+        );
+    }
+
+    #[tokio::test]
+    async fn session_fetch_rejects_an_invalid_http_method() {
+        use wiremock::MockServer;
+
+        // No Mock is registered: an invalid method token must be rejected
+        // before any request reaches the (local, offline) mock server.
+        let mock_server = MockServer::start().await;
+        let handler = DrunHandler::new(fetch_test_config(&mock_server.uri()));
+        insert_session(&handler, "s1");
+        let err = handler
+            .handle_session_fetch(SessionFetchTool {
+                session_id: "s1".to_string(),
+                url: mock_server.uri(),
+                method: Some("IN VALID".to_string()),
+                headers: None,
+                body: None,
+                save_to: None,
+            })
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("invalid HTTP method"));
+    }
+
+    #[tokio::test]
+    async fn session_fetch_rejects_a_response_body_over_the_configured_limit() {
+        use wiremock::matchers::method;
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let mock_server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(vec![0u8; 2048]))
+            .mount(&mock_server)
+            .await;
+
+        let mut config = fetch_test_config(&mock_server.uri());
+        config.max_workspace_mb = Some(0);
+        let handler = DrunHandler::new(config);
+        insert_session(&handler, "s1");
+        let err = handler
+            .handle_session_fetch(SessionFetchTool {
+                session_id: "s1".to_string(),
+                url: mock_server.uri(),
+                method: None,
+                headers: None,
+                body: None,
+                save_to: None,
+            })
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("exceeds"));
+    }
 }
