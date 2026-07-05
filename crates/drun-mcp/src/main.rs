@@ -1,3 +1,4 @@
+mod config_cmd;
 mod errors;
 mod handler;
 mod init;
@@ -24,9 +25,21 @@ const MCP_PORT: u16 = 7273;
 
 #[tokio::main]
 async fn main() -> SdkResult<()> {
-    if std::env::args().nth(1).as_deref() == Some("init") {
-        init::run();
-        return Ok(());
+    match std::env::args().nth(1).as_deref() {
+        Some("init") => {
+            init::run();
+            return Ok(());
+        }
+        Some("config") => {
+            let rest: Vec<String> = std::env::args().skip(2).collect();
+            config_cmd::run(&rest);
+            return Ok(());
+        }
+        Some("--help" | "-h") => {
+            print_usage();
+            return Ok(());
+        }
+        _ => {}
     }
 
     let handler = DrunHandler::new(Config::load());
@@ -51,6 +64,24 @@ async fn main() -> SdkResult<()> {
     )
     .start()
     .await
+}
+
+fn print_usage() {
+    eprintln!(
+        "drun-mcp — MCP server for drun\n\
+         \n\
+         Usage:\n\
+         \x20\x20drun-mcp                            start the daemon\n\
+         \x20\x20drun-mcp init                        set up drun for the current project\n\
+         \x20\x20drun-mcp config add-domain <name>    allow a domain for session_fetch\n\
+         \x20\x20drun-mcp config add-path <path>      allow a path for session_mount\n\
+         \x20\x20drun-mcp config remove-domain <name> disallow a domain for session_fetch\n\
+         \x20\x20drun-mcp config remove-path <path>   disallow a path for session_mount\n\
+         \x20\x20drun-mcp config list                 show the current allowlists\n\
+         \n\
+         config add-*/remove-* edit ~/.drun/config.toml and restart the\n\
+         daemon automatically."
+    );
 }
 
 fn build_server_details() -> InitializeResult {

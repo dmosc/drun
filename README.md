@@ -148,10 +148,26 @@ fields are optional.
 | `bash_command_allowlist`    | `[]`                                                                 | Command substrings permitted by `session_bash`. Empty means all commands are allowed (subject to the denylist).                                                                                               |
 | `web_port`                  | `7274`                                                               | TCP port for the trajectory viewer web UI. Set to `0`, or remove the field from the config file, to disable it.                                                                                               |
 
-#### Reloading the MCP
+#### Editing `domain_allowlist` / `mount_allowlist`
 
-`~/.drun/config.toml` is read once when the daemon starts. To apply changes,
-restart the daemon:
+The easiest way to add a domain or path is via the CLI — it edits
+`~/.drun/config.toml` in place (preserving the rest of the file) and restarts
+the daemon for you:
+
+```bash
+drun-mcp config add-domain example.com
+drun-mcp config add-path /path/to/allow
+drun-mcp config remove-domain example.com
+drun-mcp config remove-path /path/to/allow
+# To validate latest changes to config.
+drun-mcp config list
+```
+
+#### Reloading the MCP manually
+
+`~/.drun/config.toml` is read once when the daemon starts. If you edit the file
+by hand instead of using `drun-mcp config`, restart the daemon yourself to apply
+the change:
 
 **macOS**
 

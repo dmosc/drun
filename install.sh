@@ -62,6 +62,11 @@ create_config() {
 
   cat > "$DRUN_CONFIG" <<EOF
 # drun configuration — all fields are optional; these are the defaults.
+#
+# To add or remove a domain or path without hand-editing this file (and to
+# restart the daemon automatically afterward), use:
+#   drun-mcp config add-domain <domain>     /  drun-mcp config remove-domain <domain>
+#   drun-mcp config add-path <path>         /  drun-mcp config remove-path <path>
 
 # Domains agents may reach via session_fetch. PyPI domains are always added
 # on top of whatever you list here.

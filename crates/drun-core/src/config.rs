@@ -103,7 +103,7 @@ impl Config {
         Self::load_from(path.as_deref())
     }
 
-    fn load_from(path: Option<&Path>) -> Self {
+    pub fn load_from(path: Option<&Path>) -> Self {
         let Some(path) = path else {
             return Self::default();
         };

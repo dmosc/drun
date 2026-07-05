@@ -27,7 +27,7 @@ pub fn run() {
     eprintln!("drun: initialized for {}", cwd.display());
 }
 
-fn drun_home() -> PathBuf {
+pub(crate) fn drun_home() -> PathBuf {
     PathBuf::from(std::env::var("HOME").expect("HOME not set")).join(".drun")
 }
 
@@ -109,6 +109,19 @@ sandbox. Use the drun MCP tools (prefixed `mcp__drun__`) for everything.
   navigate checkpoint history (session_rollback is destructive past the rollback
   point once you continue the session — use session_fork first if you need to
   keep that history)
+
+## If a fetch or mount is denied
+
+`session_fetch` and `session_mount` are restricted to an allowlist. If either
+is denied for a domain or path you need, tell the user to run:
+
+- `drun-mcp config add-domain <domain>` to allow a new domain for
+  `session_fetch`
+- `drun-mcp config add-path <path>` to allow a new host path for
+  `session_mount`
+
+Both commands update the config and restart the drun daemon automatically —
+no other action is needed before retrying.
 "#
     )
 }
