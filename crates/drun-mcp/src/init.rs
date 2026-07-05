@@ -201,8 +201,13 @@ is denied for a domain or path you need, tell the user to run:
 - `drun-mcp config add-path <path>` to allow a new host path for
   `session_mount`
 
-Both commands update the config and restart the drun daemon automatically —
-no other action is needed before retrying.
+Both commands update the config and restart the drun daemon to apply the
+change. **The restart terminates every active session on the daemon,
+including the current one** — the daemon reads `~/.drun/config.toml` once at
+startup, so there is currently no way to apply a config change without
+restarting. If the current session has state worth keeping, run
+`session_export` before running the `config` command, then start a new
+session (and re-mount/re-import as needed) once the restart completes.
 "#
     )
 }

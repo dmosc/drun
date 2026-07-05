@@ -164,6 +164,12 @@ drun-mcp config list
 
 Run `drun-mcp config --help` to print a list of available commands.
 
+It's important to note that the `drun` binary is a single shared daemon instance
+serving every project on the machine. This means that a reload effectively drops
+any ongoing session. Request Claude to "export the session" in order to create a
+recoverable snapshot that can be loaded by a new session prior to reloading the
+binary.
+
 #### Reloading the MCP manually
 
 `~/.drun/config.toml` is read once when the daemon starts. If you edit the file
