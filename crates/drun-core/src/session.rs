@@ -787,6 +787,55 @@ mod tests {
     }
 
     #[test]
+    fn execute_bash_captures_stdout_and_creates_a_new_checkpoint() {
+        let mut s = session();
+        let checkpoint = s.execute_bash("echo hello", &mut |_| {}).unwrap();
+        assert_eq!(checkpoint.id, 1);
+        assert_eq!(checkpoint.stdout.trim(), "hello");
+    }
+
+    #[test]
+    fn execute_bash_captures_stderr_separately_from_stdout() {
+        let mut s = session();
+        let checkpoint = s.execute_bash("echo oops 1>&2", &mut |_| {}).unwrap();
+        assert_eq!(checkpoint.stdout, "");
+        assert_eq!(checkpoint.stderr.trim(), "oops");
+    }
+
+    #[test]
+    fn execute_bash_persists_files_written_by_the_command() {
+        let mut s = session();
+        s.execute_bash("echo hi > out.txt", &mut |_| {}).unwrap();
+        assert_eq!(
+            s.current().files.get("out.txt").unwrap().as_slice(),
+            b"hi\n"
+        );
+    }
+
+    #[test]
+    fn execute_bash_streams_stdout_chunks_via_the_callback() {
+        let mut s = session();
+        let mut received = String::new();
+        s.execute_bash("echo streamed", &mut |chunk| received.push_str(&chunk))
+            .unwrap();
+        assert!(received.contains("streamed"));
+    }
+
+    #[test]
+    fn execute_bash_rejects_a_denylisted_command_without_running_it() {
+        let config = Config {
+            bash_command_denylist: vec!["rm -rf".to_string()],
+            ..Config::default()
+        };
+        let mut s = Session::new(&config).unwrap();
+        let err = s
+            .execute_bash("rm -rf /tmp/whatever", &mut |_| {})
+            .unwrap_err();
+        assert!(err.to_string().contains("command denied"));
+        assert_eq!(s.history().len(), 1, "denied command must not checkpoint");
+    }
+
+    #[test]
     fn failed_bash_after_rollback_does_not_discard_forward_checkpoints() {
         let config = Config {
             max_workspace_mb: Some(1),

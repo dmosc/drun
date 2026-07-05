@@ -271,4 +271,31 @@ mod tests {
         assert_eq!(exported.len(), 1);
         assert!(dir.path().join("a.txt").exists());
     }
+
+    #[test]
+    fn execute_bash_runs_a_real_sandboxed_command_and_returns_its_checkpoint() {
+        let session = test_session();
+        let checkpoint = session
+            .execute_bash("echo hi > out.txt".to_string())
+            .unwrap();
+        assert_eq!(checkpoint.stdout, "");
+        assert_eq!(checkpoint.files.get("out.txt"), Some(&b"hi\n".to_vec()));
+        assert_eq!(session.current().id, 1);
+    }
+
+    #[test]
+    fn execute_bash_surfaces_a_denylisted_command_as_a_py_runtime_error() {
+        let config = drun_core::Config {
+            bash_command_denylist: vec!["rm -rf".to_string()],
+            ..drun_core::Config::default()
+        };
+        let session = DrunSession {
+            inner: Mutex::new(Session::new(&config).unwrap()),
+        };
+        let err = session
+            .execute_bash("rm -rf /tmp/whatever".to_string())
+            .err()
+            .unwrap();
+        assert!(err.to_string().contains("command denied"));
+    }
 }
