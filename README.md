@@ -13,11 +13,11 @@ ephemeral runtime to serve as the agent's workspace with git-like primitives
 which allow the agent to explore trajectories in parallel and discard dead-ends
 without disrupting the host state.
 
-Drun surfaces a runtime abstration layer with reliability harnesses to guardrail
-the agent's behavior across a range of OS-level aspects:
+Drun surfaces a runtime abstraction layer with reliability harnesses to
+guardrail the agent's behavior across a range of OS-level aspects:
 
 - Network domains (e.g. allowlisted domains)
-- Command exeuction (e.g. forbidden commands)
+- Command execution (e.g. forbidden commands)
 - Access to filesystem paths (e.g. restrict filesystem access)
 - Resource limits (e.g. memory and duration caps)
 
