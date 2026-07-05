@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>drun — deterministic, ephemeral runtimes for coding agents</title>
+<meta name="description" content="drun gives coding agents a git-like, ephemeral sandbox with hard guardrails on network, commands, filesystem, and resources.">
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #111111;
+    --muted: #5a5a5a;
+    --accent: #6d28d9;
+    --border: #e5e5e5;
+    --code-bg: #f6f6f7;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0b0b0c;
+      --fg: #f2f2f2;
+      --muted: #a3a3a3;
+      --accent: #a78bfa;
+      --border: #2a2a2c;
+      --code-bg: #17171a;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    line-height: 1.5;
+  }
+  main {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 5rem 1.5rem 4rem;
+  }
+  .wordmark {
+    font-size: 1.05rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--accent);
+    margin: 0 0 2.5rem;
+  }
+  h1 {
+    font-size: 2.25rem;
+    line-height: 1.2;
+    letter-spacing: -0.02em;
+    margin: 0 0 0.75rem;
+  }
+  .tagline {
+    font-size: 1.15rem;
+    color: var(--muted);
+    margin: 0 0 0.85rem;
+    max-width: 46ch;
+  }
+  .tagline:last-of-type {
+    margin-bottom: 2rem;
+  }
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-bottom: 2.5rem;
+  }
+  .btn {
+    display: inline-block;
+    padding: 0.6rem 1.1rem;
+    border-radius: 6px;
+    text-decoration: none;
+    font-size: 0.95rem;
+    font-weight: 600;
+    border: 1px solid var(--fg);
+  }
+  .btn-primary {
+    background: var(--fg);
+    color: var(--bg);
+  }
+  .btn-secondary {
+    background: transparent;
+    color: var(--fg);
+    border-color: var(--border);
+  }
+  .install {
+    position: relative;
+    margin: 0 0 0.6rem;
+  }
+  .platform-note {
+    font-size: 0.85rem;
+    color: var(--muted);
+    margin: 0 0 3rem;
+  }
+  .install code {
+    display: block;
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.9rem 3rem 0.9rem 1rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.85rem;
+    overflow-x: auto;
+    white-space: pre;
+    color: var(--fg);
+  }
+  .copy-btn {
+    position: absolute;
+    top: 0.55rem;
+    right: 0.55rem;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--muted);
+    font-size: 0.7rem;
+    padding: 0.25rem 0.5rem;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .copy-btn:hover { color: var(--fg); border-color: var(--fg); }
+  h2 {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    margin: 0 0 1.25rem;
+  }
+  .features {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 3.5rem;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+  }
+  .features li {
+    padding: 1.25rem;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+  }
+  .features .icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: 8px;
+    background: rgba(109, 40, 217, 0.14);
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+    color: var(--accent);
+    margin-bottom: 0.9rem;
+  }
+  .features .icon svg {
+    width: 20px;
+    height: 20px;
+  }
+  .features strong {
+    display: block;
+    margin-bottom: 0.35rem;
+  }
+  .features span {
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+  .principle {
+    border-top: 1px solid var(--border);
+    padding-top: 2rem;
+    font-size: 1.05rem;
+    color: var(--muted);
+  }
+  .principle strong { color: var(--fg); }
+  footer {
+    border-top: 1px solid var(--border);
+    margin-top: 3.5rem;
+    padding-top: 1.5rem;
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+  footer a { color: var(--muted); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <p class="wordmark">drun</p>
+
+  <h1>Deterministic, ephemeral runtimes for coding agents.</h1>
+  <p class="tagline">
+    Give your agent a git-like sandbox it can branch, roll back, and discard —
+    without ever touching your host.
+  </p>
+  <p class="tagline">
+    Every session spins up a disposable workspace and vanishes when it's
+    done — nothing persists on your machine unless you explicitly export it.
+  </p>
+
+  <div class="actions">
+    <a class="btn btn-primary" href="https://github.com/dmosc/drun">View on GitHub</a>
+    <a class="btn btn-secondary" href="https://github.com/dmosc/drun#readme">Read the docs</a>
+  </div>
+
+  <div class="install">
+    <code id="install-cmd">curl -fsSL https://raw.githubusercontent.com/dmosc/drun/main/install.sh | bash</code>
+    <button class="copy-btn" id="copy-btn" onclick="
+      navigator.clipboard.writeText(document.getElementById('install-cmd').textContent.trim());
+      this.textContent = 'copied';
+      setTimeout(() => this.textContent = 'copy', 1200);
+    ">copy</button>
+  </div>
+  <p class="platform-note">
+    Available for macOS and Linux distros.
+  </p>
+
+  <h2>What it guardrails</h2>
+  <ul class="features">
+      <li>
+        <span class="icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="6" cy="6" r="2.5"/>
+            <circle cx="6" cy="18" r="2.5"/>
+            <circle cx="18" cy="12" r="2.5"/>
+            <path d="M6 8.5v7"/>
+            <path d="M8.3 7.2 15.7 10.8"/>
+            <path d="M8.3 16.8 15.7 13.2"/>
+          </svg>
+        </span>
+        <strong>Ephemeral workspace</strong>
+        <span>Checkpoint, fork, and roll back like git — explore trajectories in parallel and discard dead ends without disrupting the host.</span>
+      </li>
+      <li>
+        <span class="icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="8.5"/>
+            <path d="M3.5 12h17"/>
+            <path d="M12 3.5c2.6 2.3 4 5.3 4 8.5s-1.4 6.2-4 8.5c-2.6-2.3-4-5.3-4-8.5s1.4-6.2 4-8.5Z"/>
+            <path d="M4.5 17.5 19.5 6.5" stroke-width="2"/>
+          </svg>
+        </span>
+        <strong>Network</strong>
+        <span>Only allowlisted domains are reachable. Everything else is denied by default.</span>
+      </li>
+      <li>
+        <span class="icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3.5" y="4.5" width="17" height="15" rx="2"/>
+            <path d="M7 9.5 10.5 12 7 14.5"/>
+            <path d="M12.5 14.5h4.5"/>
+          </svg>
+        </span>
+        <strong>Commands</strong>
+        <span>Forbidden commands are rejected before they ever run.</span>
+      </li>
+      <li>
+        <span class="icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3.5 7a1.5 1.5 0 0 1 1.5-1.5h4l2 2h8A1.5 1.5 0 0 1 20.5 9v8a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 17Z"/>
+            <rect x="9.5" y="11" width="5" height="5.5" rx="1"/>
+            <path d="M10.7 11V9.8a1.3 1.3 0 0 1 2.6 0V11"/>
+          </svg>
+        </span>
+        <strong>Filesystem</strong>
+        <span>Access is restricted to the session workspace and explicitly mounted paths.</span>
+      </li>
+      <li>
+        <span class="icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 15.5a8 8 0 0 1 16 0"/>
+            <path d="M12 15.5 16 9.5"/>
+            <path d="M4 15.5h16"/>
+          </svg>
+        </span>
+        <strong>Resources</strong>
+        <span>Hard caps on memory and execution time — enforced by the runtime, not by policy the agent could talk its way around.</span>
+      </li>
+    </ul>
+
+  <p class="principle">
+    <strong>drun</strong> — deterministic run. Every guardrail here is a limit
+    that can't be breached by design, not a suggestion.
+  </p>
+
+  <footer>
+    <a href="https://github.com/dmosc/drun">github.com/dmosc/drun</a>
+  </footer>
+</main>
+</body>
+</html>
