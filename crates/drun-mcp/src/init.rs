@@ -112,3 +112,101 @@ sandbox. Use the drun MCP tools (prefixed `mcp__drun__`) for everything.
 "#
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn claude_md_content_includes_the_project_path() {
+        let content = claude_md_content("/home/user/myproject");
+        assert!(content.contains("/home/user/myproject"));
+    }
+
+    #[test]
+    fn claude_md_content_documents_the_core_tools() {
+        let content = claude_md_content("/tmp/project");
+        assert!(content.contains("session_bash"));
+        assert!(content.contains("session_mount"));
+    }
+
+    #[test]
+    fn write_settings_creates_claude_settings_json() {
+        let dir = tempfile::tempdir().unwrap();
+        write_settings(dir.path());
+        let settings_path = dir.path().join(".claude/settings.json");
+        assert!(settings_path.exists());
+        let content = std::fs::read_to_string(&settings_path).unwrap();
+        assert!(content.contains("mcp__drun__*"));
+    }
+
+    #[test]
+    fn write_settings_does_not_overwrite_an_existing_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let settings_dir = dir.path().join(".claude");
+        std::fs::create_dir_all(&settings_dir).unwrap();
+        let settings_path = settings_dir.join("settings.json");
+        std::fs::write(&settings_path, "custom content").unwrap();
+
+        write_settings(dir.path());
+
+        assert_eq!(
+            std::fs::read_to_string(&settings_path).unwrap(),
+            "custom content"
+        );
+    }
+
+    #[test]
+    fn write_claude_md_creates_the_file_with_project_path() {
+        let dir = tempfile::tempdir().unwrap();
+        write_claude_md(dir.path());
+        let path = dir.path().join("CLAUDE.md");
+        assert!(path.exists());
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert!(content.contains(dir.path().to_str().unwrap()));
+    }
+
+    #[test]
+    fn write_claude_md_does_not_overwrite_an_existing_file() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("CLAUDE.md"), "custom").unwrap();
+
+        write_claude_md(dir.path());
+
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("CLAUDE.md")).unwrap(),
+            "custom"
+        );
+    }
+
+    #[test]
+    fn register_project_appends_the_project_path() {
+        let drun_home = tempfile::tempdir().unwrap();
+        let project_dir = tempfile::tempdir().unwrap();
+
+        register_project(drun_home.path(), project_dir.path());
+
+        let registry = std::fs::read_to_string(drun_home.path().join("projects")).unwrap();
+        assert!(
+            registry
+                .lines()
+                .any(|l| l == project_dir.path().to_str().unwrap())
+        );
+    }
+
+    #[test]
+    fn register_project_does_not_duplicate_an_already_registered_path() {
+        let drun_home = tempfile::tempdir().unwrap();
+        let project_dir = tempfile::tempdir().unwrap();
+
+        register_project(drun_home.path(), project_dir.path());
+        register_project(drun_home.path(), project_dir.path());
+
+        let registry = std::fs::read_to_string(drun_home.path().join("projects")).unwrap();
+        let occurrences = registry
+            .lines()
+            .filter(|l| *l == project_dir.path().to_str().unwrap())
+            .count();
+        assert_eq!(occurrences, 1);
+    }
+}
