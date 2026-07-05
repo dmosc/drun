@@ -177,3 +177,117 @@ fn json_response(value: &impl serde::Serialize) -> Response {
     let body = serde_json::to_string(value).unwrap_or_else(|_| "null".into());
     (StatusCode::OK, headers, body).into_response()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::to_bytes;
+    use drun_core::{Config, Session};
+    use std::collections::HashMap;
+    use std::sync::{Arc, Mutex};
+
+    fn session_map(entries: Vec<(&str, Session)>) -> SessionMap {
+        let mut map = HashMap::new();
+        for (id, session) in entries {
+            map.insert(id.to_string(), Arc::new(Mutex::new(session)));
+        }
+        Arc::new(Mutex::new(map))
+    }
+
+    async fn body_string(response: Response) -> String {
+        let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        String::from_utf8(bytes.to_vec()).unwrap()
+    }
+
+    #[tokio::test]
+    async fn handle_index_serves_the_embedded_html_with_no_store_cache_control() {
+        let response = handle_index().await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers().get("cache-control").unwrap(), "no-store");
+        let body = body_string(response).await;
+        assert_eq!(body, EMBEDDED_INDEX_HTML);
+    }
+
+    #[tokio::test]
+    async fn handle_session_tree_returns_json_for_the_current_sessions() {
+        let sessions = session_map(vec![("s1", Session::new(&Config::default()).unwrap())]);
+        let response = handle_session_tree(State(AppState { sessions })).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = body_string(response).await;
+        assert!(body.contains("s1"));
+    }
+
+    #[tokio::test]
+    async fn handle_checkpoint_history_returns_404_for_an_unknown_session() {
+        let sessions = session_map(vec![]);
+        let response =
+            handle_checkpoint_history(State(AppState { sessions }), Path("missing".to_string()))
+                .await;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn handle_checkpoint_history_returns_json_history_on_success() {
+        let sessions = session_map(vec![("s1", Session::new(&Config::default()).unwrap())]);
+        let response =
+            handle_checkpoint_history(State(AppState { sessions }), Path("s1".to_string())).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = body_string(response).await;
+        assert!(body.contains("checkpoint_id"));
+    }
+
+    #[tokio::test]
+    async fn handle_checkpoint_diff_defaults_to_diffing_from_checkpoint_zero() {
+        let mut session = Session::new(&Config::default()).unwrap();
+        session.write_file("a.txt", b"hi".to_vec()).unwrap();
+        let sessions = session_map(vec![("s1", session)]);
+
+        let response = handle_checkpoint_diff(
+            State(AppState { sessions }),
+            Path("s1".to_string()),
+            Query(DiffQueryParams {
+                from: None,
+                to: None,
+            }),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = body_string(response).await;
+        assert!(body.contains("a.txt"));
+    }
+
+    #[tokio::test]
+    async fn handle_checkpoint_diff_returns_400_for_an_invalid_checkpoint() {
+        let sessions = session_map(vec![("s1", Session::new(&Config::default()).unwrap())]);
+        let response = handle_checkpoint_diff(
+            State(AppState { sessions }),
+            Path("s1".to_string()),
+            Query(DiffQueryParams {
+                from: Some(99),
+                to: None,
+            }),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn handle_checkpoint_stdout_returns_404_for_an_unknown_checkpoint() {
+        let sessions = session_map(vec![("s1", Session::new(&Config::default()).unwrap())]);
+        let response =
+            handle_checkpoint_stdout(State(AppState { sessions }), Path(("s1".to_string(), 99)))
+                .await;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn handle_checkpoint_stdout_returns_the_checkpoints_stdout() {
+        let sessions = session_map(vec![("s1", Session::new(&Config::default()).unwrap())]);
+        let response =
+            handle_checkpoint_stdout(State(AppState { sessions }), Path(("s1".to_string(), 0)))
+                .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = body_string(response).await;
+        assert_eq!(body, "");
+    }
+}

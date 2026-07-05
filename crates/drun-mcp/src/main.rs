@@ -72,3 +72,15 @@ fn build_server_details() -> InitializeResult {
         meta: None,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn build_server_details_reports_the_crate_version() {
+        let details = build_server_details();
+        assert_eq!(details.server_info.name, "drun");
+        assert_eq!(details.server_info.version, env!("CARGO_PKG_VERSION"));
+    }
+}
