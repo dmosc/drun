@@ -138,6 +138,41 @@ mod tests {
     use super::*;
 
     #[test]
+    fn default_values_are_frozen() {
+        let config = Config::default();
+        assert_eq!(
+            config.domain_allowlist,
+            vec!["cdn.jsdelivr.net", "files.pythonhosted.org", "pypi.org"]
+        );
+        assert_eq!(config.fetch_timeout_ms, 60_000);
+        assert_eq!(config.connect_timeout_ms, 30_000);
+        assert_eq!(config.max_workspace_mb, Some(512));
+        assert_eq!(config.max_sessions, Some(50));
+        assert_eq!(config.max_checkpoints, Some(200));
+        assert_eq!(config.session_idle_timeout_secs, Some(3600));
+        assert_eq!(config.mount_allowlist, Vec::<PathBuf>::new());
+        assert_eq!(
+            config.mount_overlay_paths,
+            vec![
+                "node_modules",
+                ".venv",
+                "venv",
+                "target",
+                "__pycache__",
+                ".git"
+            ]
+        );
+        assert_eq!(config.export_root, PathBuf::from("drun-export"));
+        assert_eq!(config.snapshots_dir, PathBuf::from("drun-snapshots"));
+        assert!(!config.snapshot_on_close);
+        assert_eq!(config.env_allowlist, Vec::<String>::new());
+        assert_eq!(config.bash_timeout_ms, 30_000);
+        assert_eq!(config.bash_command_denylist, Vec::<String>::new());
+        assert_eq!(config.bash_command_allowlist, Vec::<String>::new());
+        assert_eq!(config.web_port, Some(7274));
+    }
+
+    #[test]
     fn exact_match_is_allowed() {
         let config = Config {
             domain_allowlist: vec!["pypi.org".to_string()],
