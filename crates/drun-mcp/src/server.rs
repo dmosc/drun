@@ -856,4 +856,653 @@ mod tests {
         );
         assert_eq!(DrunHandler::download_path_from_url(""), "downloads/fetch");
     }
+
+    use drun_core::Config;
+    use rust_mcp_sdk::schema::ContentBlock;
+
+    fn insert_session(handler: &DrunHandler, id: &str) {
+        handler.sessions.lock().unwrap().insert(
+            id.to_string(),
+            Arc::new(Mutex::new(Session::new(&handler.config).unwrap())),
+        );
+    }
+
+    fn result_text(result: &CallToolResult) -> &str {
+        match &result.content[0] {
+            ContentBlock::TextContent(tc) => &tc.text,
+            _ => panic!("expected text content"),
+        }
+    }
+
+    fn result_json(result: &CallToolResult) -> serde_json::Value {
+        serde_json::from_str(result_text(result)).unwrap()
+    }
+
+    #[test]
+    fn create_session_succeeds_and_registers_the_session() {
+        let handler = DrunHandler::new(Config::default());
+        let result = handler.handle_create_session().unwrap();
+        assert_eq!(handler.sessions.lock().unwrap().len(), 1);
+        assert!(result_text(&result).contains("checkpoint_id"));
+    }
+
+    #[test]
+    fn create_session_rejects_once_max_sessions_is_reached() {
+        let config = Config {
+            max_sessions: Some(1),
+            ..Config::default()
+        };
+        let handler = DrunHandler::new(config);
+        handler.handle_create_session().unwrap();
+        let err = handler.handle_create_session().unwrap_err();
+        assert!(err.to_string().contains("session_limit_reached"));
+    }
+
+    #[test]
+    fn session_fork_returns_session_not_found_for_missing_source() {
+        let handler = DrunHandler::new(Config::default());
+        let err = handler
+            .handle_session_fork(SessionForkTool {
+                session_id: "missing".to_string(),
+                checkpoint_id: None,
+                checkpoint_label: None,
+            })
+            .unwrap_err();
+        assert!(err.to_string().contains("session_not_found"));
+    }
+
+    #[test]
+    fn session_fork_inherits_files_from_the_source_checkpoint() {
+        let handler = DrunHandler::new(Config::default());
+        insert_session(&handler, "source");
+        {
+            let sessions = handler.sessions.lock().unwrap();
+            sessions
+                .get("source")
+                .unwrap()
+                .lock()
+                .unwrap()
+                .write_file("a.txt", b"hi".to_vec())
+                .unwrap();
+        }
+
+        let result = handler
+            .handle_session_fork(SessionForkTool {
+                session_id: "source".to_string(),
+                checkpoint_id: None,
+                checkpoint_label: None,
+            })
+            .unwrap();
+        assert_eq!(handler.sessions.lock().unwrap().len(), 2);
+        let json = result_json(&result);
+        assert_eq!(json["workspace_file_count"], 1);
+    }
+
+    #[test]
+    fn session_close_removes_the_session_from_the_map() {
+        let handler = DrunHandler::new(Config::default());
+        insert_session(&handler, "s1");
+        handler
+            .handle_session_close(SessionCloseTool {
+                session_id: "s1".to_string(),
+            })
+            .unwrap();
+        assert!(!handler.sessions.lock().unwrap().contains_key("s1"));
+    }
+
+    #[test]
+    fn session_close_returns_session_not_found_for_missing_id() {
+        let handler = DrunHandler::new(Config::default());
+        let err = handler
+            .handle_session_close(SessionCloseTool {
+                session_id: "missing".to_string(),
+            })
+            .unwrap_err();
+        assert!(err.to_string().contains("session_not_found"));
+    }
+
+    #[test]
+    fn session_close_writes_a_snapshot_when_snapshot_on_close_is_enabled() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = Config {
+            snapshot_on_close: true,
+            snapshots_dir: dir.path().to_path_buf(),
+            ..Config::default()
+        };
+        let handler = DrunHandler::new(config);
+        insert_session(&handler, "s1");
+
+        handler
+            .handle_session_close(SessionCloseTool {
+                session_id: "s1".to_string(),
+            })
+            .unwrap();
+
+        assert!(dir.path().join("s1.drun").exists());
+    }
+
+    #[test]
+    fn session_rollback_requires_a_checkpoint_id_or_label() {
+        let handler = DrunHandler::new(Config::default());
+        insert_session(&handler, "s1");
+        let err = handler
+            .handle_session_rollback(SessionRollbackTool {
+                session_id: "s1".to_string(),
+                checkpoint_id: None,
+                checkpoint_label: None,
+            })
+            .unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("provide checkpoint_id or checkpoint_label")
+        );
+    }
+
+    #[test]
+    fn session_rollback_moves_the_head_to_the_given_checkpoint() {
+        let handler = DrunHandler::new(Config::default());
+        insert_session(&handler, "s1");
+        {
+            let sessions = handler.sessions.lock().unwrap();
+            sessions
+                .get("s1")
+                .unwrap()
+                .lock()
+                .unwrap()
+                .write_file("a.txt", b"1".to_vec())
+                .unwrap();
+        }
+
+        let result = handler
+            .handle_session_rollback(SessionRollbackTool {
+                session_id: "s1".to_string(),
+                checkpoint_id: Some(0),
+                checkpoint_label: None,
+            })
+            .unwrap();
+        let json = result_json(&result);
+        assert_eq!(json["checkpoint_id"], 0);
+    }
+
+    #[test]
+    fn session_read_file_returns_full_utf8_content_without_offset_or_limit() {
+        let handler = DrunHandler::new(Config::default());
+        insert_session(&handler, "s1");
+        {
+            let sessions = handler.sessions.lock().unwrap();
+            sessions
+                .get("s1")
+                .unwrap()
+                .lock()
+                .unwrap()
+                .write_file("a.txt", b"hello world".to_vec())
+                .unwrap();
+        }
+
+        let result = handler
+            .handle_session_read_file(SessionReadFileTool {
+                session_id: "s1".to_string(),
+                path: "a.txt".to_string(),
+                offset: None,
+                limit: None,
+            })
+            .unwrap();
+        assert_eq!(result_text(&result), "hello world");
+    }
+
+    #[test]
+    fn session_read_file_pages_through_content_with_offset_and_limit() {
+        let handler = DrunHandler::new(Config::default());
+        insert_session(&handler, "s1");
+        {
+            let sessions = handler.sessions.lock().unwrap();
+            sessions
+                .get("s1")
+                .unwrap()
+                .lock()
+                .unwrap()
+                .write_file("a.txt", b"hello world".to_vec())
+                .unwrap();
+        }
+
+        let result = handler
+            .handle_session_read_file(SessionReadFileTool {
+                session_id: "s1".to_string(),
+                path: "a.txt".to_string(),
+                offset: Some(6),
+                limit: Some(5),
+            })
+            .unwrap();
+        let json = result_json(&result);
+        assert_eq!(json["content"], "world");
+        assert_eq!(json["has_more"], false);
+        assert_eq!(json["total_bytes"], 11);
+    }
+
+    #[test]
+    fn session_read_file_base64_encodes_non_utf8_content_when_paginated() {
+        let handler = DrunHandler::new(Config::default());
+        insert_session(&handler, "s1");
+        let bytes = vec![0xff, 0xfe, 0xfd];
+        {
+            let sessions = handler.sessions.lock().unwrap();
+            sessions
+                .get("s1")
+                .unwrap()
+                .lock()
+                .unwrap()
+                .write_file("bin.dat", bytes)
+                .unwrap();
+        }
+
+        let result = handler
+            .handle_session_read_file(SessionReadFileTool {
+                session_id: "s1".to_string(),
+                path: "bin.dat".to_string(),
+                offset: Some(0),
+                limit: Some(3),
+            })
+            .unwrap();
+        let json = result_json(&result);
+        assert_eq!(json["encoding"], "base64");
+    }
+
+    #[test]
+    fn session_read_file_returns_file_not_found_for_missing_path() {
+        let handler = DrunHandler::new(Config::default());
+        insert_session(&handler, "s1");
+        let err = handler
+            .handle_session_read_file(SessionReadFileTool {
+                session_id: "s1".to_string(),
+                path: "missing.txt".to_string(),
+                offset: None,
+                limit: None,
+            })
+            .unwrap_err();
+        assert!(err.to_string().contains("file_not_found"));
+    }
+
+    #[test]
+    fn session_write_file_decodes_base64_content() {
+        let handler = DrunHandler::new(Config::default());
+        insert_session(&handler, "s1");
+        let encoded = BASE64.encode(b"hello");
+
+        handler
+            .handle_session_write_file(SessionWriteFileTool {
+                session_id: "s1".to_string(),
+                path: "a.txt".to_string(),
+                content: encoded,
+                is_base64: Some(true),
+            })
+            .unwrap();
+
+        let sessions = handler.sessions.lock().unwrap();
+        let session = sessions.get("s1").unwrap().lock().unwrap();
+        assert_eq!(session.current().files["a.txt"].as_slice(), b"hello");
+    }
+
+    #[test]
+    fn session_write_file_rejects_invalid_base64() {
+        let handler = DrunHandler::new(Config::default());
+        insert_session(&handler, "s1");
+        let err = handler
+            .handle_session_write_file(SessionWriteFileTool {
+                session_id: "s1".to_string(),
+                path: "a.txt".to_string(),
+                content: "not valid base64!!".to_string(),
+                is_base64: Some(true),
+            })
+            .unwrap_err();
+        assert!(err.to_string().contains("base64 decode error"));
+    }
+
+    #[test]
+    fn session_diff_defaults_from_checkpoint_zero_to_the_current_checkpoint() {
+        let handler = DrunHandler::new(Config::default());
+        insert_session(&handler, "s1");
+        {
+            let sessions = handler.sessions.lock().unwrap();
+            sessions
+                .get("s1")
+                .unwrap()
+                .lock()
+                .unwrap()
+                .write_file("a.txt", b"hi".to_vec())
+                .unwrap();
+        }
+
+        let result = handler
+            .handle_session_diff(SessionDiffTool {
+                session_id: "s1".to_string(),
+                from_checkpoint_id: None,
+                from_checkpoint_label: None,
+                to_checkpoint_id: None,
+                to_checkpoint_label: None,
+            })
+            .unwrap();
+        assert!(result_text(&result).contains("a.txt"));
+    }
+
+    #[test]
+    fn session_diff_reports_no_changes_between_identical_checkpoints() {
+        let handler = DrunHandler::new(Config::default());
+        insert_session(&handler, "s1");
+
+        let result = handler
+            .handle_session_diff(SessionDiffTool {
+                session_id: "s1".to_string(),
+                from_checkpoint_id: Some(0),
+                from_checkpoint_label: None,
+                to_checkpoint_id: Some(0),
+                to_checkpoint_label: None,
+            })
+            .unwrap();
+        assert_eq!(result_text(&result), "no changes");
+    }
+
+    #[test]
+    fn session_export_rejects_a_path_containing_dotdot() {
+        let handler = DrunHandler::new(Config::default());
+        let err = handler
+            .handle_session_export(SessionExportTool {
+                session_id: "s1".to_string(),
+                output_dir: Some("../escape".to_string()),
+                keys: None,
+            })
+            .unwrap_err();
+        assert!(err.to_string().contains("export_denied"));
+    }
+
+    #[test]
+    fn session_export_rejects_a_directory_outside_the_export_root() {
+        let config = Config {
+            export_root: PathBuf::from("drun-export"),
+            ..Config::default()
+        };
+        let handler = DrunHandler::new(config);
+        let err = handler
+            .handle_session_export(SessionExportTool {
+                session_id: "s1".to_string(),
+                output_dir: Some("/tmp/somewhere-else".to_string()),
+                keys: None,
+            })
+            .unwrap_err();
+        assert!(err.to_string().contains("export_denied"));
+    }
+
+    #[test]
+    fn session_export_writes_files_under_the_export_root() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = Config {
+            export_root: dir.path().to_path_buf(),
+            ..Config::default()
+        };
+        let handler = DrunHandler::new(config);
+        insert_session(&handler, "s1");
+        {
+            let sessions = handler.sessions.lock().unwrap();
+            sessions
+                .get("s1")
+                .unwrap()
+                .lock()
+                .unwrap()
+                .write_file("out.txt", b"data".to_vec())
+                .unwrap();
+        }
+
+        handler
+            .handle_session_export(SessionExportTool {
+                session_id: "s1".to_string(),
+                output_dir: Some(dir.path().join("sub").to_string_lossy().into_owned()),
+                keys: Some(vec!["out.txt".to_string()]),
+            })
+            .unwrap();
+        assert!(dir.path().join("sub/out.txt").exists());
+    }
+
+    #[test]
+    fn session_snapshot_rejects_a_path_containing_dotdot() {
+        let handler = DrunHandler::new(Config::default());
+        let err = handler
+            .handle_session_snapshot(SessionSnapshotTool {
+                session_id: "s1".to_string(),
+                path: Some("../escape.drun".to_string()),
+            })
+            .unwrap_err();
+        assert!(err.to_string().contains("snapshot_denied"));
+    }
+
+    #[test]
+    fn session_snapshot_writes_under_the_default_snapshots_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = Config {
+            snapshots_dir: dir.path().to_path_buf(),
+            ..Config::default()
+        };
+        let handler = DrunHandler::new(config);
+        insert_session(&handler, "s1");
+
+        handler
+            .handle_session_snapshot(SessionSnapshotTool {
+                session_id: "s1".to_string(),
+                path: None,
+            })
+            .unwrap();
+
+        assert!(dir.path().join("s1.drun").exists());
+    }
+
+    #[test]
+    fn session_get_env_rejects_names_outside_the_allowlist() {
+        let handler = DrunHandler::new(Config::default());
+        insert_session(&handler, "s1");
+        let err = handler
+            .handle_session_get_env(SessionGetEnvTool {
+                session_id: "s1".to_string(),
+                name: "SECRET".to_string(),
+            })
+            .unwrap_err();
+        assert!(err.to_string().contains("env_var_denied"));
+    }
+
+    #[test]
+    fn session_get_env_returns_empty_string_for_an_unset_allowlisted_variable() {
+        let config = Config {
+            env_allowlist: vec!["DRUN_TEST_VAR_NOT_SET".to_string()],
+            ..Config::default()
+        };
+        let handler = DrunHandler::new(config);
+        insert_session(&handler, "s1");
+
+        let result = handler
+            .handle_session_get_env(SessionGetEnvTool {
+                session_id: "s1".to_string(),
+                name: "DRUN_TEST_VAR_NOT_SET".to_string(),
+            })
+            .unwrap();
+        let json = result_json(&result);
+        assert_eq!(json["value"], "");
+    }
+
+    #[test]
+    fn session_checkpoint_label_defaults_to_the_current_checkpoint() {
+        let handler = DrunHandler::new(Config::default());
+        insert_session(&handler, "s1");
+        {
+            let sessions = handler.sessions.lock().unwrap();
+            sessions
+                .get("s1")
+                .unwrap()
+                .lock()
+                .unwrap()
+                .write_file("a.txt", b"hi".to_vec())
+                .unwrap();
+        }
+
+        let result = handler
+            .handle_session_checkpoint_label(SessionCheckpointLabelTool {
+                session_id: "s1".to_string(),
+                checkpoint_id: None,
+                label: "milestone".to_string(),
+            })
+            .unwrap();
+        let json = result_json(&result);
+        let entry = json
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["checkpoint_id"] == 1)
+            .unwrap();
+        assert_eq!(entry["label"], "milestone");
+    }
+
+    #[test]
+    fn session_merge_rejects_merging_a_session_with_itself() {
+        let handler = DrunHandler::new(Config::default());
+        let err = handler
+            .handle_session_merge(SessionMergeTool {
+                session_id: "s1".to_string(),
+                source_session_id: "s1".to_string(),
+                source_checkpoint_id: None,
+                source_checkpoint_label: None,
+                keys: None,
+            })
+            .unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("cannot merge a session with itself")
+        );
+    }
+
+    #[test]
+    fn session_merge_returns_session_not_found_for_missing_source() {
+        let handler = DrunHandler::new(Config::default());
+        insert_session(&handler, "target");
+        let err = handler
+            .handle_session_merge(SessionMergeTool {
+                session_id: "target".to_string(),
+                source_session_id: "missing-source".to_string(),
+                source_checkpoint_id: None,
+                source_checkpoint_label: None,
+                keys: None,
+            })
+            .unwrap_err();
+        assert!(err.to_string().contains("session_not_found"));
+    }
+
+    #[test]
+    fn session_merge_overlays_files_from_the_source_session() {
+        let handler = DrunHandler::new(Config::default());
+        insert_session(&handler, "target");
+        insert_session(&handler, "source");
+        {
+            let sessions = handler.sessions.lock().unwrap();
+            sessions
+                .get("source")
+                .unwrap()
+                .lock()
+                .unwrap()
+                .write_file("shared.txt", b"from source".to_vec())
+                .unwrap();
+        }
+
+        let result = handler
+            .handle_session_merge(SessionMergeTool {
+                session_id: "target".to_string(),
+                source_session_id: "source".to_string(),
+                source_checkpoint_id: None,
+                source_checkpoint_label: None,
+                keys: None,
+            })
+            .unwrap();
+        let json = result_json(&result);
+        assert_eq!(json["workspace_file_count"], 1);
+    }
+
+    #[test]
+    fn checkpoint_read_stdstreams_rejects_an_unknown_stream_name() {
+        let handler = DrunHandler::new(Config::default());
+        insert_session(&handler, "s1");
+        let err = handler
+            .handle_checkpoint_read_stdstreams(CheckpointReadStdstreamsTool {
+                session_id: "s1".to_string(),
+                checkpoint_id: None,
+                stream: Some("stdxyz".to_string()),
+                offset: None,
+                limit: None,
+            })
+            .unwrap_err();
+        assert!(err.to_string().contains("unknown stream"));
+    }
+
+    #[test]
+    fn checkpoint_read_stdstreams_defaults_to_stdout_of_the_current_checkpoint() {
+        let handler = DrunHandler::new(Config::default());
+        insert_session(&handler, "s1");
+        let result = handler
+            .handle_checkpoint_read_stdstreams(CheckpointReadStdstreamsTool {
+                session_id: "s1".to_string(),
+                checkpoint_id: None,
+                stream: None,
+                offset: None,
+                limit: None,
+            })
+            .unwrap();
+        let json = result_json(&result);
+        assert_eq!(json["stream"], "stdout");
+        assert_eq!(json["checkpoint_id"], 0);
+        assert_eq!(json["total_bytes"], 0);
+    }
+
+    #[test]
+    fn checkpoint_read_stdstreams_returns_checkpoint_does_not_exist_for_bad_id() {
+        let handler = DrunHandler::new(Config::default());
+        insert_session(&handler, "s1");
+        let err = handler
+            .handle_checkpoint_read_stdstreams(CheckpointReadStdstreamsTool {
+                session_id: "s1".to_string(),
+                checkpoint_id: Some(99),
+                stream: None,
+                offset: None,
+                limit: None,
+            })
+            .unwrap_err();
+        assert!(err.to_string().contains("does not exist"));
+    }
+
+    #[tokio::test]
+    async fn session_fetch_returns_session_not_found_for_missing_session() {
+        let handler = DrunHandler::new(Config::default());
+        let err = handler
+            .handle_session_fetch(SessionFetchTool {
+                session_id: "missing".to_string(),
+                url: "https://pypi.org/simple/".to_string(),
+                method: None,
+                headers: None,
+                body: None,
+                save_to: None,
+            })
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("session_not_found"));
+    }
+
+    #[tokio::test]
+    async fn session_fetch_denies_urls_outside_the_domain_allowlist() {
+        let handler = DrunHandler::new(Config::default());
+        insert_session(&handler, "s1");
+        let err = handler
+            .handle_session_fetch(SessionFetchTool {
+                session_id: "s1".to_string(),
+                url: "https://evil.example.com/data".to_string(),
+                method: None,
+                headers: None,
+                body: None,
+                save_to: None,
+            })
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("fetch_denied"));
+    }
 }
