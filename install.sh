@@ -193,7 +193,7 @@ register_mcp() {
   if ! command -v claude &>/dev/null; then
     echo ""
     echo "Claude Code CLI not found. Add drun manually:"
-    echo "  claude mcp add --transport sse drun $MCP_URL"
+    echo "  claude mcp add --scope user --transport sse drun $MCP_URL"
     return
   fi
 
@@ -202,8 +202,8 @@ register_mcp() {
     return
   fi
 
-  claude mcp add --transport sse drun "$MCP_URL"
-  echo "drun added to Claude Code (SSE → $MCP_URL)."
+  claude mcp add --scope user --transport sse drun "$MCP_URL"
+  echo "drun added to Claude Code (SSE → $MCP_URL, user scope)."
 }
 
 # ── main ──────────────────────────────────────────────────────────────────────

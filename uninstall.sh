@@ -35,7 +35,7 @@ deregister_mcp() {
     return
   fi
 
-  claude mcp remove drun 2>/dev/null && echo "Removed drun from Claude Code." || true
+  claude mcp remove --scope user drun 2>/dev/null && echo "Removed drun from Claude Code." || true
 }
 
 # ── per-project cleanup ───────────────────────────────────────────────────────
