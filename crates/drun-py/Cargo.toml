@@ -10,3 +10,7 @@ crate-type = ["cdylib"]
 [dependencies]
 pyo3 = { version = "0.28.3", features = ["abi3-py39"] }
 drun-core = { version = "0.3.1", path = "../drun-core" }
+
+[dev-dependencies]
+pyo3 = { version = "0.28.3", features = ["auto-initialize"] }
+tempfile.workspace = true

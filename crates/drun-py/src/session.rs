@@ -127,3 +127,148 @@ impl DrunSession {
             .collect()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_session() -> DrunSession {
+        let config = drun_core::Config::default();
+        DrunSession {
+            inner: Mutex::new(Session::new(&config).unwrap()),
+        }
+    }
+
+    #[test]
+    fn new_starts_with_an_empty_checkpoint_zero() {
+        let session = DrunSession::new().unwrap();
+        let current = session.current();
+        assert_eq!(current.id, 0);
+        assert!(current.files.is_empty());
+    }
+
+    #[test]
+    fn mount_loads_a_host_file_into_the_workspace() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.txt"), b"hi").unwrap();
+
+        let session = test_session();
+        let mounted = session
+            .mount(dir.path().to_string_lossy().into_owned())
+            .unwrap();
+
+        assert_eq!(mounted, vec!["a.txt".to_string()]);
+        assert_eq!(session.current().files.len(), 1);
+    }
+
+    #[test]
+    fn mount_surfaces_session_errors_as_a_py_runtime_error() {
+        let session = test_session();
+        let err = session
+            .mount("/definitely/does/not/exist".to_string())
+            .unwrap_err();
+        assert!(err.to_string().contains("path does not exist"));
+    }
+
+    #[test]
+    fn write_file_then_delete_file_round_trips_through_checkpoints() {
+        let session = test_session();
+        session
+            .write_file("a.txt".to_string(), b"hi".to_vec())
+            .unwrap();
+        assert_eq!(session.current().files.len(), 1);
+
+        let after_delete = session.delete_file("a.txt".to_string()).unwrap();
+        assert!(after_delete.files.is_empty());
+    }
+
+    #[test]
+    fn commit_writes_back_a_changed_mounted_file_to_the_host() {
+        let dir = tempfile::tempdir().unwrap();
+        let host_file = dir.path().join("a.txt");
+        std::fs::write(&host_file, b"original").unwrap();
+
+        let session = test_session();
+        session
+            .mount(dir.path().to_string_lossy().into_owned())
+            .unwrap();
+        session
+            .write_file("a.txt".to_string(), b"changed".to_vec())
+            .unwrap();
+
+        let committed = session.commit(None).unwrap();
+        assert_eq!(committed.len(), 1);
+        assert_eq!(std::fs::read(&host_file).unwrap(), b"changed");
+    }
+
+    #[test]
+    fn diff_reports_no_changes_between_identical_checkpoints() {
+        let session = test_session();
+        assert_eq!(session.diff(0, None).unwrap(), "");
+    }
+
+    #[test]
+    fn diff_reports_changes_since_a_write() {
+        let session = test_session();
+        session
+            .write_file("a.txt".to_string(), b"hi".to_vec())
+            .unwrap();
+        let diff = session.diff(0, None).unwrap();
+        assert!(diff.contains("a.txt"));
+    }
+
+    #[test]
+    fn set_label_and_set_checkpoint_label_apply_to_the_session_and_checkpoint() {
+        let session = test_session();
+        session.set_label("my-session".to_string());
+        session
+            .set_checkpoint_label(0, "start".to_string())
+            .unwrap();
+        assert_eq!(session.current().id, 0);
+    }
+
+    #[test]
+    fn rollback_moves_the_current_checkpoint_back() {
+        let session = test_session();
+        session
+            .write_file("a.txt".to_string(), b"hi".to_vec())
+            .unwrap();
+        assert_eq!(session.current().id, 1);
+
+        session.rollback(0).unwrap();
+        assert_eq!(session.current().id, 0);
+    }
+
+    #[test]
+    fn history_grows_with_each_checkpoint_and_stays_in_order() {
+        let session = test_session();
+        session
+            .write_file("a.txt".to_string(), b"hi".to_vec())
+            .unwrap();
+        session
+            .write_file("b.txt".to_string(), b"bye".to_vec())
+            .unwrap();
+
+        let history = session.history();
+        assert_eq!(history.len(), 3);
+        assert_eq!(history[0].id, 0);
+        assert_eq!(history[1].id, 1);
+        assert_eq!(history[2].id, 2);
+    }
+
+    #[test]
+    fn export_writes_session_files_under_the_given_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let session = test_session();
+        session
+            .write_file("a.txt".to_string(), b"hi".to_vec())
+            .unwrap();
+
+        let exported = session
+            .export(dir.path().to_string_lossy().into_owned(), None)
+            .unwrap();
+
+        assert_eq!(exported.len(), 1);
+        assert!(dir.path().join("a.txt").exists());
+    }
+}
