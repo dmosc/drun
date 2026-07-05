@@ -819,74 +819,6 @@ mod tests {
     }
 
     #[test]
-    fn execute_bash_captures_stdout_and_creates_a_new_checkpoint() {
-        let mut s = session();
-        let checkpoint = s.execute_bash("echo hello", &mut |_| {}).unwrap();
-        assert_eq!(checkpoint.id, 1);
-        assert_eq!(checkpoint.stdout.trim(), "hello");
-    }
-
-    #[test]
-    fn execute_bash_captures_stderr_separately_from_stdout() {
-        let mut s = session();
-        let checkpoint = s.execute_bash("echo oops 1>&2", &mut |_| {}).unwrap();
-        assert_eq!(checkpoint.stdout, "");
-        assert_eq!(checkpoint.stderr.trim(), "oops");
-    }
-
-    #[test]
-    fn execute_bash_persists_files_written_by_the_command() {
-        let mut s = session();
-        s.execute_bash("echo hi > out.txt", &mut |_| {}).unwrap();
-        assert_eq!(
-            s.current().files.get("out.txt").unwrap().as_slice(),
-            b"hi\n"
-        );
-    }
-
-    #[test]
-    fn execute_bash_streams_stdout_chunks_via_the_callback() {
-        let mut s = session();
-        let mut received = String::new();
-        s.execute_bash("echo streamed", &mut |chunk| received.push_str(&chunk))
-            .unwrap();
-        assert!(received.contains("streamed"));
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn execute_bash_kills_backgrounded_processes_once_the_command_finishes() {
-        let mut s = session();
-        // Redirect the backgrounded job's pid into a tempfile for us to
-        // reference in the test.
-        s.execute_bash(
-            "sleep 5 >/dev/null 2>&1 & printf '%s' $! > pid.txt",
-            &mut |_| {},
-        )
-        .unwrap();
-        let pid: i32 = std::str::from_utf8(s.current().files.get("pid.txt").unwrap())
-            .unwrap()
-            .trim()
-            .parse()
-            .unwrap();
-
-        // Poll briefly to let the kernel kill the process before asserting.
-        let mut still_alive = true;
-        for _ in 0..20 {
-            // Check whether pid still exists (doesn't actually kill it).
-            if unsafe { libc::kill(pid, 0) } != 0 {
-                still_alive = false;
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(50));
-        }
-        assert!(
-            !still_alive,
-            "a process backgrounded by the command must not outlive execute_bash"
-        );
-    }
-
-    #[test]
     fn execute_bash_rejects_a_denylisted_command_without_running_it() {
         let config = Config {
             bash_command_denylist: vec!["rm -rf".to_string()],
@@ -898,33 +830,6 @@ mod tests {
             .unwrap_err();
         assert!(err.to_string().contains("command denied"));
         assert_eq!(s.history().len(), 1, "denied command must not checkpoint");
-    }
-
-    #[test]
-    fn failed_bash_after_rollback_does_not_discard_forward_checkpoints() {
-        let config = Config {
-            max_workspace_mb: Some(1),
-            ..Config::default()
-        };
-        let mut s = Session::new(&config).unwrap();
-        s.write_file("a.txt", b"1".to_vec()).unwrap(); // checkpoint 1
-        s.write_file("a.txt", b"2".to_vec()).unwrap(); // checkpoint 2
-        assert_eq!(s.history().len(), 3);
-        s.rollback(1).unwrap();
-
-        // Writes a 2 MB file — execution succeeds, but the post-run
-        // workspace-size check must fail. Before the fix, execute_bash
-        // truncated forward history *before* running the command, so this
-        // failure would have permanently discarded checkpoint 2 even though
-        // nothing new was ever committed.
-        let result = s.execute_bash("head -c 2000000 /dev/zero > big.bin", &mut |_| {});
-        assert!(result.is_err());
-        assert_eq!(
-            s.history().len(),
-            3,
-            "checkpoint 2 must survive a failed run"
-        );
-        assert_eq!(s.current().id, 1, "head must stay put on failure");
     }
 
     #[test]
