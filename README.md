@@ -62,7 +62,7 @@ From the root of any project you want drun to manage:
 drun-mcp init
 ```
 
-Creates two files in the current directory (skipped if they already exist):
+Creates two files in the current directory (appends if they already exist):
 
 1. `.claude/settings.json` — restricts Claude to drun tools only for this
    workspace. Native file (`Read`, `Edit`, `Write`, `NotebookEdit`, `Glob`,
@@ -148,11 +148,10 @@ fields are optional.
 | `bash_command_allowlist`    | `[]`                                                                 | Command substrings permitted by `session_bash`. Empty means all commands are allowed (subject to the denylist).                                                                                               |
 | `web_port`                  | `7274`                                                               | TCP port for the trajectory viewer web UI. Set to `0`, or remove the field from the config file, to disable it.                                                                                               |
 
-#### Editing `domain_allowlist` / `mount_allowlist`
+#### Updating configuration via the CLI
 
-The easiest way to add a domain or path is via the CLI — it edits
-`~/.drun/config.toml` in place (preserving the rest of the file) and restarts
-the daemon for you:
+A couple of utility commands to update the configuration via the `drun-mcp` CLI
+are available:
 
 ```bash
 drun-mcp config add-domain example.com
@@ -162,6 +161,8 @@ drun-mcp config remove-path /path/to/allow
 # To validate latest changes to config.
 drun-mcp config list
 ```
+
+Run `drun-mcp config --help` to print a list of available commands.
 
 #### Reloading the MCP manually
 

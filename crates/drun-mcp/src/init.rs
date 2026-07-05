@@ -3,18 +3,36 @@ use std::{
     path::{Path, PathBuf},
 };
 
-const CLAUDE_SETTINGS: &str = r#"{
-  "permissions": {
-    "deny": [
-      "Bash", "BashOutput", "KillBash",
-      "Edit", "Write", "NotebookEdit",
-      "Read", "Glob", "Grep",
-      "WebFetch", "WebSearch",
-      "Task"
-    ],
-    "allow": ["mcp__drun__*"]
-  }
-}"#;
+use serde_json::{Map, Value, json};
+
+const REQUIRED_DENY: &[&str] = &[
+    "Bash",
+    "BashOutput",
+    "KillBash",
+    "Edit",
+    "Write",
+    "NotebookEdit",
+    "Read",
+    "Glob",
+    "Grep",
+    "WebFetch",
+    "WebSearch",
+    "Task",
+];
+const REQUIRED_ALLOW: &[&str] = &["mcp__drun__*"];
+
+fn rendered_default_settings() -> String {
+    let value = json!({
+        "permissions": {
+            "deny": REQUIRED_DENY,
+            "allow": REQUIRED_ALLOW,
+        }
+    });
+    format!(
+        "{}\n",
+        serde_json::to_string_pretty(&value).expect("static json value")
+    )
+}
 
 pub fn run() {
     let cwd = std::env::current_dir().expect("cannot read current directory");
@@ -37,13 +55,76 @@ fn write_settings(project_dir: &Path) {
 
     std::fs::create_dir_all(&settings_dir).expect("cannot create .claude/");
 
-    if settings_file.exists() {
-        eprintln!("drun: .claude/settings.json already exists, skipping");
+    if !settings_file.exists() {
+        std::fs::write(&settings_file, rendered_default_settings())
+            .expect("cannot write settings.json");
+        eprintln!("drun: created .claude/settings.json");
         return;
     }
 
-    std::fs::write(&settings_file, CLAUDE_SETTINGS).expect("cannot write settings.json");
-    eprintln!("drun: created .claude/settings.json");
+    let existing =
+        std::fs::read_to_string(&settings_file).expect("cannot read existing settings.json");
+    match merge_settings(&existing) {
+        Ok(Some(merged)) => {
+            std::fs::write(&settings_file, merged).expect("cannot write settings.json");
+            eprintln!(
+                "drun: updated .claude/settings.json — merged in drun's required permissions \
+                 (native tools are now blocked for this project)"
+            );
+        }
+        Ok(None) => {
+            eprintln!("drun: .claude/settings.json already configured for drun, skipping");
+        }
+        Err(e) => {
+            eprintln!(
+                "drun: could not merge into existing .claude/settings.json ({e}) — leaving it \
+                 untouched. Native tools are NOT blocked until you add this yourself:\n{}",
+                rendered_default_settings()
+            );
+        }
+    }
+}
+
+fn merge_settings(existing: &str) -> Result<Option<String>, String> {
+    let mut value: Value = serde_json::from_str(existing).map_err(|e| e.to_string())?;
+    let Some(root) = value.as_object_mut() else {
+        return Err("root is not a JSON object".to_string());
+    };
+
+    let permissions = root.entry("permissions").or_insert_with(|| json!({}));
+    let Some(permissions) = permissions.as_object_mut() else {
+        return Err("'permissions' is not an object".to_string());
+    };
+
+    let deny_changed = merge_string_array(permissions, "deny", REQUIRED_DENY)?;
+    let allow_changed = merge_string_array(permissions, "allow", REQUIRED_ALLOW)?;
+
+    if !deny_changed && !allow_changed {
+        return Ok(None);
+    }
+
+    let rendered = serde_json::to_string_pretty(&value).map_err(|e| e.to_string())?;
+    Ok(Some(format!("{rendered}\n")))
+}
+
+fn merge_string_array(
+    obj: &mut Map<String, Value>,
+    key: &str,
+    required: &[&str],
+) -> Result<bool, String> {
+    let array = obj.entry(key).or_insert_with(|| json!([]));
+    let array = array
+        .as_array_mut()
+        .ok_or_else(|| format!("'{key}' is not an array"))?;
+
+    let mut changed = false;
+    for &item in required {
+        if !array.iter().any(|v| v.as_str() == Some(item)) {
+            array.push(Value::String(item.to_string()));
+            changed = true;
+        }
+    }
+    Ok(changed)
 }
 
 fn write_claude_md(project_dir: &Path) {
@@ -154,7 +235,7 @@ mod tests {
     }
 
     #[test]
-    fn write_settings_does_not_overwrite_an_existing_file() {
+    fn write_settings_leaves_unparseable_existing_file_untouched() {
         let dir = tempfile::tempdir().unwrap();
         let settings_dir = dir.path().join(".claude");
         std::fs::create_dir_all(&settings_dir).unwrap();
@@ -167,6 +248,79 @@ mod tests {
             std::fs::read_to_string(&settings_path).unwrap(),
             "custom content"
         );
+    }
+
+    #[test]
+    fn write_settings_merges_into_an_existing_file_with_unrelated_content() {
+        let dir = tempfile::tempdir().unwrap();
+        let settings_dir = dir.path().join(".claude");
+        std::fs::create_dir_all(&settings_dir).unwrap();
+        let settings_path = settings_dir.join("settings.json");
+        std::fs::write(&settings_path, r#"{"env": {"FOO": "bar"}}"#).unwrap();
+
+        write_settings(dir.path());
+
+        let content = std::fs::read_to_string(&settings_path).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&content).unwrap();
+        assert_eq!(value["env"]["FOO"], "bar");
+        assert_eq!(value["permissions"]["allow"][0], "mcp__drun__*");
+        assert!(
+            value["permissions"]["deny"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|v| v == "Bash")
+        );
+    }
+
+    #[test]
+    fn write_settings_merges_missing_entries_into_partial_permissions() {
+        let dir = tempfile::tempdir().unwrap();
+        let settings_dir = dir.path().join(".claude");
+        std::fs::create_dir_all(&settings_dir).unwrap();
+        let settings_path = settings_dir.join("settings.json");
+        std::fs::write(
+            &settings_path,
+            r#"{"permissions": {"deny": ["Bash"], "allow": ["SomeOtherTool"]}}"#,
+        )
+        .unwrap();
+
+        write_settings(dir.path());
+
+        let content = std::fs::read_to_string(&settings_path).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&content).unwrap();
+        let deny = value["permissions"]["deny"].as_array().unwrap();
+        let allow = value["permissions"]["allow"].as_array().unwrap();
+        for required in REQUIRED_DENY {
+            assert!(deny.iter().any(|v| v == required), "missing {required}");
+        }
+        assert!(allow.iter().any(|v| v == "SomeOtherTool"));
+        assert!(allow.iter().any(|v| v == "mcp__drun__*"));
+    }
+
+    #[test]
+    fn write_settings_is_idempotent_once_fully_merged() {
+        let dir = tempfile::tempdir().unwrap();
+        write_settings(dir.path());
+        let settings_path = dir.path().join(".claude/settings.json");
+        let first = std::fs::read_to_string(&settings_path).unwrap();
+
+        write_settings(dir.path());
+
+        let second = std::fs::read_to_string(&settings_path).unwrap();
+        assert_eq!(first, second);
+    }
+
+    #[test]
+    fn merge_settings_errors_when_permissions_is_not_an_object() {
+        let err = merge_settings(r#"{"permissions": "oops"}"#).unwrap_err();
+        assert!(err.contains("'permissions'"));
+    }
+
+    #[test]
+    fn merge_settings_errors_when_root_is_not_an_object() {
+        let err = merge_settings(r#"["not", "an", "object"]"#).unwrap_err();
+        assert!(err.contains("root"));
     }
 
     #[test]
