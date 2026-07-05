@@ -8,12 +8,11 @@ use crate::state::{
     CheckpointSummary, SessionState, SessionSummary, SessionTreeNode, SnapshotEntry,
 };
 use crate::tools::{
-    CheckpointReadStdstreamsTool, DrunTools, GetSessionStateTool, SessionBashTool,
-    SessionCheckpointDropTool, SessionCheckpointLabelTool, SessionCheckpointSquashTool,
-    SessionCloseTool, SessionCommitTool, SessionDeleteFileTool, SessionDiffTool, SessionExportTool,
-    SessionFetchTool, SessionForkTool, SessionGetEnvTool, SessionHistoryTool, SessionLabelTool,
-    SessionMergeTool, SessionMountTool, SessionReadFileTool, SessionRestoreTool,
-    SessionRollbackTool, SessionSnapshotTool, SessionWriteFileTool,
+    CheckpointReadStdstreams, DrunTools, GetSessionState, SessionBash, SessionCheckpointDrop,
+    SessionCheckpointLabel, SessionCheckpointSquash, SessionClose, SessionCommit,
+    SessionDeleteFile, SessionDiff, SessionExport, SessionFetch, SessionFork, SessionGetEnv,
+    SessionHistory, SessionLabel, SessionMerge, SessionMount, SessionReadFile, SessionRestore,
+    SessionRollback, SessionSnapshotTool, SessionWriteFile,
 };
 use async_trait::async_trait;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
@@ -55,34 +54,34 @@ impl ServerHandler for DrunHandler {
         let progress_token = params.meta.as_ref().and_then(|m| m.progress_token.clone());
         let tool = DrunTools::try_from(params)?;
         match tool {
-            DrunTools::CreateSessionTool(_) => self.handle_create_session(),
-            DrunTools::SessionForkTool(t) => self.handle_session_fork(t),
-            DrunTools::SessionListTool(_) => self.handle_session_list(),
-            DrunTools::SessionCloseTool(t) => self.handle_session_close(t),
-            DrunTools::SessionHistoryTool(t) => self.handle_session_history(t),
-            DrunTools::GetSessionStateTool(t) => self.handle_get_session_state(t),
-            DrunTools::SessionBashTool(t) => self.handle_session_bash(t, runtime, progress_token),
-            DrunTools::SessionRollbackTool(t) => self.handle_session_rollback(t),
-            DrunTools::SessionReadFileTool(t) => self.handle_session_read_file(t),
-            DrunTools::SessionWriteFileTool(t) => self.handle_session_write_file(t),
-            DrunTools::SessionDeleteFileTool(t) => self.handle_session_delete_file(t),
-            DrunTools::SessionMountTool(t) => self.handle_session_mount(t),
-            DrunTools::SessionDiffTool(t) => self.handle_session_diff(t),
-            DrunTools::SessionCommitTool(t) => self.handle_session_commit(t),
-            DrunTools::SessionTreeTool(_) => self.handle_session_tree(),
-            DrunTools::ListSnapshotsTool(_) => self.handle_list_snapshots(),
-            DrunTools::SessionExportTool(t) => self.handle_session_export(t),
-            DrunTools::SessionFetchTool(t) => self.handle_session_fetch(t).await,
-            DrunTools::GetFetchAllowlistTool(_) => self.handle_get_fetch_allowlist(),
+            DrunTools::CreateSession(_) => self.handle_create_session(),
+            DrunTools::SessionFork(t) => self.handle_session_fork(t),
+            DrunTools::SessionList(_) => self.handle_session_list(),
+            DrunTools::SessionClose(t) => self.handle_session_close(t),
+            DrunTools::SessionHistory(t) => self.handle_session_history(t),
+            DrunTools::GetSessionState(t) => self.handle_get_session_state(t),
+            DrunTools::SessionBash(t) => self.handle_session_bash(t, runtime, progress_token),
+            DrunTools::SessionRollback(t) => self.handle_session_rollback(t),
+            DrunTools::SessionReadFile(t) => self.handle_session_read_file(t),
+            DrunTools::SessionWriteFile(t) => self.handle_session_write_file(t),
+            DrunTools::SessionDeleteFile(t) => self.handle_session_delete_file(t),
+            DrunTools::SessionMount(t) => self.handle_session_mount(t),
+            DrunTools::SessionDiff(t) => self.handle_session_diff(t),
+            DrunTools::SessionCommit(t) => self.handle_session_commit(t),
+            DrunTools::SessionTree(_) => self.handle_session_tree(),
+            DrunTools::ListSnapshots(_) => self.handle_list_snapshots(),
+            DrunTools::SessionExport(t) => self.handle_session_export(t),
+            DrunTools::SessionFetch(t) => self.handle_session_fetch(t).await,
+            DrunTools::GetFetchAllowlist(_) => self.handle_get_fetch_allowlist(),
             DrunTools::SessionSnapshotTool(t) => self.handle_session_snapshot(t),
-            DrunTools::SessionGetEnvTool(t) => self.handle_session_get_env(t),
-            DrunTools::SessionRestoreTool(t) => self.handle_session_restore(t),
-            DrunTools::SessionLabelTool(t) => self.handle_session_label(t),
-            DrunTools::SessionCheckpointLabelTool(t) => self.handle_session_checkpoint_label(t),
-            DrunTools::SessionCheckpointSquashTool(t) => self.handle_session_checkpoint_squash(t),
-            DrunTools::SessionMergeTool(t) => self.handle_session_merge(t),
-            DrunTools::SessionCheckpointDropTool(t) => self.handle_session_checkpoint_drop(t),
-            DrunTools::CheckpointReadStdstreamsTool(t) => self.handle_checkpoint_read_stdstreams(t),
+            DrunTools::SessionGetEnv(t) => self.handle_session_get_env(t),
+            DrunTools::SessionRestore(t) => self.handle_session_restore(t),
+            DrunTools::SessionLabel(t) => self.handle_session_label(t),
+            DrunTools::SessionCheckpointLabel(t) => self.handle_session_checkpoint_label(t),
+            DrunTools::SessionCheckpointSquash(t) => self.handle_session_checkpoint_squash(t),
+            DrunTools::SessionMerge(t) => self.handle_session_merge(t),
+            DrunTools::SessionCheckpointDrop(t) => self.handle_session_checkpoint_drop(t),
+            DrunTools::CheckpointReadStdstreams(t) => self.handle_checkpoint_read_stdstreams(t),
         }
     }
 }
@@ -105,7 +104,7 @@ impl DrunHandler {
         Ok(json(&state))
     }
 
-    fn handle_session_fork(&self, t: SessionForkTool) -> Result<CallToolResult, CallToolError> {
+    fn handle_session_fork(&self, t: SessionFork) -> Result<CallToolResult, CallToolError> {
         let source_arc = self
             .sessions
             .lock()
@@ -135,7 +134,7 @@ impl DrunHandler {
         Ok(json(&SessionSummary::all(&sessions)))
     }
 
-    fn handle_session_close(&self, t: SessionCloseTool) -> Result<CallToolResult, CallToolError> {
+    fn handle_session_close(&self, t: SessionClose) -> Result<CallToolResult, CallToolError> {
         let session = self
             .sessions
             .lock()
@@ -155,10 +154,7 @@ impl DrunHandler {
         Ok(text(format!("closed {}", t.session_id)))
     }
 
-    fn handle_session_history(
-        &self,
-        t: SessionHistoryTool,
-    ) -> Result<CallToolResult, CallToolError> {
+    fn handle_session_history(&self, t: SessionHistory) -> Result<CallToolResult, CallToolError> {
         self.with_session(&t.session_id, |session| {
             Ok(json(&CheckpointSummary::history(session)))
         })
@@ -166,7 +162,7 @@ impl DrunHandler {
 
     fn handle_get_session_state(
         &self,
-        t: GetSessionStateTool,
+        t: GetSessionState,
     ) -> Result<CallToolResult, CallToolError> {
         self.with_session(&t.session_id, |session| {
             Ok(json(&SessionState::compute(
@@ -180,7 +176,7 @@ impl DrunHandler {
 
     fn handle_session_bash(
         &self,
-        t: SessionBashTool,
+        t: SessionBash,
         runtime: Arc<dyn McpServer>,
         progress_token: Option<ProgressToken>,
     ) -> Result<CallToolResult, CallToolError> {
@@ -201,10 +197,7 @@ impl DrunHandler {
         })
     }
 
-    fn handle_session_rollback(
-        &self,
-        t: SessionRollbackTool,
-    ) -> Result<CallToolResult, CallToolError> {
+    fn handle_session_rollback(&self, t: SessionRollback) -> Result<CallToolResult, CallToolError> {
         self.with_session_mut(&t.session_id, |session| {
             let checkpoint_id = session
                 .resolve_checkpoint(t.checkpoint_id, t.checkpoint_label.as_deref())
@@ -227,7 +220,7 @@ impl DrunHandler {
 
     fn handle_session_read_file(
         &self,
-        t: SessionReadFileTool,
+        t: SessionReadFile,
     ) -> Result<CallToolResult, CallToolError> {
         self.with_session(&t.session_id, |session| {
             let all_bytes = session
@@ -265,7 +258,7 @@ impl DrunHandler {
 
     fn handle_session_write_file(
         &self,
-        t: SessionWriteFileTool,
+        t: SessionWriteFile,
     ) -> Result<CallToolResult, CallToolError> {
         self.with_session_mut(&t.session_id, |session| {
             let bytes = if t.is_base64.unwrap_or(false) {
@@ -290,7 +283,7 @@ impl DrunHandler {
 
     fn handle_session_delete_file(
         &self,
-        t: SessionDeleteFileTool,
+        t: SessionDeleteFile,
     ) -> Result<CallToolResult, CallToolError> {
         self.with_session_mut(&t.session_id, |session| {
             let previous_files = session.current().files.clone();
@@ -306,7 +299,7 @@ impl DrunHandler {
         })
     }
 
-    fn handle_session_mount(&self, t: SessionMountTool) -> Result<CallToolResult, CallToolError> {
+    fn handle_session_mount(&self, t: SessionMount) -> Result<CallToolResult, CallToolError> {
         self.with_session_mut(&t.session_id, |session| {
             let previous_files = session.current().files.clone();
             session
@@ -321,7 +314,7 @@ impl DrunHandler {
         })
     }
 
-    fn handle_session_diff(&self, t: SessionDiffTool) -> Result<CallToolResult, CallToolError> {
+    fn handle_session_diff(&self, t: SessionDiff) -> Result<CallToolResult, CallToolError> {
         self.with_session(&t.session_id, |session| {
             let from = session
                 .resolve_checkpoint(t.from_checkpoint_id, t.from_checkpoint_label.as_deref())
@@ -342,7 +335,7 @@ impl DrunHandler {
         })
     }
 
-    fn handle_session_commit(&self, t: SessionCommitTool) -> Result<CallToolResult, CallToolError> {
+    fn handle_session_commit(&self, t: SessionCommit) -> Result<CallToolResult, CallToolError> {
         self.with_session(&t.session_id, |session| {
             let paths = session
                 .commit(t.keys)
@@ -369,7 +362,7 @@ impl DrunHandler {
         Ok(json(&SnapshotEntry::catalog(&self.config.snapshots_dir)))
     }
 
-    fn handle_session_export(&self, t: SessionExportTool) -> Result<CallToolResult, CallToolError> {
+    fn handle_session_export(&self, t: SessionExport) -> Result<CallToolResult, CallToolError> {
         let export_root = &self.config.export_root;
         let output_dir = match &t.output_dir {
             Some(dir) => {
@@ -410,10 +403,7 @@ impl DrunHandler {
         })
     }
 
-    async fn handle_session_fetch(
-        &self,
-        t: SessionFetchTool,
-    ) -> Result<CallToolResult, CallToolError> {
+    async fn handle_session_fetch(&self, t: SessionFetch) -> Result<CallToolResult, CallToolError> {
         if !self.sessions.lock().unwrap().contains_key(&t.session_id) {
             return Err(DrunError::session_not_found(&t.session_id).into_tool_err());
         }
@@ -549,10 +539,7 @@ impl DrunHandler {
         })
     }
 
-    fn handle_session_get_env(
-        &self,
-        t: SessionGetEnvTool,
-    ) -> Result<CallToolResult, CallToolError> {
+    fn handle_session_get_env(&self, t: SessionGetEnv) -> Result<CallToolResult, CallToolError> {
         if !self.sessions.lock().unwrap().contains_key(&t.session_id) {
             return Err(DrunError::session_not_found(&t.session_id).into_tool_err());
         }
@@ -565,10 +552,7 @@ impl DrunHandler {
         ))
     }
 
-    fn handle_session_restore(
-        &self,
-        t: SessionRestoreTool,
-    ) -> Result<CallToolResult, CallToolError> {
+    fn handle_session_restore(&self, t: SessionRestore) -> Result<CallToolResult, CallToolError> {
         let bytes = std::fs::read(&t.path).map_err(|e| DrunError::internal(e).into_tool_err())?;
         let snapshot =
             SessionSnapshot::decode(&bytes).map_err(|e| DrunError::internal(e).into_tool_err())?;
@@ -583,7 +567,7 @@ impl DrunHandler {
         Ok(json(&state))
     }
 
-    fn handle_session_label(&self, t: SessionLabelTool) -> Result<CallToolResult, CallToolError> {
+    fn handle_session_label(&self, t: SessionLabel) -> Result<CallToolResult, CallToolError> {
         self.with_session_mut(&t.session_id, |session| {
             session.set_label(t.label);
             Ok(json(&SessionState::compute(
@@ -597,7 +581,7 @@ impl DrunHandler {
 
     fn handle_session_checkpoint_label(
         &self,
-        t: SessionCheckpointLabelTool,
+        t: SessionCheckpointLabel,
     ) -> Result<CallToolResult, CallToolError> {
         self.with_session_mut(&t.session_id, |session| {
             let checkpoint_id = t
@@ -613,7 +597,7 @@ impl DrunHandler {
 
     fn handle_session_checkpoint_squash(
         &self,
-        t: SessionCheckpointSquashTool,
+        t: SessionCheckpointSquash,
     ) -> Result<CallToolResult, CallToolError> {
         self.with_session_mut(&t.session_id, |session| {
             session
@@ -627,7 +611,7 @@ impl DrunHandler {
         })
     }
 
-    fn handle_session_merge(&self, t: SessionMergeTool) -> Result<CallToolResult, CallToolError> {
+    fn handle_session_merge(&self, t: SessionMerge) -> Result<CallToolResult, CallToolError> {
         if t.session_id == t.source_session_id {
             return Err(DrunError::internal("cannot merge a session with itself").into_tool_err());
         }
@@ -657,7 +641,7 @@ impl DrunHandler {
 
     fn handle_session_checkpoint_drop(
         &self,
-        t: SessionCheckpointDropTool,
+        t: SessionCheckpointDrop,
     ) -> Result<CallToolResult, CallToolError> {
         self.with_session_mut(&t.session_id, |session| {
             session
@@ -669,7 +653,7 @@ impl DrunHandler {
 
     fn handle_checkpoint_read_stdstreams(
         &self,
-        t: CheckpointReadStdstreamsTool,
+        t: CheckpointReadStdstreams,
     ) -> Result<CallToolResult, CallToolError> {
         self.with_session(&t.session_id, |session| {
             let checkpoint_id = t
@@ -902,7 +886,7 @@ mod tests {
     fn session_fork_returns_session_not_found_for_missing_source() {
         let handler = DrunHandler::new(Config::default());
         let err = handler
-            .handle_session_fork(SessionForkTool {
+            .handle_session_fork(SessionFork {
                 session_id: "missing".to_string(),
                 checkpoint_id: None,
                 checkpoint_label: None,
@@ -927,7 +911,7 @@ mod tests {
         }
 
         let result = handler
-            .handle_session_fork(SessionForkTool {
+            .handle_session_fork(SessionFork {
                 session_id: "source".to_string(),
                 checkpoint_id: None,
                 checkpoint_label: None,
@@ -943,7 +927,7 @@ mod tests {
         let handler = DrunHandler::new(Config::default());
         insert_session(&handler, "s1");
         handler
-            .handle_session_close(SessionCloseTool {
+            .handle_session_close(SessionClose {
                 session_id: "s1".to_string(),
             })
             .unwrap();
@@ -954,7 +938,7 @@ mod tests {
     fn session_close_returns_session_not_found_for_missing_id() {
         let handler = DrunHandler::new(Config::default());
         let err = handler
-            .handle_session_close(SessionCloseTool {
+            .handle_session_close(SessionClose {
                 session_id: "missing".to_string(),
             })
             .unwrap_err();
@@ -973,7 +957,7 @@ mod tests {
         insert_session(&handler, "s1");
 
         handler
-            .handle_session_close(SessionCloseTool {
+            .handle_session_close(SessionClose {
                 session_id: "s1".to_string(),
             })
             .unwrap();
@@ -986,7 +970,7 @@ mod tests {
         let handler = DrunHandler::new(Config::default());
         insert_session(&handler, "s1");
         let err = handler
-            .handle_session_rollback(SessionRollbackTool {
+            .handle_session_rollback(SessionRollback {
                 session_id: "s1".to_string(),
                 checkpoint_id: None,
                 checkpoint_label: None,
@@ -1014,7 +998,7 @@ mod tests {
         }
 
         let result = handler
-            .handle_session_rollback(SessionRollbackTool {
+            .handle_session_rollback(SessionRollback {
                 session_id: "s1".to_string(),
                 checkpoint_id: Some(0),
                 checkpoint_label: None,
@@ -1040,7 +1024,7 @@ mod tests {
         }
 
         let result = handler
-            .handle_session_read_file(SessionReadFileTool {
+            .handle_session_read_file(SessionReadFile {
                 session_id: "s1".to_string(),
                 path: "a.txt".to_string(),
                 offset: None,
@@ -1066,7 +1050,7 @@ mod tests {
         }
 
         let result = handler
-            .handle_session_read_file(SessionReadFileTool {
+            .handle_session_read_file(SessionReadFile {
                 session_id: "s1".to_string(),
                 path: "a.txt".to_string(),
                 offset: Some(6),
@@ -1096,7 +1080,7 @@ mod tests {
         }
 
         let result = handler
-            .handle_session_read_file(SessionReadFileTool {
+            .handle_session_read_file(SessionReadFile {
                 session_id: "s1".to_string(),
                 path: "bin.dat".to_string(),
                 offset: Some(0),
@@ -1112,7 +1096,7 @@ mod tests {
         let handler = DrunHandler::new(Config::default());
         insert_session(&handler, "s1");
         let err = handler
-            .handle_session_read_file(SessionReadFileTool {
+            .handle_session_read_file(SessionReadFile {
                 session_id: "s1".to_string(),
                 path: "missing.txt".to_string(),
                 offset: None,
@@ -1129,7 +1113,7 @@ mod tests {
         let encoded = BASE64.encode(b"hello");
 
         handler
-            .handle_session_write_file(SessionWriteFileTool {
+            .handle_session_write_file(SessionWriteFile {
                 session_id: "s1".to_string(),
                 path: "a.txt".to_string(),
                 content: encoded,
@@ -1147,7 +1131,7 @@ mod tests {
         let handler = DrunHandler::new(Config::default());
         insert_session(&handler, "s1");
         let err = handler
-            .handle_session_write_file(SessionWriteFileTool {
+            .handle_session_write_file(SessionWriteFile {
                 session_id: "s1".to_string(),
                 path: "a.txt".to_string(),
                 content: "not valid base64!!".to_string(),
@@ -1173,7 +1157,7 @@ mod tests {
         }
 
         let result = handler
-            .handle_session_diff(SessionDiffTool {
+            .handle_session_diff(SessionDiff {
                 session_id: "s1".to_string(),
                 from_checkpoint_id: None,
                 from_checkpoint_label: None,
@@ -1190,7 +1174,7 @@ mod tests {
         insert_session(&handler, "s1");
 
         let result = handler
-            .handle_session_diff(SessionDiffTool {
+            .handle_session_diff(SessionDiff {
                 session_id: "s1".to_string(),
                 from_checkpoint_id: Some(0),
                 from_checkpoint_label: None,
@@ -1205,7 +1189,7 @@ mod tests {
     fn session_export_rejects_a_path_containing_dotdot() {
         let handler = DrunHandler::new(Config::default());
         let err = handler
-            .handle_session_export(SessionExportTool {
+            .handle_session_export(SessionExport {
                 session_id: "s1".to_string(),
                 output_dir: Some("../escape".to_string()),
                 keys: None,
@@ -1222,7 +1206,7 @@ mod tests {
         };
         let handler = DrunHandler::new(config);
         let err = handler
-            .handle_session_export(SessionExportTool {
+            .handle_session_export(SessionExport {
                 session_id: "s1".to_string(),
                 output_dir: Some("/tmp/somewhere-else".to_string()),
                 keys: None,
@@ -1252,7 +1236,7 @@ mod tests {
         }
 
         handler
-            .handle_session_export(SessionExportTool {
+            .handle_session_export(SessionExport {
                 session_id: "s1".to_string(),
                 output_dir: Some(dir.path().join("sub").to_string_lossy().into_owned()),
                 keys: Some(vec!["out.txt".to_string()]),
@@ -1298,7 +1282,7 @@ mod tests {
         let handler = DrunHandler::new(Config::default());
         insert_session(&handler, "s1");
         let err = handler
-            .handle_session_get_env(SessionGetEnvTool {
+            .handle_session_get_env(SessionGetEnv {
                 session_id: "s1".to_string(),
                 name: "SECRET".to_string(),
             })
@@ -1316,7 +1300,7 @@ mod tests {
         insert_session(&handler, "s1");
 
         let result = handler
-            .handle_session_get_env(SessionGetEnvTool {
+            .handle_session_get_env(SessionGetEnv {
                 session_id: "s1".to_string(),
                 name: "DRUN_TEST_VAR_NOT_SET".to_string(),
             })
@@ -1341,7 +1325,7 @@ mod tests {
         }
 
         let result = handler
-            .handle_session_checkpoint_label(SessionCheckpointLabelTool {
+            .handle_session_checkpoint_label(SessionCheckpointLabel {
                 session_id: "s1".to_string(),
                 checkpoint_id: None,
                 label: "milestone".to_string(),
@@ -1361,7 +1345,7 @@ mod tests {
     fn session_merge_rejects_merging_a_session_with_itself() {
         let handler = DrunHandler::new(Config::default());
         let err = handler
-            .handle_session_merge(SessionMergeTool {
+            .handle_session_merge(SessionMerge {
                 session_id: "s1".to_string(),
                 source_session_id: "s1".to_string(),
                 source_checkpoint_id: None,
@@ -1380,7 +1364,7 @@ mod tests {
         let handler = DrunHandler::new(Config::default());
         insert_session(&handler, "target");
         let err = handler
-            .handle_session_merge(SessionMergeTool {
+            .handle_session_merge(SessionMerge {
                 session_id: "target".to_string(),
                 source_session_id: "missing-source".to_string(),
                 source_checkpoint_id: None,
@@ -1408,7 +1392,7 @@ mod tests {
         }
 
         let result = handler
-            .handle_session_merge(SessionMergeTool {
+            .handle_session_merge(SessionMerge {
                 session_id: "target".to_string(),
                 source_session_id: "source".to_string(),
                 source_checkpoint_id: None,
@@ -1425,7 +1409,7 @@ mod tests {
         let handler = DrunHandler::new(Config::default());
         insert_session(&handler, "s1");
         let err = handler
-            .handle_checkpoint_read_stdstreams(CheckpointReadStdstreamsTool {
+            .handle_checkpoint_read_stdstreams(CheckpointReadStdstreams {
                 session_id: "s1".to_string(),
                 checkpoint_id: None,
                 stream: Some("stdxyz".to_string()),
@@ -1441,7 +1425,7 @@ mod tests {
         let handler = DrunHandler::new(Config::default());
         insert_session(&handler, "s1");
         let result = handler
-            .handle_checkpoint_read_stdstreams(CheckpointReadStdstreamsTool {
+            .handle_checkpoint_read_stdstreams(CheckpointReadStdstreams {
                 session_id: "s1".to_string(),
                 checkpoint_id: None,
                 stream: None,
@@ -1460,7 +1444,7 @@ mod tests {
         let handler = DrunHandler::new(Config::default());
         insert_session(&handler, "s1");
         let err = handler
-            .handle_checkpoint_read_stdstreams(CheckpointReadStdstreamsTool {
+            .handle_checkpoint_read_stdstreams(CheckpointReadStdstreams {
                 session_id: "s1".to_string(),
                 checkpoint_id: Some(99),
                 stream: None,
@@ -1475,7 +1459,7 @@ mod tests {
     async fn session_fetch_returns_session_not_found_for_missing_session() {
         let handler = DrunHandler::new(Config::default());
         let err = handler
-            .handle_session_fetch(SessionFetchTool {
+            .handle_session_fetch(SessionFetch {
                 session_id: "missing".to_string(),
                 url: "https://pypi.org/simple/".to_string(),
                 method: None,
@@ -1493,7 +1477,7 @@ mod tests {
         let handler = DrunHandler::new(Config::default());
         insert_session(&handler, "s1");
         let err = handler
-            .handle_session_fetch(SessionFetchTool {
+            .handle_session_fetch(SessionFetch {
                 session_id: "s1".to_string(),
                 url: "https://evil.example.com/data".to_string(),
                 method: None,
@@ -1530,7 +1514,7 @@ mod tests {
         let handler = DrunHandler::new(fetch_test_config(&mock_server.uri()));
         insert_session(&handler, "s1");
         let result = handler
-            .handle_session_fetch(SessionFetchTool {
+            .handle_session_fetch(SessionFetch {
                 session_id: "s1".to_string(),
                 url: format!("{}/data.json", mock_server.uri()),
                 method: None,
@@ -1567,7 +1551,7 @@ mod tests {
         let handler = DrunHandler::new(fetch_test_config(&mock_server.uri()));
         insert_session(&handler, "s1");
         let result = handler
-            .handle_session_fetch(SessionFetchTool {
+            .handle_session_fetch(SessionFetch {
                 session_id: "s1".to_string(),
                 url: format!("{}/submit", mock_server.uri()),
                 method: Some("post".to_string()),
@@ -1605,7 +1589,7 @@ mod tests {
         let handler = DrunHandler::new(fetch_test_config(&mock_server.uri()));
         insert_session(&handler, "s1");
         let err = handler
-            .handle_session_fetch(SessionFetchTool {
+            .handle_session_fetch(SessionFetch {
                 session_id: "s1".to_string(),
                 url: mock_server.uri(),
                 method: Some("IN VALID".to_string()),
@@ -1634,7 +1618,7 @@ mod tests {
         let handler = DrunHandler::new(config);
         insert_session(&handler, "s1");
         let err = handler
-            .handle_session_fetch(SessionFetchTool {
+            .handle_session_fetch(SessionFetch {
                 session_id: "s1".to_string(),
                 url: mock_server.uri(),
                 method: None,
@@ -1662,7 +1646,7 @@ mod tests {
         let handler = DrunHandler::new(fetch_test_config(&mock_server.uri()));
         insert_session(&handler, "s1");
         let result = handler
-            .handle_session_fetch(SessionFetchTool {
+            .handle_session_fetch(SessionFetch {
                 session_id: "s1".to_string(),
                 url: mock_server.uri(),
                 method: None,
@@ -1693,7 +1677,7 @@ mod tests {
         let handler = DrunHandler::new(Config::default());
         insert_session(&handler, "s1");
         let result = handler
-            .handle_session_history(SessionHistoryTool {
+            .handle_session_history(SessionHistory {
                 session_id: "s1".to_string(),
             })
             .unwrap();
@@ -1704,7 +1688,7 @@ mod tests {
     fn get_session_state_returns_session_not_found_for_missing_session() {
         let handler = DrunHandler::new(Config::default());
         let err = handler
-            .handle_get_session_state(GetSessionStateTool {
+            .handle_get_session_state(GetSessionState {
                 session_id: "missing".to_string(),
             })
             .unwrap_err();
@@ -1716,7 +1700,7 @@ mod tests {
         let handler = DrunHandler::new(Config::default());
         insert_session(&handler, "s1");
         let result = handler
-            .handle_get_session_state(GetSessionStateTool {
+            .handle_get_session_state(GetSessionState {
                 session_id: "s1".to_string(),
             })
             .unwrap();
@@ -1734,7 +1718,7 @@ mod tests {
         }
 
         let result = handler
-            .handle_session_delete_file(SessionDeleteFileTool {
+            .handle_session_delete_file(SessionDeleteFile {
                 session_id: "s1".to_string(),
                 path: "a.txt".to_string(),
             })
@@ -1747,7 +1731,7 @@ mod tests {
         let handler = DrunHandler::new(Config::default());
         insert_session(&handler, "s1");
         let err = handler
-            .handle_session_delete_file(SessionDeleteFileTool {
+            .handle_session_delete_file(SessionDeleteFile {
                 session_id: "s1".to_string(),
                 path: "missing.txt".to_string(),
             })
@@ -1763,7 +1747,7 @@ mod tests {
         let handler = DrunHandler::new(Config::default());
         insert_session(&handler, "s1");
         let result = handler
-            .handle_session_mount(SessionMountTool {
+            .handle_session_mount(SessionMount {
                 session_id: "s1".to_string(),
                 path: source.path().to_string_lossy().into_owned(),
             })
@@ -1787,7 +1771,7 @@ mod tests {
         }
 
         let result = handler
-            .handle_session_commit(SessionCommitTool {
+            .handle_session_commit(SessionCommit {
                 session_id: "s1".to_string(),
                 keys: None,
             })
@@ -1879,7 +1863,7 @@ mod tests {
         }
 
         handler
-            .handle_session_export(SessionExportTool {
+            .handle_session_export(SessionExport {
                 session_id: "s1".to_string(),
                 output_dir: None,
                 keys: Some(vec!["out.txt".to_string()]),
@@ -1906,7 +1890,7 @@ mod tests {
         }
 
         let result = handler
-            .handle_session_restore(SessionRestoreTool {
+            .handle_session_restore(SessionRestore {
                 path: snapshot_path.to_string_lossy().into_owned(),
             })
             .unwrap();
@@ -1918,7 +1902,7 @@ mod tests {
     fn session_restore_returns_an_error_for_a_missing_file() {
         let handler = DrunHandler::new(Config::default());
         let err = handler
-            .handle_session_restore(SessionRestoreTool {
+            .handle_session_restore(SessionRestore {
                 path: "/nonexistent/path.drun".to_string(),
             })
             .unwrap_err();
@@ -1930,7 +1914,7 @@ mod tests {
         let handler = DrunHandler::new(Config::default());
         insert_session(&handler, "s1");
         let result = handler
-            .handle_session_label(SessionLabelTool {
+            .handle_session_label(SessionLabel {
                 session_id: "s1".to_string(),
                 label: "milestone".to_string(),
             })
@@ -1954,7 +1938,7 @@ mod tests {
         }
 
         let result = handler
-            .handle_session_checkpoint_squash(SessionCheckpointSquashTool {
+            .handle_session_checkpoint_squash(SessionCheckpointSquash {
                 session_id: "s1".to_string(),
                 from_checkpoint_id: 1,
                 to_checkpoint_id: 2,
@@ -1976,7 +1960,7 @@ mod tests {
         }
 
         let result = handler
-            .handle_session_checkpoint_drop(SessionCheckpointDropTool {
+            .handle_session_checkpoint_drop(SessionCheckpointDrop {
                 session_id: "s1".to_string(),
                 from_checkpoint_id: 1,
                 to_checkpoint_id: 1,

@@ -21,7 +21,7 @@ pub struct HttpHeader {
     read_only_hint = false
 )]
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct CreateSessionTool {}
+pub struct CreateSession {}
 
 #[mcp_tool(
     name = "session_bash",
@@ -37,7 +37,7 @@ pub struct CreateSessionTool {}
     read_only_hint = false
 )]
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct SessionBashTool {
+pub struct SessionBash {
     /// Session ID from create_session.
     pub session_id: String,
     /// Shell command to run (passed to sh -c).
@@ -52,7 +52,7 @@ pub struct SessionBashTool {
     read_only_hint = false
 )]
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct SessionRollbackTool {
+pub struct SessionRollback {
     /// Session ID from create_session.
     pub session_id: String,
     /// Checkpoint ID to restore. Provide this or checkpoint_label.
@@ -73,7 +73,7 @@ pub struct SessionRollbackTool {
     read_only_hint = true
 )]
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct SessionReadFileTool {
+pub struct SessionReadFile {
     /// Session ID from create_session
     pub session_id: String,
     /// Session-relative file path (e.g. src/main.py).
@@ -92,7 +92,7 @@ pub struct SessionReadFileTool {
     read_only_hint = true
 )]
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct SessionDiffTool {
+pub struct SessionDiff {
     /// Session ID from create_session
     pub session_id: String,
     /// Checkpoint to diff from. Defaults to 0 (the mounted state).
@@ -119,7 +119,7 @@ pub struct SessionDiffTool {
     read_only_hint = false
 )]
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct SessionMountTool {
+pub struct SessionMount {
     /// Session ID from create_session
     pub session_id: String,
     /// Absolute path to a file or directory on the host filesystem.
@@ -134,7 +134,7 @@ pub struct SessionMountTool {
     read_only_hint = true
 )]
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct SessionListTool {}
+pub struct SessionList {}
 
 #[mcp_tool(
     name = "session_close",
@@ -144,7 +144,7 @@ pub struct SessionListTool {}
     read_only_hint = false
 )]
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct SessionCloseTool {
+pub struct SessionClose {
     /// Session ID from create_session.
     pub session_id: String,
 }
@@ -159,7 +159,7 @@ pub struct SessionCloseTool {
     read_only_hint = true
 )]
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct SessionHistoryTool {
+pub struct SessionHistory {
     /// Session ID from create_session.
     pub session_id: String,
 }
@@ -174,7 +174,7 @@ pub struct SessionHistoryTool {
     read_only_hint = true
 )]
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct GetSessionStateTool {
+pub struct GetSessionState {
     /// Session ID from create_session.
     pub session_id: String,
 }
@@ -189,7 +189,7 @@ pub struct GetSessionStateTool {
     read_only_hint = false
 )]
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct SessionWriteFileTool {
+pub struct SessionWriteFile {
     /// Session ID from create_session.
     pub session_id: String,
     /// Session-relative file path (e.g. src/main.py).
@@ -206,7 +206,7 @@ pub struct SessionWriteFileTool {
     read_only_hint = false
 )]
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct SessionDeleteFileTool {
+pub struct SessionDeleteFile {
     /// Session ID from create_session.
     pub session_id: String,
     /// Session-relative file path (e.g. src/main.py).
@@ -221,7 +221,7 @@ pub struct SessionDeleteFileTool {
     read_only_hint = false
 )]
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct SessionExportTool {
+pub struct SessionExport {
     /// Session ID from create_session.
     pub session_id: String,
     /// Absolute path to a directory on the host to write files into. Defaults to ./drun-export/<session_id>.
@@ -245,7 +245,7 @@ pub struct SessionExportTool {
     read_only_hint = false
 )]
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct SessionMergeTool {
+pub struct SessionMerge {
     /// Session ID to merge into (the target).
     pub session_id: String,
     /// Session ID to merge files from (the source).
@@ -267,7 +267,7 @@ pub struct SessionMergeTool {
     read_only_hint = false
 )]
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct SessionForkTool {
+pub struct SessionFork {
     /// Session ID to fork from.
     pub session_id: String,
     /// Checkpoint to branch from. Defaults to the current checkpoint.
@@ -285,7 +285,7 @@ pub struct SessionForkTool {
     read_only_hint = false
 )]
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct SessionCommitTool {
+pub struct SessionCommit {
     /// Session ID from create_session
     pub session_id: String,
     /// Specific file keys to commit. Omit to commit all changed mounted files.
@@ -300,7 +300,7 @@ pub struct SessionCommitTool {
     read_only_hint = true
 )]
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct GetFetchAllowlistTool {}
+pub struct GetFetchAllowlist {}
 
 #[mcp_tool(
     name = "session_fetch",
@@ -315,7 +315,7 @@ pub struct GetFetchAllowlistTool {}
     read_only_hint = false
 )]
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct SessionFetchTool {
+pub struct SessionFetch {
     /// Session ID from create_session.
     pub session_id: String,
     /// Fully-qualified URL to request.
@@ -338,7 +338,7 @@ pub struct SessionFetchTool {
     read_only_hint = true
 )]
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct SessionTreeTool {}
+pub struct SessionTree {}
 
 #[mcp_tool(
     name = "list_snapshots",
@@ -350,7 +350,7 @@ pub struct SessionTreeTool {}
     read_only_hint = true
 )]
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct ListSnapshotsTool {}
+pub struct ListSnapshots {}
 
 #[mcp_tool(
     name = "session_snapshot",
@@ -378,7 +378,7 @@ pub struct SessionSnapshotTool {
     read_only_hint = false
 )]
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct SessionRestoreTool {
+pub struct SessionRestore {
     /// Absolute path to the .drun snapshot file to load.
     pub path: String,
 }
@@ -391,7 +391,7 @@ pub struct SessionRestoreTool {
     read_only_hint = true
 )]
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct SessionGetEnvTool {
+pub struct SessionGetEnv {
     /// Session ID from create_session.
     pub session_id: String,
     /// Name of the environment variable to read.
@@ -406,7 +406,7 @@ pub struct SessionGetEnvTool {
     read_only_hint = false
 )]
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct SessionLabelTool {
+pub struct SessionLabel {
     /// Session ID from create_session.
     pub session_id: String,
     /// Human-readable label for the session. Empty string clears the label.
@@ -421,7 +421,7 @@ pub struct SessionLabelTool {
     read_only_hint = false
 )]
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct SessionCheckpointLabelTool {
+pub struct SessionCheckpointLabel {
     /// Session ID from create_session.
     pub session_id: String,
     /// Checkpoint to label. Defaults to the current checkpoint.
@@ -443,7 +443,7 @@ pub struct SessionCheckpointLabelTool {
     read_only_hint = false
 )]
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct SessionCheckpointSquashTool {
+pub struct SessionCheckpointSquash {
     /// Session ID from create_session.
     pub session_id: String,
     /// First checkpoint in the range to squash (inclusive).
@@ -466,7 +466,7 @@ pub struct SessionCheckpointSquashTool {
     read_only_hint = true
 )]
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct CheckpointReadStdstreamsTool {
+pub struct CheckpointReadStdstreams {
     /// Session ID from create_session.
     pub session_id: String,
     /// Checkpoint to read output from. Defaults to the current checkpoint.
@@ -491,7 +491,7 @@ pub struct CheckpointReadStdstreamsTool {
     read_only_hint = false
 )]
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct SessionCheckpointDropTool {
+pub struct SessionCheckpointDrop {
     /// Session ID from create_session.
     pub session_id: String,
     /// First checkpoint in the range to drop (inclusive).
@@ -503,33 +503,33 @@ pub struct SessionCheckpointDropTool {
 tool_box!(
     DrunTools,
     [
-        CreateSessionTool,
-        SessionForkTool,
-        SessionListTool,
-        SessionCloseTool,
-        SessionHistoryTool,
-        GetSessionStateTool,
-        SessionBashTool,
-        SessionRollbackTool,
-        SessionReadFileTool,
-        SessionWriteFileTool,
-        SessionDeleteFileTool,
-        SessionMountTool,
-        SessionDiffTool,
-        SessionCommitTool,
-        SessionExportTool,
-        SessionTreeTool,
-        SessionFetchTool,
-        GetFetchAllowlistTool,
-        ListSnapshotsTool,
+        CreateSession,
+        SessionFork,
+        SessionList,
+        SessionClose,
+        SessionHistory,
+        GetSessionState,
+        SessionBash,
+        SessionRollback,
+        SessionReadFile,
+        SessionWriteFile,
+        SessionDeleteFile,
+        SessionMount,
+        SessionDiff,
+        SessionCommit,
+        SessionExport,
+        SessionTree,
+        SessionFetch,
+        GetFetchAllowlist,
+        ListSnapshots,
         SessionSnapshotTool,
-        SessionRestoreTool,
-        SessionGetEnvTool,
-        SessionLabelTool,
-        SessionCheckpointLabelTool,
-        SessionCheckpointSquashTool,
-        SessionCheckpointDropTool,
-        SessionMergeTool,
-        CheckpointReadStdstreamsTool,
+        SessionRestore,
+        SessionGetEnv,
+        SessionLabel,
+        SessionCheckpointLabel,
+        SessionCheckpointSquash,
+        SessionCheckpointDrop,
+        SessionMerge,
+        CheckpointReadStdstreams,
     ]
 );
