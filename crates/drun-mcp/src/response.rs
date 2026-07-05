@@ -69,4 +69,40 @@ mod tests {
     fn mime_type_for_extension_returns_none_for_a_path_with_no_extension() {
         assert_eq!(mime_type_for_extension("Makefile"), None);
     }
+
+    #[test]
+    fn file_content_wraps_image_bytes_as_base64_image_content() {
+        let result = file_content("photo.png", b"fake-png-bytes");
+        match &result.content[0] {
+            ContentBlock::ImageContent(image) => {
+                assert_eq!(image.mime_type, "image/png");
+                assert_eq!(image.data, STANDARD.encode(b"fake-png-bytes"));
+            }
+            other => panic!("expected image content, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn file_content_returns_plain_text_for_utf8_non_image_files() {
+        let result = file_content("notes.txt", b"hello world");
+        match &result.content[0] {
+            ContentBlock::TextContent(text) => assert_eq!(text.text, "hello world"),
+            other => panic!("expected text content, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn file_content_base64_encodes_non_utf8_non_image_files() {
+        let bytes = [0xff, 0xfe, 0x00, 0xff];
+        let result = file_content("data.bin", &bytes);
+        match &result.content[0] {
+            ContentBlock::TextContent(text) => {
+                assert_eq!(
+                    text.text,
+                    format!("[Unknown format] {}", STANDARD.encode(bytes))
+                );
+            }
+            other => panic!("expected text content, got {other:?}"),
+        }
+    }
 }

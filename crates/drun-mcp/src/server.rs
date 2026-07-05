@@ -768,6 +768,9 @@ impl DrunHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tools::HttpHeader;
+    use drun_core::Config;
+    use rust_mcp_sdk::schema::ContentBlock;
 
     #[test]
     fn host_from_url_extracts_https_host() {
@@ -856,9 +859,6 @@ mod tests {
         );
         assert_eq!(DrunHandler::download_path_from_url(""), "downloads/fetch");
     }
-
-    use drun_core::Config;
-    use rust_mcp_sdk::schema::ContentBlock;
 
     fn insert_session(handler: &DrunHandler, id: &str) {
         handler.sessions.lock().unwrap().insert(
@@ -1645,5 +1645,346 @@ mod tests {
             .await
             .unwrap_err();
         assert!(err.to_string().contains("exceeds"));
+    }
+
+    #[tokio::test]
+    async fn session_fetch_forwards_custom_headers_to_the_request() {
+        use wiremock::matchers::{header, method};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let mock_server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(header("x-api-key", "secret"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&mock_server)
+            .await;
+
+        let handler = DrunHandler::new(fetch_test_config(&mock_server.uri()));
+        insert_session(&handler, "s1");
+        let result = handler
+            .handle_session_fetch(SessionFetchTool {
+                session_id: "s1".to_string(),
+                url: mock_server.uri(),
+                method: None,
+                headers: Some(vec![HttpHeader {
+                    name: "x-api-key".to_string(),
+                    value: "secret".to_string(),
+                }]),
+                body: None,
+                save_to: None,
+            })
+            .await
+            .unwrap();
+        assert_eq!(result_json(&result)["status"], 200);
+    }
+
+    #[test]
+    fn session_list_reports_every_active_session() {
+        let handler = DrunHandler::new(Config::default());
+        insert_session(&handler, "s1");
+        insert_session(&handler, "s2");
+        let result = handler.handle_session_list().unwrap();
+        let json = result_json(&result);
+        assert_eq!(json.as_array().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn session_history_returns_the_checkpoint_list_for_a_session() {
+        let handler = DrunHandler::new(Config::default());
+        insert_session(&handler, "s1");
+        let result = handler
+            .handle_session_history(SessionHistoryTool {
+                session_id: "s1".to_string(),
+            })
+            .unwrap();
+        assert!(result_text(&result).contains("checkpoint_id"));
+    }
+
+    #[test]
+    fn get_session_state_returns_session_not_found_for_missing_session() {
+        let handler = DrunHandler::new(Config::default());
+        let err = handler
+            .handle_get_session_state(GetSessionStateTool {
+                session_id: "missing".to_string(),
+            })
+            .unwrap_err();
+        assert!(err.to_string().contains("session_not_found"));
+    }
+
+    #[test]
+    fn get_session_state_reports_the_current_checkpoint() {
+        let handler = DrunHandler::new(Config::default());
+        insert_session(&handler, "s1");
+        let result = handler
+            .handle_get_session_state(GetSessionStateTool {
+                session_id: "s1".to_string(),
+            })
+            .unwrap();
+        assert_eq!(result_json(&result)["checkpoint_id"], 0);
+    }
+
+    #[test]
+    fn session_delete_file_removes_the_file_and_creates_a_checkpoint() {
+        let handler = DrunHandler::new(Config::default());
+        insert_session(&handler, "s1");
+        {
+            let sessions = handler.sessions.lock().unwrap();
+            let mut session = sessions.get("s1").unwrap().lock().unwrap();
+            session.write_file("a.txt", b"hi".to_vec()).unwrap();
+        }
+
+        let result = handler
+            .handle_session_delete_file(SessionDeleteFileTool {
+                session_id: "s1".to_string(),
+                path: "a.txt".to_string(),
+            })
+            .unwrap();
+        assert_eq!(result_json(&result)["workspace_file_count"], 0);
+    }
+
+    #[test]
+    fn session_delete_file_returns_an_error_for_a_missing_path() {
+        let handler = DrunHandler::new(Config::default());
+        insert_session(&handler, "s1");
+        let err = handler
+            .handle_session_delete_file(SessionDeleteFileTool {
+                session_id: "s1".to_string(),
+                path: "missing.txt".to_string(),
+            })
+            .unwrap_err();
+        assert!(!err.to_string().is_empty());
+    }
+
+    #[test]
+    fn session_mount_loads_a_host_directory_into_the_workspace() {
+        let source = tempfile::tempdir().unwrap();
+        std::fs::write(source.path().join("a.txt"), b"hi").unwrap();
+
+        let handler = DrunHandler::new(Config::default());
+        insert_session(&handler, "s1");
+        let result = handler
+            .handle_session_mount(SessionMountTool {
+                session_id: "s1".to_string(),
+                path: source.path().to_string_lossy().into_owned(),
+            })
+            .unwrap();
+        assert_eq!(result_json(&result)["workspace_file_count"], 1);
+    }
+
+    #[test]
+    fn session_commit_writes_back_a_changed_mounted_file_to_the_host() {
+        let source = tempfile::tempdir().unwrap();
+        let host_file = source.path().join("a.txt");
+        std::fs::write(&host_file, b"original").unwrap();
+
+        let handler = DrunHandler::new(Config::default());
+        insert_session(&handler, "s1");
+        {
+            let sessions = handler.sessions.lock().unwrap();
+            let mut session = sessions.get("s1").unwrap().lock().unwrap();
+            session.mount(&host_file).unwrap();
+            session.write_file("a.txt", b"changed".to_vec()).unwrap();
+        }
+
+        let result = handler
+            .handle_session_commit(SessionCommitTool {
+                session_id: "s1".to_string(),
+                keys: None,
+            })
+            .unwrap();
+        assert_eq!(
+            result_json(&result)["committed_files"][0],
+            host_file
+                .canonicalize()
+                .unwrap()
+                .to_string_lossy()
+                .into_owned()
+        );
+        assert_eq!(std::fs::read(&host_file).unwrap(), b"changed");
+    }
+
+    #[test]
+    fn session_tree_reflects_the_current_sessions() {
+        let handler = DrunHandler::new(Config::default());
+        insert_session(&handler, "s1");
+        let result = handler.handle_session_tree().unwrap();
+        assert!(result_text(&result).contains("s1"));
+    }
+
+    #[test]
+    fn list_snapshots_returns_an_empty_catalog_for_a_missing_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = Config {
+            snapshots_dir: dir.path().join("does-not-exist"),
+            ..Config::default()
+        };
+        let handler = DrunHandler::new(config);
+        let result = handler.handle_list_snapshots().unwrap();
+        assert_eq!(result_json(&result), serde_json::json!([]));
+    }
+
+    #[test]
+    fn get_fetch_allowlist_returns_the_configured_domains() {
+        let config = Config {
+            domain_allowlist: vec!["pypi.org".to_string()],
+            ..Config::default()
+        };
+        let handler = DrunHandler::new(config);
+        let result = handler.handle_get_fetch_allowlist().unwrap();
+        assert_eq!(result_json(&result), serde_json::json!(["pypi.org"]));
+    }
+
+    #[test]
+    fn session_snapshot_writes_to_an_explicit_path_under_snapshots_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = Config {
+            snapshots_dir: dir.path().to_path_buf(),
+            ..Config::default()
+        };
+        let handler = DrunHandler::new(config);
+        insert_session(&handler, "s1");
+
+        handler
+            .handle_session_snapshot(SessionSnapshotTool {
+                session_id: "s1".to_string(),
+                path: Some(
+                    dir.path()
+                        .join("custom.drun")
+                        .to_string_lossy()
+                        .into_owned(),
+                ),
+            })
+            .unwrap();
+        assert!(dir.path().join("custom.drun").exists());
+    }
+
+    #[test]
+    fn session_export_defaults_to_export_root_slash_session_id() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = Config {
+            export_root: dir.path().to_path_buf(),
+            ..Config::default()
+        };
+        let handler = DrunHandler::new(config);
+        insert_session(&handler, "s1");
+        {
+            let sessions = handler.sessions.lock().unwrap();
+            sessions
+                .get("s1")
+                .unwrap()
+                .lock()
+                .unwrap()
+                .write_file("out.txt", b"data".to_vec())
+                .unwrap();
+        }
+
+        handler
+            .handle_session_export(SessionExportTool {
+                session_id: "s1".to_string(),
+                output_dir: None,
+                keys: Some(vec!["out.txt".to_string()]),
+            })
+            .unwrap();
+        assert!(dir.path().join("s1/out.txt").exists());
+    }
+
+    #[test]
+    fn session_restore_recreates_a_session_from_a_snapshot_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let handler = DrunHandler::new(Config::default());
+        insert_session(&handler, "original");
+        {
+            let sessions = handler.sessions.lock().unwrap();
+            let mut session = sessions.get("original").unwrap().lock().unwrap();
+            session.write_file("a.txt", b"hi".to_vec()).unwrap();
+        }
+        let snapshot_path = dir.path().join("original.drun");
+        {
+            let sessions = handler.sessions.lock().unwrap();
+            let session = sessions.get("original").unwrap().lock().unwrap();
+            session.snapshot().write(&snapshot_path).unwrap();
+        }
+
+        let result = handler
+            .handle_session_restore(SessionRestoreTool {
+                path: snapshot_path.to_string_lossy().into_owned(),
+            })
+            .unwrap();
+        assert_eq!(result_json(&result)["workspace_file_count"], 1);
+        assert_eq!(handler.sessions.lock().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn session_restore_returns_an_error_for_a_missing_file() {
+        let handler = DrunHandler::new(Config::default());
+        let err = handler
+            .handle_session_restore(SessionRestoreTool {
+                path: "/nonexistent/path.drun".to_string(),
+            })
+            .unwrap_err();
+        assert!(!err.to_string().is_empty());
+    }
+
+    #[test]
+    fn session_label_sets_the_session_label() {
+        let handler = DrunHandler::new(Config::default());
+        insert_session(&handler, "s1");
+        let result = handler
+            .handle_session_label(SessionLabelTool {
+                session_id: "s1".to_string(),
+                label: "milestone".to_string(),
+            })
+            .unwrap();
+        let sessions = handler.sessions.lock().unwrap();
+        let session = sessions.get("s1").unwrap().lock().unwrap();
+        assert_eq!(session.label.as_deref(), Some("milestone"));
+        drop(session);
+        let _ = result;
+    }
+
+    #[test]
+    fn session_checkpoint_squash_merges_a_checkpoint_range() {
+        let handler = DrunHandler::new(Config::default());
+        insert_session(&handler, "s1");
+        {
+            let sessions = handler.sessions.lock().unwrap();
+            let mut session = sessions.get("s1").unwrap().lock().unwrap();
+            session.write_file("a.txt", b"one".to_vec()).unwrap();
+            session.write_file("a.txt", b"two".to_vec()).unwrap();
+        }
+
+        let result = handler
+            .handle_session_checkpoint_squash(SessionCheckpointSquashTool {
+                session_id: "s1".to_string(),
+                from_checkpoint_id: 1,
+                to_checkpoint_id: 2,
+                label: Some("squashed".to_string()),
+            })
+            .unwrap();
+        assert!(result_text(&result).contains("squashed"));
+    }
+
+    #[test]
+    fn session_checkpoint_drop_removes_a_checkpoint_range() {
+        let handler = DrunHandler::new(Config::default());
+        insert_session(&handler, "s1");
+        {
+            let sessions = handler.sessions.lock().unwrap();
+            let mut session = sessions.get("s1").unwrap().lock().unwrap();
+            session.write_file("a.txt", b"one".to_vec()).unwrap();
+            session.write_file("a.txt", b"two".to_vec()).unwrap();
+        }
+
+        let result = handler
+            .handle_session_checkpoint_drop(SessionCheckpointDropTool {
+                session_id: "s1".to_string(),
+                from_checkpoint_id: 1,
+                to_checkpoint_id: 1,
+            })
+            .unwrap();
+        let sessions = handler.sessions.lock().unwrap();
+        let session = sessions.get("s1").unwrap().lock().unwrap();
+        assert_eq!(session.history().len(), 2);
+        let _ = result;
     }
 }
