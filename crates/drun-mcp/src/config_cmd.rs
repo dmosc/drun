@@ -415,4 +415,32 @@ mod tests {
 
         assert!(add_domain_to(&path, "example.com").is_err());
     }
+
+    #[test]
+    fn add_domain_errors_when_key_is_not_an_array() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(&path, "domain_allowlist = \"not-an-array\"\n").unwrap();
+
+        let err = add_domain_to(&path, "example.com").unwrap_err();
+        assert!(err.contains("not an array"));
+    }
+
+    #[test]
+    fn remove_domain_errors_on_malformed_toml() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(&path, "this is not valid toml {{{").unwrap();
+
+        assert!(remove_domain_from(&path, "example.com").is_err());
+    }
+
+    #[test]
+    fn remove_domain_is_a_no_op_when_key_is_absent_entirely() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(&path, "# no domain_allowlist key at all\n").unwrap();
+
+        assert!(!remove_domain_from(&path, "example.com").unwrap());
+    }
 }
