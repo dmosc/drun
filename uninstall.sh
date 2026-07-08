@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Thin bootstrap script for uninstalling drun without requiring a working binary.
+# Prefer `drun uninstall` for normal use.
 set -euo pipefail
 
 DRUN_REGISTRY="$HOME/.drun/projects"
@@ -25,7 +27,7 @@ remove_daemon() {
       fi
       ;;
   esac
-  pkill -f drun-mcp 2>/dev/null || true
+  pkill -f drun 2>/dev/null || true
 }
 
 # ── Claude Code MCP deregistration ───────────────────────────────────────────
@@ -52,7 +54,7 @@ cleanup_project_settings() {
       echo "Removed .claude/settings.json from $project_dir."
     fi
     [[ -f "$project_dir/CLAUDE.md" ]] && \
-      echo "Left CLAUDE.md at $project_dir/CLAUDE.md — delete manually if not needed."
+      echo "Left CLAUDE.md at $project_dir/CLAUDE.md — run \`drun deinit\` to remove it."
   done < "$DRUN_REGISTRY"
 
   rm -f "$DRUN_REGISTRY"
@@ -61,8 +63,8 @@ cleanup_project_settings() {
 # ── binary removal ────────────────────────────────────────────────────────────
 
 remove_binary() {
-  if ! BIN="$(command -v drun-mcp 2>/dev/null)"; then
-    echo "drun-mcp is not installed."
+  if ! BIN="$(command -v drun 2>/dev/null)"; then
+    echo "drun is not installed."
     return
   fi
 
@@ -72,7 +74,7 @@ remove_binary() {
     sudo rm "$BIN"
   fi
 
-  echo "drun-mcp removed from $BIN."
+  echo "drun removed from $BIN."
 }
 
 # ── main ──────────────────────────────────────────────────────────────────────

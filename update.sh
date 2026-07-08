@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Thin bootstrap script for updating drun before `drun update` is available
+# (e.g. if the binary is broken or missing). Prefer `drun update` for normal use.
 set -euo pipefail
 
 REPO="dmosc/drun"
@@ -13,8 +15,8 @@ detect_platform() {
   arch="$(uname -m)"
 
   case "$os-$arch" in
-    Darwin-arm64)  ASSET="drun-mcp-macos-arm64" ;;
-    Linux-x86_64)  ASSET="drun-mcp-linux-x86_64" ;;
+    Darwin-arm64)  ASSET="drun-macos-arm64" ;;
+    Linux-x86_64)  ASSET="drun-linux-x86_64" ;;
     *)
       echo "Unsupported platform: $os-$arch"
       exit 1
@@ -25,8 +27,8 @@ detect_platform() {
 # ── binary update ─────────────────────────────────────────────────────────────
 
 update_binary() {
-  if ! BIN="$(command -v drun-mcp 2>/dev/null)"; then
-    echo "drun-mcp is not installed. Run the install script first:"
+  if ! BIN="$(command -v drun 2>/dev/null)"; then
+    echo "drun is not installed. Run the install script first:"
     echo "  curl -fsSL https://raw.githubusercontent.com/$REPO/main/install.sh | bash"
     exit 1
   fi
@@ -38,7 +40,7 @@ update_binary() {
     url="https://github.com/$REPO/releases/download/$VERSION/$ASSET"
   fi
 
-  echo "Updating drun-mcp to $VERSION..."
+  echo "Updating drun to $VERSION..."
 
   if [[ -w "$BIN" ]]; then
     curl -fsSL "$url" -o "$BIN"
@@ -47,7 +49,7 @@ update_binary() {
   fi
   chmod +x "$BIN" 2>/dev/null || sudo chmod +x "$BIN"
 
-  echo "drun-mcp updated at $BIN."
+  echo "drun updated at $BIN."
 }
 
 # ── daemon restart ────────────────────────────────────────────────────────────
@@ -58,18 +60,18 @@ restart_daemon() {
       if [[ -f "$LAUNCHD_PLIST" ]]; then
         launchctl unload "$LAUNCHD_PLIST" 2>/dev/null || true
         launchctl load -w "$LAUNCHD_PLIST"
-        echo "drun-mcp daemon restarted."
+        echo "drun daemon restarted."
       else
-        pkill -f drun-mcp 2>/dev/null || true
-        echo "No launchd agent found — killed any running drun-mcp processes."
+        pkill -f drun 2>/dev/null || true
+        echo "No launchd agent found — killed any running drun processes."
       fi
       ;;
     Linux)
       if systemctl --user is-active drun-mcp.service &>/dev/null; then
         systemctl --user restart drun-mcp.service
-        echo "drun-mcp daemon restarted."
+        echo "drun daemon restarted."
       else
-        pkill -f drun-mcp 2>/dev/null || true
+        pkill -f drun 2>/dev/null || true
       fi
       ;;
   esac

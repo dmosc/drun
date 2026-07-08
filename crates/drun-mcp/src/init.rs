@@ -5,7 +5,7 @@ use std::{
 
 use serde_json::{Map, Value, json};
 
-const REQUIRED_DENY: &[&str] = &[
+pub(crate) const REQUIRED_DENY: &[&str] = &[
     "Bash",
     "BashOutput",
     "KillBash",
@@ -21,7 +21,7 @@ const REQUIRED_DENY: &[&str] = &[
     "Curl",
     "Wget",
 ];
-const REQUIRED_ALLOW: &[&str] = &["mcp__drun__*"];
+pub(crate) const REQUIRED_ALLOW: &[&str] = &["mcp__drun__*"];
 
 fn rendered_default_settings() -> String {
     let value = json!({
@@ -36,15 +36,25 @@ fn rendered_default_settings() -> String {
     )
 }
 
-pub fn run() {
-    let cwd = std::env::current_dir().expect("cannot read current directory");
+pub fn run(target_dir: Option<std::path::PathBuf>) {
+    let project_dir = match target_dir {
+        Some(d) => d
+            .canonicalize()
+            .unwrap_or_else(|_| d.clone()),
+        None => std::env::current_dir().expect("cannot read current directory"),
+    };
+    init_project(&project_dir);
+}
+
+/// Initializes a project directory. Called by both `drun init` and `drun update --keep-settings`.
+pub(crate) fn init_project(project_dir: &Path) {
     let drun_home = drun_home();
 
-    write_settings(&cwd);
-    write_claude_md(&cwd);
-    register_project(&drun_home, &cwd);
+    write_settings(project_dir);
+    write_claude_md(project_dir);
+    register_project(&drun_home, project_dir);
 
-    eprintln!("drun: initialized for {}", cwd.display());
+    eprintln!("drun: initialized for {}", project_dir.display());
 }
 
 pub(crate) fn drun_home() -> PathBuf {
@@ -198,9 +208,9 @@ sandbox. Use the drun MCP tools (prefixed `mcp__drun__`) for everything.
 `session_fetch` and `session_mount` are restricted to an allowlist. If either
 is denied for a domain or path you need, tell the user to run:
 
-- `drun-mcp config add-domain <domain>` to allow a new domain for
+- `drun config add-domain <domain>` to allow a new domain for
   `session_fetch`
-- `drun-mcp config add-path <path>` to allow a new host path for
+- `drun config add-path <path>` to allow a new host path for
   `session_mount`
 
 Both commands update the config and restart the drun daemon to apply the

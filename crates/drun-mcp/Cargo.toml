@@ -8,6 +8,10 @@ repository = "https://github.com/dmosc/drun"
 keywords = ["mcp", "sandbox", "python", "agent", "claude"]
 categories = ["development-tools", "command-line-utilities"]
 
+[[bin]]
+name = "drun"
+path = "src/main.rs"
+
 [dependencies]
 drun-core = { version = "0.3.4", path = "../drun-core" }
 rust-mcp-sdk = { version = "0.9.0", features = ["server", "macros", "hyper-server"] }

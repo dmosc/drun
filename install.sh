@@ -3,7 +3,7 @@ set -euo pipefail
 
 REPO="dmosc/drun"
 BIN_DIR="/usr/local/bin"
-BIN="$BIN_DIR/drun-mcp"
+BIN="$BIN_DIR/drun"
 DRUN_HOME="$HOME/.drun"
 DRUN_CONFIG="$DRUN_HOME/config.toml"
 LAUNCHD_LABEL="com.drun.mcp-server"
@@ -20,8 +20,8 @@ detect_platform() {
   arch="$(uname -m)"
 
   case "$os-$arch" in
-    Darwin-arm64)  ASSET="drun-mcp-macos-arm64" ;;
-    Linux-x86_64)  ASSET="drun-mcp-linux-x86_64" ;;
+    Darwin-arm64)  ASSET="drun-macos-arm64" ;;
+    Linux-x86_64)  ASSET="drun-linux-x86_64" ;;
     *)
       echo "Unsupported platform: $os-$arch"
       exit 1
@@ -32,12 +32,12 @@ detect_platform() {
 # ── binary installation ───────────────────────────────────────────────────────
 
 install_binary() {
-  if command -v drun-mcp &>/dev/null; then
-    echo "drun-mcp already installed at $(command -v drun-mcp), skipping."
+  if command -v drun &>/dev/null; then
+    echo "drun already installed at $(command -v drun), skipping."
     return
   fi
 
-  echo "Downloading drun-mcp..."
+  echo "Downloading drun..."
   local url="https://github.com/$REPO/releases/latest/download/$ASSET"
 
   if [[ -w "$BIN_DIR" ]]; then
@@ -47,7 +47,7 @@ install_binary() {
   fi
   chmod +x "$BIN" 2>/dev/null || sudo chmod +x "$BIN"
 
-  echo "drun-mcp installed to $BIN."
+  echo "drun installed to $BIN."
 }
 
 # ── global daemon config ──────────────────────────────────────────────────────
@@ -65,8 +65,8 @@ create_config() {
 #
 # To add or remove a domain or path without hand-editing this file (and to
 # restart the daemon automatically afterward), use:
-#   drun-mcp config add-domain <domain>     /  drun-mcp config remove-domain <domain>
-#   drun-mcp config add-path <path>         /  drun-mcp config remove-path <path>
+#   drun config add-domain <domain>     /  drun config remove-domain <domain>
+#   drun config add-path <path>         /  drun config remove-path <path>
 
 # Domains agents may reach via session_fetch. PyPI domains are always added
 # on top of whatever you list here.
@@ -151,16 +151,16 @@ install_launchd_agent() {
     <key>KeepAlive</key>
     <true/>
     <key>StandardOutPath</key>
-    <string>$DRUN_HOME/drun-mcp.log</string>
+    <string>$DRUN_HOME/drun.log</string>
     <key>StandardErrorPath</key>
-    <string>$DRUN_HOME/drun-mcp.log</string>
+    <string>$DRUN_HOME/drun.log</string>
 </dict>
 </plist>
 EOF
 
   launchctl unload "$LAUNCHD_PLIST" 2>/dev/null || true
   launchctl load -w "$LAUNCHD_PLIST"
-  echo "drun-mcp daemon started via launchd (auto-restarts on login)."
+  echo "drun daemon started via launchd (auto-restarts on login)."
 }
 
 install_systemd_service() {
@@ -182,7 +182,7 @@ EOF
 
   systemctl --user daemon-reload
   systemctl --user enable --now drun-mcp.service
-  echo "drun-mcp daemon started via systemd user service."
+  echo "drun daemon started via systemd user service."
 }
 
 install_daemon() {
@@ -224,4 +224,4 @@ echo "Done! drun is ready."
 echo "  MCP  → $MCP_URL"
 echo "  UI   → http://127.0.0.1:7274"
 echo ""
-echo "To enable drun in a project, cd into it and run: drun-mcp init"
+echo "To enable drun in a project, cd into it and run: drun init"

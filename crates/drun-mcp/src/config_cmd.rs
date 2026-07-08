@@ -9,23 +9,23 @@ pub fn run(args: &[String]) {
     match args.first().map(String::as_str) {
         Some("add-domain") => match args.get(1) {
             Some(domain) => add_domain(domain),
-            None => usage_and_exit("drun-mcp config add-domain <domain>"),
+            None => usage_and_exit("drun config add-domain <domain>"),
         },
         Some("add-path") => match args.get(1) {
             Some(path) => add_path(path),
-            None => usage_and_exit("drun-mcp config add-path <path>"),
+            None => usage_and_exit("drun config add-path <path>"),
         },
         Some("remove-domain") => match args.get(1) {
             Some(domain) => remove_domain(domain),
-            None => usage_and_exit("drun-mcp config remove-domain <domain>"),
+            None => usage_and_exit("drun config remove-domain <domain>"),
         },
         Some("remove-path") => match args.get(1) {
             Some(path) => remove_path(path),
-            None => usage_and_exit("drun-mcp config remove-path <path>"),
+            None => usage_and_exit("drun config remove-path <path>"),
         },
         Some("list") => list(),
         _ => usage_and_exit(
-            "drun-mcp config <add-domain|add-path|remove-domain|remove-path|list> [args]",
+            "drun config <add-domain|add-path|remove-domain|remove-path|list> [args]",
         ),
     }
 }
@@ -161,7 +161,7 @@ fn add_path_to(config_path: &Path, path: &Path) -> Result<bool, String> {
 fn add_to_array(config_path: &Path, key: &str, value: &str) -> Result<bool, String> {
     if !config_path.exists() {
         return Err(format!(
-            "no config found at {} — run install.sh first",
+            "no config found at {} — run the drun installer first",
             config_path.display()
         ));
     }
@@ -206,7 +206,7 @@ fn remove_path_from(config_path: &Path, path: &str) -> Result<bool, String> {
 fn remove_from_array(config_path: &Path, key: &str, value: &str) -> Result<bool, String> {
     if !config_path.exists() {
         return Err(format!(
-            "no config found at {} — run install.sh first",
+            "no config found at {} — run the drun installer first",
             config_path.display()
         ));
     }
@@ -229,13 +229,13 @@ fn remove_from_array(config_path: &Path, key: &str, value: &str) -> Result<bool,
     Ok(true)
 }
 
-fn restart_daemon() {
+pub(crate) fn restart_daemon() {
     let home = std::env::var("HOME").unwrap_or_default();
     match std::env::consts::OS {
         "macos" => {
             let plist = format!("{home}/Library/LaunchAgents/com.drun.mcp-server.plist");
             if !Path::new(&plist).exists() {
-                eprintln!("drun: no launchd agent found at {plist} — restart the daemon manually");
+                eprintln!("drun: no launchd agent found at {plist} — run: drun daemon start");
                 return;
             }
             let _ = Command::new("launchctl").args(["unload", &plist]).status();
@@ -245,7 +245,7 @@ fn restart_daemon() {
             match status {
                 Ok(s) if s.success() => eprintln!("drun: daemon restarted"),
                 _ => eprintln!(
-                    "drun: could not restart the daemon automatically — run:\n  launchctl unload {plist}\n  launchctl load -w {plist}"
+                    "drun: could not restart the daemon automatically — run: drun daemon restart"
                 ),
             }
         }
@@ -256,7 +256,7 @@ fn restart_daemon() {
             match status {
                 Ok(s) if s.success() => eprintln!("drun: daemon restarted"),
                 _ => eprintln!(
-                    "drun: could not restart the daemon automatically — run:\n  systemctl --user restart drun-mcp.service"
+                    "drun: could not restart the daemon automatically — run: drun daemon restart"
                 ),
             }
         }
@@ -395,7 +395,7 @@ mod tests {
         let path = dir.path().join("config.toml");
 
         let err = remove_domain_from(&path, "example.com").unwrap_err();
-        assert!(err.contains("install.sh"));
+        assert!(err.contains("installer"));
     }
 
     #[test]
@@ -404,7 +404,7 @@ mod tests {
         let path = dir.path().join("config.toml");
 
         let err = add_domain_to(&path, "example.com").unwrap_err();
-        assert!(err.contains("install.sh"));
+        assert!(err.contains("installer"));
     }
 
     #[test]
