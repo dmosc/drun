@@ -103,45 +103,43 @@ async fn main() -> SdkResult<()> {
 }
 
 fn print_usage() {
-    eprintln!(
-        "drun v{version} — sandboxed execution for agentic loops\n\
-         \n\
-         USAGE\n\
-         \x20\x20drun <command> [args]\n\
-         \n\
-         PROJECT\n\
-         \x20\x20drun init [dir]                 set up drun for a project directory (default: cwd)\n\
-         \x20\x20drun deinit [dir]               remove drun setup from a project directory\n\
-         \n\
-         GLOBAL\n\
-         \x20\x20drun update                     update binary, preserve settings, re-init projects\n\
-         \x20\x20drun update --skip-reinit        update binary only, skip project re-initialization\n\
-         \x20\x20drun update --version <tag>      update to a specific release (e.g. v0.4.0)\n\
-         \x20\x20drun uninstall                   remove drun entirely (prompts for confirmation)\n\
-         \n\
-         OBSERVABILITY\n\
-         \x20\x20drun status                      show daemon health and current project state\n\
-         \x20\x20drun projects                    list all registered project directories\n\
-         \x20\x20drun projects --clean            remove stale entries from the project registry\n\
-         \n\
-         DAEMON\n\
-         \x20\x20drun daemon start               start the background daemon\n\
-         \x20\x20drun daemon stop                stop the background daemon\n\
-         \x20\x20drun daemon restart             restart the background daemon\n\
-         \x20\x20drun daemon status              show whether the daemon is running\n\
-         \x20\x20drun daemon logs                tail the daemon log file\n\
-         \n\
-         CONFIG\n\
-         \x20\x20drun config list                show current domain and path allowlists\n\
-         \x20\x20drun config add-domain <name>   allow a domain for session_fetch\n\
-         \x20\x20drun config remove-domain <name>\n\
-         \x20\x20drun config add-path <path>     allow a host path for session_mount\n\
-         \x20\x20drun config remove-path <path>\n\
-         \n\
-         Running `drun` with no arguments starts the MCP server (managed automatically\n\
-         by launchd/systemd — you should not need to invoke this directly).",
-        version = env!("CARGO_PKG_VERSION")
-    );
+    let v = env!("CARGO_PKG_VERSION");
+    eprintln!("drun v{v} — sandboxed execution for agentic loops");
+    eprintln!();
+    eprintln!("USAGE");
+    eprintln!("  drun <command> [args]");
+    eprintln!();
+    eprintln!("PROJECT");
+    eprintln!("  drun init [dir]                  set up drun for a project directory (default: cwd)");
+    eprintln!("  drun deinit [dir]                remove drun setup from a project directory");
+    eprintln!();
+    eprintln!("GLOBAL");
+    eprintln!("  drun update                      update binary, preserve settings, re-init projects");
+    eprintln!("  drun update --skip-reinit         update binary only, skip project re-initialization");
+    eprintln!("  drun update --version <tag>       update to a specific release (e.g. v0.4.0)");
+    eprintln!("  drun uninstall                   remove drun entirely (prompts for confirmation)");
+    eprintln!();
+    eprintln!("OBSERVABILITY");
+    eprintln!("  drun status                      show daemon health and current project state");
+    eprintln!("  drun projects                    list all registered project directories");
+    eprintln!("  drun projects --clean             remove stale entries from the project registry");
+    eprintln!();
+    eprintln!("DAEMON");
+    eprintln!("  drun daemon start                start the background daemon");
+    eprintln!("  drun daemon stop                 stop the background daemon");
+    eprintln!("  drun daemon restart              restart the background daemon");
+    eprintln!("  drun daemon status               show whether the daemon is running");
+    eprintln!("  drun daemon logs                 tail the daemon log file");
+    eprintln!();
+    eprintln!("CONFIG");
+    eprintln!("  drun config list                 show current domain and path allowlists");
+    eprintln!("  drun config add-domain <name>    allow a domain for session_fetch");
+    eprintln!("  drun config remove-domain <name>  revoke a domain");
+    eprintln!("  drun config add-path <path>      allow a host path for session_mount");
+    eprintln!("  drun config remove-path <path>   revoke a path");
+    eprintln!();
+    eprintln!("Running `drun` with no arguments starts the MCP server (managed automatically");
+    eprintln!("by launchd/systemd — you should not need to invoke this directly).");
 }
 
 fn build_server_details() -> InitializeResult {

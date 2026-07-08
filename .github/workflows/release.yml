@@ -33,7 +33,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
-      - run: cargo build --release -p drun-mcp --target ${{ matrix.target }}
+      - run: cargo build --release -p drun --target ${{ matrix.target }}
       - run: cp target/${{ matrix.target }}/release/drun ${{ matrix.asset }}
       - uses: softprops/action-gh-release@v2
         with:
