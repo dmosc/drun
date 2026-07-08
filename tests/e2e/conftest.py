@@ -47,7 +47,6 @@ Prerequisites
 """
 
 import asyncio
-import json
 import os
 import shutil
 import subprocess
@@ -70,14 +69,6 @@ _MCP_HTTP_URL = f"http://127.0.0.1:{MCP_PORT}/mcp"
 _READY_POLL_INTERVAL = 0.1
 _READY_TIMEOUT = 10.0
 _LAUNCHD_PLIST = Path.home() / "Library/LaunchAgents/com.drun.mcp-server.plist"
-
-# Claude Code native tool names that appear in the deny list. Anything in
-# the deny list that is NOT one of these is treated as a bash command pattern
-# to block within session_bash calls.
-_CLAUDE_CODE_TOOLS = {
-    "Bash", "BashOutput", "KillBash", "Edit", "Write", "NotebookEdit",
-    "Read", "Glob", "Grep", "WebFetch", "WebSearch", "Task",
-}
 
 
 def find_drun_mcp() -> str:
@@ -110,25 +101,6 @@ def write_config(tmp_path: Path, overrides: dict) -> Path:
     config_path = tmp_path / "config.toml"
     config_path.write_text("\n".join(lines) + "\n")
     return config_path
-
-
-def load_deny_list(settings_path: Path) -> tuple[set[str], list[str]]:
-    """Parse .claude/settings.json and return (denied_tool_names, bash_patterns).
-
-    denied_tool_names: MCP tool names that should not be forwarded to the server.
-    bash_patterns: strings that, if found in a session_bash command, cause the
-                   call to be blocked before it reaches the server.
-    """
-    if not settings_path.exists():
-        return set(), []
-    try:
-        settings = json.loads(settings_path.read_text())
-        deny = settings.get("permissions", {}).get("deny", [])
-    except Exception:
-        return set(), []
-    denied_tools = {d for d in deny if d in _CLAUDE_CODE_TOOLS}
-    bash_patterns = [d for d in deny if d not in _CLAUDE_CODE_TOOLS]
-    return denied_tools, bash_patterns
 
 
 async def _wait_for_server(timeout: float = _READY_TIMEOUT) -> None:
@@ -170,8 +142,6 @@ class DrunHarness:
         self.session: Optional[ClientSession] = None
         self.tools: list[dict] = []
         self.tools_called: list[str] = []
-        self._denied_tools: set[str] = set()
-        self._bash_patterns: list[str] = []
         self._claude = anthropic.AsyncAnthropic()
 
     async def __aenter__(self) -> "DrunHarness":
@@ -186,9 +156,6 @@ class DrunHarness:
             cwd=self._tmp_path,
             env=env,
             capture_output=True,
-        )
-        self._denied_tools, self._bash_patterns = load_deny_list(
-            self._tmp_path / ".claude" / "settings.json"
         )
 
         # Start the singleton drun-mcp server.
@@ -230,24 +197,13 @@ class DrunHarness:
             except subprocess.TimeoutExpired:
                 self._process.kill()
 
-    def _check_deny(self, tool_name: str, tool_input: dict) -> Optional[str]:
-        """Return an error string if this call should be blocked, else None."""
-        if tool_name in self._denied_tools:
-            return f"tool '{tool_name}' is denied by project settings"
-        if tool_name == "session_bash" and self._bash_patterns:
-            cmd = tool_input.get("command", "")
-            for pattern in self._bash_patterns:
-                if pattern.lower() in cmd.lower():
-                    return f"command contains denied pattern '{pattern}'"
-        return None
-
     async def run(self, prompt: str) -> str:
         """
         Send prompt to Claude and drive the tool-use loop until end_turn.
 
-        Tool calls are checked against the deny list loaded from
-        .claude/settings.json before being forwarded to the server.
-        Returns Claude's final text response.
+        Each tool_use block Claude emits is forwarded to the live drun-mcp
+        process; the result is fed back as a tool_result. The loop repeats up
+        to MAX_TOOL_ROUNDS times. Returns Claude's final text response.
         """
         self.tools_called = []
         messages: list[dict] = [{"role": "user", "content": prompt}]
@@ -277,16 +233,10 @@ class DrunHarness:
                 if block.type != "tool_use":
                     continue
                 self.tools_called.append(block.name)
-
-                deny_reason = self._check_deny(block.name, block.input or {})
-                if deny_reason:
-                    content_text = f"Error: {deny_reason}"
-                else:
-                    result = await self.session.call_tool(block.name, block.input)
-                    content_text = "\n".join(
-                        c.text for c in result.content if hasattr(c, "text")
-                    )
-
+                result = await self.session.call_tool(block.name, block.input)
+                content_text = "\n".join(
+                    c.text for c in result.content if hasattr(c, "text")
+                )
                 tool_results.append({
                     "type": "tool_result",
                     "tool_use_id": block.id,

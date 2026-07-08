@@ -18,6 +18,8 @@ const REQUIRED_DENY: &[&str] = &[
     "WebFetch",
     "WebSearch",
     "Task",
+    "Curl",
+    "Wget",
 ];
 const REQUIRED_ALLOW: &[&str] = &["mcp__drun__*"];
 
