@@ -385,6 +385,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "drun-integration-tests"
+version = "0.1.0"
+dependencies = [
+ "drun-core",
+ "tempfile",
+ "toml",
+]
+
+[[package]]
 name = "drun-mcp"
 version = "0.3.4"
 dependencies = [

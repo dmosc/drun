@@ -1,7 +1,12 @@
 target/
 venv
+.venv
 *.so
 *.pyc
+__pycache__/
 .drun
 .claude
 CLAUDE.md
+.pytest_cache/
+*.egg-info/
+uv.lock
