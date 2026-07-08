@@ -24,9 +24,11 @@ fn resolve_dir(target_dir: Option<PathBuf>) -> PathBuf {
 }
 
 /// Strips drun's required `deny` and `allow` entries from `.claude/settings.json`.
-/// Other content in the file is preserved exactly.
+/// If the file would become effectively empty after stripping (only empty permission
+/// arrays remain), the file and its parent `.claude/` directory are removed instead.
 fn remove_settings(project_dir: &Path) {
-    let settings_file = project_dir.join(".claude/settings.json");
+    let settings_dir = project_dir.join(".claude");
+    let settings_file = settings_dir.join("settings.json");
     if !settings_file.exists() {
         return;
     }
@@ -36,9 +38,17 @@ fn remove_settings(project_dir: &Path) {
 
     match strip_drun_permissions(&existing) {
         Ok(stripped) => {
-            std::fs::write(&settings_file, stripped)
-                .expect("cannot write .claude/settings.json");
-            eprintln!("drun: removed drun permissions from .claude/settings.json");
+            if is_effectively_empty(&stripped) {
+                std::fs::remove_file(&settings_file)
+                    .expect("cannot remove .claude/settings.json");
+                // Remove the .claude/ dir too if it's now empty
+                std::fs::remove_dir(&settings_dir).ok();
+                eprintln!("drun: removed .claude/settings.json");
+            } else {
+                std::fs::write(&settings_file, stripped)
+                    .expect("cannot write .claude/settings.json");
+                eprintln!("drun: removed drun permissions from .claude/settings.json");
+            }
         }
         Err(e) => {
             eprintln!(
@@ -46,6 +56,28 @@ fn remove_settings(project_dir: &Path) {
             );
         }
     }
+}
+
+/// Returns true when the only remaining content is empty permission arrays —
+/// i.e. the file was created by drun and has no user-added configuration.
+fn is_effectively_empty(json: &str) -> bool {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(json) else {
+        return false;
+    };
+    let Some(obj) = value.as_object() else {
+        return false;
+    };
+    // Non-permissions keys mean the user has their own config in here
+    if obj.keys().any(|k| k != "permissions") {
+        return false;
+    }
+    let Some(perms) = obj.get("permissions").and_then(|v| v.as_object()) else {
+        return true;
+    };
+    // All permission arrays must be empty
+    perms.values().all(|v| {
+        v.as_array().map(|a| a.is_empty()).unwrap_or(false)
+    })
 }
 
 fn strip_drun_permissions(existing: &str) -> Result<String, String> {
@@ -72,8 +104,8 @@ fn strip_from_array(obj: &mut serde_json::Map<String, Value>, key: &str, to_remo
     }
 }
 
-/// Removes `CLAUDE.md` if its content looks like what drun generated. If the
-/// user edited it, a warning is printed and the file is left intact.
+/// Removes `CLAUDE.md` only if its content exactly matches what drun generated.
+/// Any edit — including appending lines — causes the file to be left intact.
 fn remove_claude_md(project_dir: &Path) {
     let claude_md = project_dir.join("CLAUDE.md");
     if !claude_md.exists() {
@@ -81,12 +113,14 @@ fn remove_claude_md(project_dir: &Path) {
     }
 
     let content = std::fs::read_to_string(&claude_md).unwrap_or_default();
+    let project_path = project_dir.to_str().expect("non-UTF-8 project path");
+    let expected = crate::init::claude_md_content(project_path);
 
-    if content.starts_with("# Agent instructions\n\nThis project uses [drun]") {
+    if content == expected {
         std::fs::remove_file(&claude_md).expect("cannot remove CLAUDE.md");
         eprintln!("drun: removed CLAUDE.md");
     } else {
-        eprintln!("drun: CLAUDE.md appears to have been edited — leaving it untouched");
+        eprintln!("drun: CLAUDE.md has been edited — leaving it untouched");
     }
 }
 
@@ -145,14 +179,11 @@ mod tests {
     }
 
     #[test]
-    fn remove_claude_md_deletes_drun_generated_file() {
+    fn remove_claude_md_deletes_unmodified_drun_generated_file() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("CLAUDE.md");
-        std::fs::write(
-            &path,
-            "# Agent instructions\n\nThis project uses [drun](https://github.com/dmosc/drun)",
-        )
-        .unwrap();
+        let expected = crate::init::claude_md_content(dir.path().to_str().unwrap());
+        std::fs::write(&path, &expected).unwrap();
 
         remove_claude_md(dir.path());
 
@@ -160,7 +191,20 @@ mod tests {
     }
 
     #[test]
-    fn remove_claude_md_leaves_edited_file_intact() {
+    fn remove_claude_md_leaves_appended_file_intact() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("CLAUDE.md");
+        let mut content = crate::init::claude_md_content(dir.path().to_str().unwrap());
+        content.push_str("\n## My extra notes\n");
+        std::fs::write(&path, &content).unwrap();
+
+        remove_claude_md(dir.path());
+
+        assert!(path.exists());
+    }
+
+    #[test]
+    fn remove_claude_md_leaves_completely_custom_file_intact() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("CLAUDE.md");
         std::fs::write(&path, "# My custom notes\n\nNot drun generated.").unwrap();
@@ -168,6 +212,50 @@ mod tests {
         remove_claude_md(dir.path());
 
         assert!(path.exists());
+    }
+
+    #[test]
+    fn remove_settings_deletes_file_when_only_drun_content_remains() {
+        let dir = tempfile::tempdir().unwrap();
+        let settings_dir = dir.path().join(".claude");
+        std::fs::create_dir_all(&settings_dir).unwrap();
+        let settings_file = settings_dir.join("settings.json");
+        // Write a file that contains only drun-added entries
+        let drun_only = serde_json::json!({
+            "permissions": {
+                "deny": crate::init::REQUIRED_DENY,
+                "allow": crate::init::REQUIRED_ALLOW,
+            }
+        });
+        std::fs::write(&settings_file, serde_json::to_string_pretty(&drun_only).unwrap()).unwrap();
+
+        remove_settings(dir.path());
+
+        assert!(!settings_file.exists());
+    }
+
+    #[test]
+    fn remove_settings_strips_entries_and_preserves_file_when_user_config_exists() {
+        let dir = tempfile::tempdir().unwrap();
+        let settings_dir = dir.path().join(".claude");
+        std::fs::create_dir_all(&settings_dir).unwrap();
+        let settings_file = settings_dir.join("settings.json");
+        let mixed = serde_json::json!({
+            "theme": "dark",
+            "permissions": {
+                "deny": crate::init::REQUIRED_DENY,
+                "allow": crate::init::REQUIRED_ALLOW,
+            }
+        });
+        std::fs::write(&settings_file, serde_json::to_string_pretty(&mixed).unwrap()).unwrap();
+
+        remove_settings(dir.path());
+
+        assert!(settings_file.exists());
+        let content = std::fs::read_to_string(&settings_file).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&content).unwrap();
+        assert_eq!(value["theme"], "dark");
+        assert!(value["permissions"]["deny"].as_array().unwrap().is_empty());
     }
 
     #[test]

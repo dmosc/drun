@@ -170,7 +170,7 @@ fn register_project(drun_home: &Path, project_dir: &Path) {
     writeln!(file, "{project_path}").expect("cannot write to project registry");
 }
 
-fn claude_md_content(project_path: &str) -> String {
+pub(crate) fn claude_md_content(project_path: &str) -> String {
     format!(
         r#"# Agent instructions
 
