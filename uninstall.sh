@@ -25,7 +25,7 @@ remove_daemon() {
       fi
       ;;
   esac
-  pkill -f drun-mcp 2>/dev/null || true
+  pkill -f "drun-mcp\$" 2>/dev/null || true
 }
 
 # ── Claude Code MCP deregistration ───────────────────────────────────────────

@@ -40,12 +40,19 @@ update_binary() {
 
   echo "Updating drun-mcp to $VERSION..."
 
-  if [[ -w "$BIN" ]]; then
-    curl -fsSL "$url" -o "$BIN"
+  local tmp="$(dirname "$BIN")/.drun-mcp.tmp.$$"
+  trap 'rm -f "$tmp"' EXIT
+
+  if [[ -w "$(dirname "$BIN")" ]]; then
+    curl -fsSL "$url" -o "$tmp"
+    chmod +x "$tmp"
+    mv -f "$tmp" "$BIN"
   else
-    sudo curl -fsSL "$url" -o "$BIN"
+    sudo curl -fsSL "$url" -o "$tmp"
+    sudo chmod +x "$tmp"
+    sudo mv -f "$tmp" "$BIN"
   fi
-  chmod +x "$BIN" 2>/dev/null || sudo chmod +x "$BIN"
+  trap - EXIT
 
   echo "drun-mcp updated at $BIN."
 }
@@ -58,18 +65,18 @@ restart_daemon() {
       if [[ -f "$LAUNCHD_PLIST" ]]; then
         launchctl unload "$LAUNCHD_PLIST" 2>/dev/null || true
         launchctl load -w "$LAUNCHD_PLIST"
-        echo "drun-mcp daemon restarted."
+        echo "drun-mcp daemon restarted — any active sessions were lost."
       else
-        pkill -f drun-mcp 2>/dev/null || true
-        echo "No launchd agent found — killed any running drun-mcp processes."
+        pkill -f "drun-mcp\$" 2>/dev/null || true
+        echo "No launchd agent found — killed any running drun-mcp daemon process."
       fi
       ;;
     Linux)
       if systemctl --user is-active drun-mcp.service &>/dev/null; then
         systemctl --user restart drun-mcp.service
-        echo "drun-mcp daemon restarted."
+        echo "drun-mcp daemon restarted — any active sessions were lost."
       else
-        pkill -f drun-mcp 2>/dev/null || true
+        pkill -f "drun-mcp\$" 2>/dev/null || true
       fi
       ;;
   esac

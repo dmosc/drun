@@ -188,3 +188,11 @@ launchctl load -w ~/Library/LaunchAgents/com.drun.mcp-server.plist
 ```bash
 systemctl --user restart drun-mcp.service
 ```
+
+#### Verifying the daemon is healthy
+
+A dead or crash-looping daemon can look identical to an idle one from the
+outside. See
+[docs/troubleshooting.md's Health check section](docs/troubleshooting.md#health-check--is-drun-actually-running)
+for commands to confirm it's running exactly once, actually listening, and not
+stuck being killed and retried by launchd/systemd.

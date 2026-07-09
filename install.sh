@@ -39,13 +39,19 @@ install_binary() {
 
   echo "Downloading drun-mcp..."
   local url="https://github.com/$REPO/releases/latest/download/$ASSET"
+  local tmp="$BIN_DIR/.drun-mcp.tmp.$$"
+  trap 'rm -f "$tmp"' EXIT
 
   if [[ -w "$BIN_DIR" ]]; then
-    curl -fsSL "$url" -o "$BIN"
+    curl -fsSL "$url" -o "$tmp"
+    chmod +x "$tmp"
+    mv -f "$tmp" "$BIN"
   else
-    sudo curl -fsSL "$url" -o "$BIN"
+    sudo curl -fsSL "$url" -o "$tmp"
+    sudo chmod +x "$tmp"
+    sudo mv -f "$tmp" "$BIN"
   fi
-  chmod +x "$BIN" 2>/dev/null || sudo chmod +x "$BIN"
+  trap - EXIT
 
   echo "drun-mcp installed to $BIN."
 }

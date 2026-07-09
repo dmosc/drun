@@ -4,6 +4,34 @@ Common issues and how to resolve them.
 
 ---
 
+## Health check — is drun actually running?
+
+Validate that the drun daemon is live and functional:
+
+**1. Is exactly one daemon process running?**
+
+```bash
+pgrep -fl "drun-mcp$"
+```
+
+Expect one result, otherwise daemon isn't running.
+
+**2. Is it actually listening?**
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:7274/   # web UI — expect 200
+lsof -nP -iTCP:7273 -sTCP:LISTEN                                   # MCP port
+```
+
+**Fix:**
+
+```bash
+launchctl unload ~/Library/LaunchAgents/com.drun.mcp-server.plist
+curl -fsSL https://raw.githubusercontent.com/dmosc/drun/main/update.sh | bash
+```
+
+---
+
 ## Configuration lifecycle
 
 drun reads `DRUN_CONFIG` once at startup and holds the parsed config in memory
@@ -13,9 +41,13 @@ after the edit.
 
 To apply a config change:
 
-1. Edit `config.toml`
-2. Restart the MCP server (e.g. `claude mcp restart drun`, or stop and re-add
-   it)
+1. Edit `config.toml`, or use
+   `drun-mcp config add-domain/add-path/remove-domain/remove-path`, which edits
+   the file and restarts the daemon for you automatically.
+2. If you edited the file by hand instead, restart the daemon yourself —
+   `launchctl unload`/`load -w` the plist on macOS, or
+   `systemctl --user restart drun-mcp.service` on Linux (see the README's
+   "Reloading the MCP manually" section for the exact commands).
 3. Claude Code reconnects automatically on the next tool call
 
 Open sessions that were created before the restart are gone — sessions live only
@@ -133,10 +165,12 @@ don't cross it in the first place.
 
 ## MCP server not appearing in Claude Code
 
-If `claude mcp list` does not show `drun`, re-register it:
+If `claude mcp list` does not show `drun`, re-register it — `drun-mcp` runs as a
+long-lived daemon speaking SSE, not a stdio-managed subprocess, so register it
+the same way `install.sh` does:
 
 ```bash
-claude mcp add drun -- /usr/local/bin/drun-mcp
+claude mcp add --scope user --transport sse drun http://127.0.0.1:7273/sse
 ```
 
 If it was registered in multiple scopes and you see a scope conflict error when
@@ -146,7 +180,7 @@ removing it:
 for scope in local user project; do
   claude mcp remove drun -s "$scope" 2>/dev/null
 done
-claude mcp add drun -- /usr/local/bin/drun-mcp
+claude mcp add --scope user --transport sse drun http://127.0.0.1:7273/sse
 ```
 
 ---
