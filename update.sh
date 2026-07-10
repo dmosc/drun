@@ -31,14 +31,17 @@ update_binary() {
     exit 1
   fi
 
-  local url
+  local url resolved_version="$VERSION"
   if [[ "$VERSION" == "latest" ]]; then
     url="https://github.com/$REPO/releases/latest/download/$ASSET"
+    resolved_version="$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" \
+      | grep -m1 '"tag_name"' | sed -E 's/.*"tag_name": *"([^"]+)".*/\1/')"
+    [[ -z "$resolved_version" ]] && resolved_version="latest"
   else
     url="https://github.com/$REPO/releases/download/$VERSION/$ASSET"
   fi
 
-  echo "Updating drun-mcp to $VERSION..."
+  echo "Updating drun-mcp to $resolved_version..."
 
   local tmp="$(dirname "$BIN")/.drun-mcp.tmp.$$"
   trap 'rm -f "$tmp"' EXIT
@@ -54,7 +57,7 @@ update_binary() {
   fi
   trap - EXIT
 
-  echo "drun-mcp updated at $BIN."
+  echo "drun-mcp updated to $resolved_version at $BIN."
 }
 
 # ── daemon restart ────────────────────────────────────────────────────────────
