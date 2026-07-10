@@ -34,25 +34,14 @@ curl -fsSL https://raw.githubusercontent.com/dmosc/drun/main/update.sh | bash
 
 ## Configuration lifecycle
 
-drun reads `DRUN_CONFIG` once at startup and holds the parsed config in memory
-for the lifetime of the server process. Changing `config.toml` while the server
-is running has no effect — not on open sessions, and not on new sessions created
-after the edit.
+drun re-reads `DRUN_CONFIG` on every tool call. Edits to `config.toml` — by
+hand or via `drun-mcp config add-domain/add-path/remove-domain/remove-path` —
+take effect on the very next call, in every open session, with no restart.
 
-To apply a config change:
-
-1. Edit `config.toml`, or use
-   `drun-mcp config add-domain/add-path/remove-domain/remove-path`, which edits
-   the file and restarts the daemon for you automatically.
-2. If you edited the file by hand instead, restart the daemon yourself —
-   `launchctl unload`/`load -w` the plist on macOS, or
-   `systemctl --user restart drun-mcp.service` on Linux (see the README's
-   "Reloading the MCP manually" section for the exact commands).
-3. Claude Code reconnects automatically on the next tool call
-
-Open sessions that were created before the restart are gone — sessions live only
-in server memory and are not persisted across restarts unless you called
-`session_snapshot` first.
+`web_port` and `session_idle_timeout_secs` are the exceptions: both are only
+applied at daemon startup, so changing either still needs a restart —
+`launchctl unload`/`load -w` the plist on macOS, or
+`systemctl --user restart drun-mcp.service` on Linux.
 
 ---
 

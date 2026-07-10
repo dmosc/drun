@@ -1,7 +1,4 @@
-use std::{
-    path::{Path, PathBuf},
-    process::Command,
-};
+use std::path::{Path, PathBuf};
 
 use toml_edit::{Array, DocumentMut, Item, Value};
 
@@ -42,13 +39,10 @@ fn config_path() -> PathBuf {
 fn add_domain(domain: &str) {
     let path = config_path();
     match add_domain_to(&path, domain) {
-        Ok(true) => {
-            eprintln!(
-                "drun: added '{domain}' to domain_allowlist in {}",
-                path.display()
-            );
-            restart_daemon();
-        }
+        Ok(true) => eprintln!(
+            "drun: added '{domain}' to domain_allowlist in {}",
+            path.display()
+        ),
         Ok(false) => eprintln!("drun: '{domain}' already in domain_allowlist, skipping"),
         Err(e) => {
             eprintln!("drun: {e}");
@@ -67,14 +61,11 @@ fn add_path(path_arg: &str) {
     };
     let path = config_path();
     match add_path_to(&path, &abs) {
-        Ok(true) => {
-            eprintln!(
-                "drun: added '{}' to mount_allowlist in {}",
-                abs.display(),
-                path.display()
-            );
-            restart_daemon();
-        }
+        Ok(true) => eprintln!(
+            "drun: added '{}' to mount_allowlist in {}",
+            abs.display(),
+            path.display()
+        ),
         Ok(false) => eprintln!(
             "drun: '{}' already in mount_allowlist, skipping",
             abs.display()
@@ -89,13 +80,10 @@ fn add_path(path_arg: &str) {
 fn remove_domain(domain: &str) {
     let path = config_path();
     match remove_domain_from(&path, domain) {
-        Ok(true) => {
-            eprintln!(
-                "drun: removed '{domain}' from domain_allowlist in {}",
-                path.display()
-            );
-            restart_daemon();
-        }
+        Ok(true) => eprintln!(
+            "drun: removed '{domain}' from domain_allowlist in {}",
+            path.display()
+        ),
         Ok(false) => eprintln!("drun: '{domain}' not in domain_allowlist, skipping"),
         Err(e) => {
             eprintln!("drun: {e}");
@@ -115,13 +103,10 @@ fn remove_path(path_arg: &str) {
         .unwrap_or_else(|_| path_arg.to_string());
     let path = config_path();
     match remove_path_from(&path, &value) {
-        Ok(true) => {
-            eprintln!(
-                "drun: removed '{value}' from mount_allowlist in {}",
-                path.display()
-            );
-            restart_daemon();
-        }
+        Ok(true) => eprintln!(
+            "drun: removed '{value}' from mount_allowlist in {}",
+            path.display()
+        ),
         Ok(false) => eprintln!("drun: '{value}' not in mount_allowlist, skipping"),
         Err(e) => {
             eprintln!("drun: {e}");
@@ -151,7 +136,7 @@ fn add_domain_to(config_path: &Path, domain: &str) -> Result<bool, String> {
     add_to_array(config_path, "domain_allowlist", domain)
 }
 
-fn add_path_to(config_path: &Path, path: &Path) -> Result<bool, String> {
+pub(crate) fn add_path_to(config_path: &Path, path: &Path) -> Result<bool, String> {
     let value = path
         .to_str()
         .ok_or_else(|| format!("non-UTF-8 path: {}", path.display()))?;
@@ -187,9 +172,14 @@ fn add_to_array(config_path: &Path, key: &str, value: &str) -> Result<bool, Stri
         .ok_or_else(|| format!("'{key}' in {} is not an array", config_path.display()))?;
     array.push(value);
 
-    std::fs::write(config_path, doc.to_string())
-        .map_err(|e| format!("cannot write {}: {e}", config_path.display()))?;
+    update_toml_config(config_path, doc.to_string())?;
     Ok(true)
+}
+
+fn update_toml_config(path: &Path, contents: String) -> Result<(), String> {
+    let tmp = path.with_extension("toml.tmp");
+    std::fs::write(&tmp, contents).map_err(|e| format!("cannot write {}: {e}", tmp.display()))?;
+    std::fs::rename(&tmp, path).map_err(|e| format!("cannot write {}: {e}", path.display()))
 }
 
 fn remove_domain_from(config_path: &Path, domain: &str) -> Result<bool, String> {
@@ -224,44 +214,8 @@ fn remove_from_array(config_path: &Path, key: &str, value: &str) -> Result<bool,
     };
     array.remove(idx);
 
-    std::fs::write(config_path, doc.to_string())
-        .map_err(|e| format!("cannot write {}: {e}", config_path.display()))?;
+    update_toml_config(config_path, doc.to_string())?;
     Ok(true)
-}
-
-fn restart_daemon() {
-    let home = std::env::var("HOME").unwrap_or_default();
-    match std::env::consts::OS {
-        "macos" => {
-            let plist = format!("{home}/Library/LaunchAgents/com.drun.mcp-server.plist");
-            if !Path::new(&plist).exists() {
-                eprintln!("drun: no launchd agent found at {plist} — restart the daemon manually");
-                return;
-            }
-            let _ = Command::new("launchctl").args(["unload", &plist]).status();
-            let status = Command::new("launchctl")
-                .args(["load", "-w", &plist])
-                .status();
-            match status {
-                Ok(s) if s.success() => eprintln!("drun: daemon restarted"),
-                _ => eprintln!(
-                    "drun: could not restart the daemon automatically — run:\n  launchctl unload {plist}\n  launchctl load -w {plist}"
-                ),
-            }
-        }
-        "linux" => {
-            let status = Command::new("systemctl")
-                .args(["--user", "restart", "drun-mcp.service"])
-                .status();
-            match status {
-                Ok(s) if s.success() => eprintln!("drun: daemon restarted"),
-                _ => eprintln!(
-                    "drun: could not restart the daemon automatically — run:\n  systemctl --user restart drun-mcp.service"
-                ),
-            }
-        }
-        _ => eprintln!("drun: unsupported platform — restart the daemon manually"),
-    }
 }
 
 #[cfg(test)]

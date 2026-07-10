@@ -8,23 +8,31 @@ All notable changes to drun are documented here.
 
 ### Reliability fixes
 
+- Config is now re-read from disk on every tool call instead of once at daemon
+  startup. `drun-mcp config add-domain/add-path/remove-domain/
+  remove-path`
+  (and hand-edits to `config.toml`) take effect immediately, in every open
+  session — no restart, no dropped sessions. `web_port` and
+  `session_idle_timeout_secs` still require a restart (applied at startup only).
+  `drun-mcp init` now also allowlists the project directory for `session_mount`
+  automatically. `config_cmd`'s TOML writes are atomic (temp file + rename).
 - Fixed `install.sh`/`update.sh` writing a freshly downloaded binary directly
   onto `/usr/local/bin/drun-mcp` while the daemon was still running from that
   exact path. Truncating a binary in place while it's actively executing can
-  corrupt macOS's code-signing validation for that file, wedging the daemon
-  into a `OS_REASON_CODESIGNING` crash loop that not even `kill -9` recovers
-  from. Both scripts now download to a temp file and swap it into place with
-  an atomic rename. Also anchored the `pkill -f drun-mcp` fallbacks in
+  corrupt macOS's code-signing validation for that file, wedging the daemon into
+  a `OS_REASON_CODESIGNING` crash loop that not even `kill -9` recovers from.
+  Both scripts now download to a temp file and swap it into place with an atomic
+  rename. Also anchored the `pkill -f drun-mcp` fallbacks in
   `update.sh`/`uninstall.sh` to `pkill -f "drun-mcp$"` so they can't match
   unrelated processes. Added a "Health check" section to
   `docs/troubleshooting.md` with commands to confirm the daemon is running
   exactly once and not crash-looping, since a dead daemon is otherwise
-  indistinguishable from an idle one, plus fixed two stale commands in that
-  doc (a nonexistent `claude mcp restart drun`, and re-registration examples
-  that used stdio-transport syntax instead of the SSE transport drun actually
+  indistinguishable from an idle one, plus fixed two stale commands in that doc
+  (a nonexistent `claude mcp restart drun`, and re-registration examples that
+  used stdio-transport syntax instead of the SSE transport drun actually
   registers with). `DEVELOPMENT.md` now documents how to safely test a local
-  build against the installed binary/service manager instead of only a
-  throwaway debug build.
+  build against the installed binary/service manager instead of only a throwaway
+  debug build.
 - Fixed `drun-mcp init` silently no-oping when `.claude/settings.json` already
   existed — the project was left with native tools (`Bash`, `Edit`, `Write`,
   etc.) fully enabled with no warning, since the sandbox's deny-list was never

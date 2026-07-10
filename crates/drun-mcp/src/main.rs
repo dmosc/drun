@@ -9,7 +9,6 @@ mod state;
 mod tools;
 mod web;
 
-use drun_core::Config;
 use handler::DrunHandler;
 use rust_mcp_sdk::{
     ToMcpServerHandler,
@@ -42,10 +41,10 @@ async fn main() -> SdkResult<()> {
         _ => {}
     }
 
-    let handler = DrunHandler::new(Config::load());
+    let handler = DrunHandler::new_live();
     handler.start_idle_reaper();
 
-    if let Some(web_port) = handler.config.web_port.filter(|&p| p != 0) {
+    if let Some(web_port) = handler.config.get().web_port.filter(|&p| p != 0) {
         let web_sessions = std::sync::Arc::clone(&handler.sessions);
         tokio::spawn(web::WebServer::new(web_sessions, web_port).serve());
     }
@@ -79,8 +78,8 @@ fn print_usage() {
          \x20\x20drun-mcp config remove-path <path>   disallow a path for session_mount\n\
          \x20\x20drun-mcp config list                 show the current allowlists\n\
          \n\
-         config add-*/remove-* edit ~/.drun/config.toml and restart the\n\
-         daemon automatically."
+         config add-*/remove-* edit ~/.drun/config.toml — changes take effect\n\
+         on the next tool call, no restart needed."
     );
 }
 

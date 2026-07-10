@@ -1,5 +1,5 @@
 use crate::types::{DrunCheckpoint, checkpoint_to_py};
-use drun_core::Session;
+use drun_core::{ConfigHandle, Session};
 use pyo3::{exceptions::PyRuntimeError, prelude::*};
 use std::sync::Mutex;
 
@@ -12,8 +12,8 @@ pub struct DrunSession {
 impl DrunSession {
     #[new]
     pub fn new() -> PyResult<Self> {
-        let config = drun_core::Config::load();
-        let session = Session::new(&config).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let session = Session::new(ConfigHandle::from_env())
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
         Ok(Self {
             inner: Mutex::new(session),
         })
@@ -135,7 +135,7 @@ mod tests {
     fn test_session() -> DrunSession {
         let config = drun_core::Config::default();
         DrunSession {
-            inner: Mutex::new(Session::new(&config).unwrap()),
+            inner: Mutex::new(Session::new(config.into()).unwrap()),
         }
     }
 
@@ -288,7 +288,7 @@ mod tests {
             ..drun_core::Config::default()
         };
         let session = DrunSession {
-            inner: Mutex::new(Session::new(&config).unwrap()),
+            inner: Mutex::new(Session::new(config.into()).unwrap()),
         };
         let err = session
             .execute_bash("rm -rf /tmp/whatever".to_string())

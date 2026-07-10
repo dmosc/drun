@@ -122,7 +122,7 @@ curl -fsSL https://raw.githubusercontent.com/dmosc/drun/main/uninstall.sh | bash
 ### Configuration
 
 The behavior of the drun MCP is orchestrated via `~/.drun/config.toml`, a single
-global file shared by the background daemon. It is read once at daemon startup;
+global file shared by the background daemon. It's re-read on every tool call;
 without it, built-in defaults apply.
 
 The following is a reference of all the controls available for tuning. All
@@ -164,17 +164,13 @@ drun-mcp config list
 
 Run `drun-mcp config --help` to print a list of available commands.
 
-It's important to note that the `drun` binary is a single shared daemon instance
-serving every project on the machine. This means that a reload effectively drops
-any ongoing session. Request Claude to "export the session" in order to create a
-recoverable snapshot that can be loaded by a new session prior to reloading the
-binary.
+`~/.drun/config.toml` is re-read on every tool call, so edits — via the CLI
+above or by hand — take effect on the very next call, no restart, no dropped
+sessions. `drun-mcp init` also allowlists the current project directory for
+`session_mount` automatically.
 
-#### Reloading the MCP manually
-
-`~/.drun/config.toml` is read once when the daemon starts. If you edit the file
-by hand instead of using `drun-mcp config`, restart the daemon yourself to apply
-the change:
+The two exceptions are `web_port` and `session_idle_timeout_secs`: both are only
+applied at daemon startup, so changing either still requires a restart:
 
 **macOS**
 

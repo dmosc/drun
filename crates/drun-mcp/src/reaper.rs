@@ -45,7 +45,7 @@ mod tests {
     }
 
     fn session_idle_for(secs: u64) -> Session {
-        let mut session = Session::new(&Config::default()).unwrap();
+        let mut session = Session::new(Config::default().into()).unwrap();
         session.last_activity = Instant::now() - Duration::from_secs(secs);
         session
     }

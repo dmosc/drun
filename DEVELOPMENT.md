@@ -126,9 +126,9 @@ same UI, confirming the shared `SessionMap`.
 
 ## Reload after changes
 
-`~/.drun/config.toml` (or whichever path `DRUN_CONFIG` points to) is read once
-at startup. The web UI HTML is compiled into the binary. Both require a rebuild
-and restart to take effect:
+Config edits (`config.toml`) take effect on the next tool call with no restart.
+Code changes and the web UI HTML (compiled into the binary) still need a rebuild
+and restart:
 
 ```bash
 cargo build -p drun-mcp
@@ -149,18 +149,17 @@ launchctl load -w ~/Library/LaunchAgents/com.drun.mcp-server.plist
 
 The workflow above runs a throwaway debug build directly and never touches
 `/usr/local/bin/drun-mcp`. Sometimes you actually need to test against the
-*installed* path and service manager instead — e.g. verifying `install.sh`/
+_installed_ path and service manager instead — e.g. verifying `install.sh`/
 `update.sh` themselves, or reproducing something that only shows up under
 launchd/systemd supervision.
 
-**Never `cp`/`curl -o` directly onto `/usr/local/bin/drun-mcp` while the
-daemon is running from that path.** Truncating a binary in place while a
-process is actively executing it can corrupt the kernel's code-signing
-validation for that file on macOS (`OS_REASON_CODESIGNING`) and wedge the
-daemon into a crash loop that not even `kill -9` can recover from — this is
-exactly what `update.sh` was fixed to avoid, and it's a real failure mode, not
-a theoretical one. Always swap the binary in via a temp file + atomic rename,
-the same way `update.sh` does:
+**Never `cp`/`curl -o` directly onto `/usr/local/bin/drun-mcp` while the daemon
+is running from that path.** Truncating a binary in place while a process is
+actively executing it can corrupt the kernel's code-signing validation for that
+file on macOS (`OS_REASON_CODESIGNING`) and wedge the daemon into a crash loop
+that not even `kill -9` can recover from — this is exactly what `update.sh` was
+fixed to avoid, and it's a real failure mode, not a theoretical one. Always swap
+the binary in via a temp file + atomic rename, the same way `update.sh` does:
 
 ```bash
 # 1. Build a release binary — matches what install.sh actually ships
@@ -180,8 +179,8 @@ launchctl load -w ~/Library/LaunchAgents/com.drun.mcp-server.plist  # macOS
 # systemctl --user start drun-mcp.service                           # Linux
 ```
 
-Then confirm it actually came back up healthy — not stuck at zero processes,
-not crash-looping — with the checks from
+Then confirm it actually came back up healthy — not stuck at zero processes, not
+crash-looping — with the checks from
 [docs/troubleshooting.md's Health check section](docs/troubleshooting.md#health-check--is-drun-actually-running):
 
 ```bash

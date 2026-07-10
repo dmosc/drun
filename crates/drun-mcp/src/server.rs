@@ -88,14 +88,14 @@ impl ServerHandler for DrunHandler {
 
 impl DrunHandler {
     fn handle_create_session(&self) -> Result<CallToolResult, CallToolError> {
-        if let Some(max) = self.config.max_sessions
+        if let Some(max) = self.config.get().max_sessions
             && self.sessions.lock().unwrap().len() >= max
         {
             return Err(DrunError::session_limit_reached(max).into_tool_err());
         }
         let session_id = Uuid::new_v4().to_string();
-        let session =
-            Session::new(&self.config).map_err(|e| DrunError::internal(e).into_tool_err())?;
+        let session = Session::new(self.config.clone())
+            .map_err(|e| DrunError::internal(e).into_tool_err())?;
         let state = SessionState::compute(&session_id, &session, None, vec![]);
         self.sessions
             .lock()
@@ -117,7 +117,7 @@ impl DrunHandler {
             let checkpoint_id = source
                 .resolve_checkpoint(t.checkpoint_id, t.checkpoint_label.as_deref())
                 .map_err(|e| DrunError::internal(e).into_tool_err())?;
-            Session::from_session(&self.config, &t.session_id, &source, checkpoint_id)
+            Session::from_session(self.config.clone(), &t.session_id, &source, checkpoint_id)
                 .map_err(|e| DrunError::internal(e).into_tool_err())?
         };
         let fork_id = Uuid::new_v4().to_string();
@@ -141,11 +141,9 @@ impl DrunHandler {
             .unwrap()
             .remove(&t.session_id)
             .ok_or_else(|| DrunError::session_not_found(&t.session_id).into_tool_err())?;
-        if self.config.snapshot_on_close {
-            let output_path = self
-                .config
-                .snapshots_dir
-                .join(format!("{}.drun", t.session_id));
+        let config = self.config.get();
+        if config.snapshot_on_close {
+            let output_path = config.snapshots_dir.join(format!("{}.drun", t.session_id));
             if let Some(parent_dir) = output_path.parent() {
                 let _ = std::fs::create_dir_all(parent_dir);
             }
@@ -359,11 +357,13 @@ impl DrunHandler {
     }
 
     fn handle_list_snapshots(&self) -> Result<CallToolResult, CallToolError> {
-        Ok(json(&SnapshotEntry::catalog(&self.config.snapshots_dir)))
+        Ok(json(&SnapshotEntry::catalog(
+            &self.config.get().snapshots_dir,
+        )))
     }
 
     fn handle_session_export(&self, t: SessionExport) -> Result<CallToolResult, CallToolError> {
-        let export_root = &self.config.export_root;
+        let export_root = self.config.get().export_root;
         let output_dir = match &t.output_dir {
             Some(dir) => {
                 let p = PathBuf::from(dir);
@@ -374,7 +374,7 @@ impl DrunHandler {
                     )
                     .into());
                 }
-                if !p.starts_with(export_root) {
+                if !p.starts_with(&export_root) {
                     return Err(DrunError::export_denied(
                         &p.display().to_string(),
                         &export_root.display().to_string(),
@@ -407,8 +407,8 @@ impl DrunHandler {
         if !self.sessions.lock().unwrap().contains_key(&t.session_id) {
             return Err(DrunError::session_not_found(&t.session_id).into_tool_err());
         }
-        let url_is_allowed =
-            Self::host_from_url(&t.url).is_some_and(|h| self.config.domain_allowed(&h));
+        let config = self.config.get();
+        let url_is_allowed = Self::host_from_url(&t.url).is_some_and(|h| config.domain_allowed(&h));
         if !url_is_allowed {
             return Err(DrunError::fetch_denied(&t.url).into_tool_err());
         }
@@ -419,8 +419,8 @@ impl DrunHandler {
         })?;
 
         let builder = reqwest::Client::builder()
-            .connect_timeout(Duration::from_millis(self.config.connect_timeout_ms))
-            .timeout(Duration::from_millis(self.config.fetch_timeout_ms));
+            .connect_timeout(Duration::from_millis(config.connect_timeout_ms))
+            .timeout(Duration::from_millis(config.fetch_timeout_ms));
         let client = builder
             .build()
             .map_err(|e| DrunError::internal(e).into_tool_err())?;
@@ -447,8 +447,7 @@ impl DrunHandler {
             .unwrap_or("")
             .to_string();
 
-        let max_body = self
-            .config
+        let max_body = config
             .max_workspace_mb
             .map(|mb| mb * 1024 * 1024)
             .unwrap_or(256 * 1024 * 1024);
@@ -491,7 +490,7 @@ impl DrunHandler {
 
     fn handle_get_fetch_allowlist(&self) -> Result<CallToolResult, CallToolError> {
         Ok(text(
-            serde_json::to_string(&self.config.domain_allowlist).unwrap(),
+            serde_json::to_string(&self.config.get().domain_allowlist).unwrap(),
         ))
     }
 
@@ -499,7 +498,7 @@ impl DrunHandler {
         &self,
         t: SessionSnapshotTool,
     ) -> Result<CallToolResult, CallToolError> {
-        let snapshots_dir = &self.config.snapshots_dir;
+        let snapshots_dir = self.config.get().snapshots_dir;
         let output_path = match t.path {
             Some(p) => {
                 let p = PathBuf::from(p);
@@ -510,7 +509,7 @@ impl DrunHandler {
                     )
                     .into_tool_err());
                 }
-                if !p.starts_with(snapshots_dir) {
+                if !p.starts_with(&snapshots_dir) {
                     return Err(DrunError::snapshot_denied(
                         &p.display().to_string(),
                         &snapshots_dir.display().to_string(),
@@ -543,7 +542,7 @@ impl DrunHandler {
         if !self.sessions.lock().unwrap().contains_key(&t.session_id) {
             return Err(DrunError::session_not_found(&t.session_id).into_tool_err());
         }
-        if !self.config.env_allowlist.contains(&t.name) {
+        if !self.config.get().env_allowlist.contains(&t.name) {
             return Err(DrunError::env_var_denied(&t.name).into_tool_err());
         }
         let value = std::env::var(&t.name).unwrap_or_default();
@@ -556,7 +555,7 @@ impl DrunHandler {
         let bytes = std::fs::read(&t.path).map_err(|e| DrunError::internal(e).into_tool_err())?;
         let snapshot =
             SessionSnapshot::decode(&bytes).map_err(|e| DrunError::internal(e).into_tool_err())?;
-        let restored = Session::from_snapshot(&self.config, snapshot)
+        let restored = Session::from_snapshot(self.config.clone(), snapshot)
             .map_err(|e| DrunError::internal(e).into_tool_err())?;
         let session_id = Uuid::new_v4().to_string();
         let state = SessionState::compute(&session_id, &restored, None, vec![]);
@@ -847,7 +846,7 @@ mod tests {
     fn insert_session(handler: &DrunHandler, id: &str) {
         handler.sessions.lock().unwrap().insert(
             id.to_string(),
-            Arc::new(Mutex::new(Session::new(&handler.config).unwrap())),
+            Arc::new(Mutex::new(Session::new(handler.config.clone()).unwrap())),
         );
     }
 

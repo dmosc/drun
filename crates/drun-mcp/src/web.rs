@@ -210,7 +210,10 @@ mod tests {
 
     #[tokio::test]
     async fn handle_session_tree_returns_json_for_the_current_sessions() {
-        let sessions = session_map(vec![("s1", Session::new(&Config::default()).unwrap())]);
+        let sessions = session_map(vec![(
+            "s1",
+            Session::new(Config::default().into()).unwrap(),
+        )]);
         let response = handle_session_tree(State(AppState { sessions })).await;
         assert_eq!(response.status(), StatusCode::OK);
         let body = body_string(response).await;
@@ -228,7 +231,10 @@ mod tests {
 
     #[tokio::test]
     async fn handle_checkpoint_history_returns_json_history_on_success() {
-        let sessions = session_map(vec![("s1", Session::new(&Config::default()).unwrap())]);
+        let sessions = session_map(vec![(
+            "s1",
+            Session::new(Config::default().into()).unwrap(),
+        )]);
         let response =
             handle_checkpoint_history(State(AppState { sessions }), Path("s1".to_string())).await;
         assert_eq!(response.status(), StatusCode::OK);
@@ -238,7 +244,7 @@ mod tests {
 
     #[tokio::test]
     async fn handle_checkpoint_diff_defaults_to_diffing_from_checkpoint_zero() {
-        let mut session = Session::new(&Config::default()).unwrap();
+        let mut session = Session::new(Config::default().into()).unwrap();
         session.write_file("a.txt", b"hi".to_vec()).unwrap();
         let sessions = session_map(vec![("s1", session)]);
 
@@ -258,7 +264,10 @@ mod tests {
 
     #[tokio::test]
     async fn handle_checkpoint_diff_returns_400_for_an_invalid_checkpoint() {
-        let sessions = session_map(vec![("s1", Session::new(&Config::default()).unwrap())]);
+        let sessions = session_map(vec![(
+            "s1",
+            Session::new(Config::default().into()).unwrap(),
+        )]);
         let response = handle_checkpoint_diff(
             State(AppState { sessions }),
             Path("s1".to_string()),
@@ -273,7 +282,10 @@ mod tests {
 
     #[tokio::test]
     async fn handle_checkpoint_stdout_returns_404_for_an_unknown_checkpoint() {
-        let sessions = session_map(vec![("s1", Session::new(&Config::default()).unwrap())]);
+        let sessions = session_map(vec![(
+            "s1",
+            Session::new(Config::default().into()).unwrap(),
+        )]);
         let response =
             handle_checkpoint_stdout(State(AppState { sessions }), Path(("s1".to_string(), 99)))
                 .await;
@@ -282,7 +294,10 @@ mod tests {
 
     #[tokio::test]
     async fn handle_checkpoint_stdout_returns_the_checkpoints_stdout() {
-        let sessions = session_map(vec![("s1", Session::new(&Config::default()).unwrap())]);
+        let sessions = session_map(vec![(
+            "s1",
+            Session::new(Config::default().into()).unwrap(),
+        )]);
         let response =
             handle_checkpoint_stdout(State(AppState { sessions }), Path(("s1".to_string(), 0)))
                 .await;

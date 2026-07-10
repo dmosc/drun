@@ -325,7 +325,7 @@ mod tests {
     }
 
     fn new_session() -> Session {
-        Session::new(&Config::default()).unwrap()
+        Session::new(Config::default().into()).unwrap()
     }
 
     #[test]

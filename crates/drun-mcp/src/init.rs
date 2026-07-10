@@ -43,8 +43,25 @@ pub fn run() {
     write_settings(&cwd);
     write_claude_md(&cwd);
     register_project(&drun_home, &cwd);
+    allow_mount_path(&drun_home, &cwd);
 
     eprintln!("drun: initialized for {}", cwd.display());
+}
+
+fn allow_mount_path(drun_home: &Path, project_dir: &Path) {
+    let config_path = drun_home.join("config.toml");
+    if !config_path.exists() {
+        return;
+    }
+    match crate::config_cmd::add_path_to(&config_path, project_dir) {
+        Ok(true) => eprintln!("drun: added '{}' to mount_allowlist", project_dir.display()),
+        Ok(false) => {}
+        Err(e) => eprintln!(
+            "drun: could not update mount_allowlist ({e}) — add it manually with \
+             `drun-mcp config add-path {}`",
+            project_dir.display()
+        ),
+    }
 }
 
 pub(crate) fn drun_home() -> PathBuf {
@@ -174,7 +191,8 @@ sandbox. Use the drun MCP tools (prefixed `mcp__drun__`) for everything.
 
 1. Call `create_session` — sessions start with an empty workspace.
 2. Call `session_mount` with path `{project_path}` to load this project's files
-   into the session. Re-mount any other host paths you need the same way.
+   into the session (already allowlisted by `drun-mcp init`). Re-mount any
+   other host paths you need the same way.
 3. From there, work entirely through drun tools — there is no host file or shell
    access outside of them.
 
@@ -203,13 +221,8 @@ is denied for a domain or path you need, tell the user to run:
 - `drun-mcp config add-path <path>` to allow a new host path for
   `session_mount`
 
-Both commands update the config and restart the drun daemon to apply the
-change. **The restart terminates every active session on the daemon,
-including the current one** — the daemon reads `~/.drun/config.toml` once at
-startup, so there is currently no way to apply a config change without
-restarting. If the current session has state worth keeping, run
-`session_export` before running the `config` command, then start a new
-session (and re-mount/re-import as needed) once the restart completes.
+Both commands edit `~/.drun/config.toml` directly — no restart needed, and
+the change is visible on your very next tool call in this same session.
 "#
     )
 }
@@ -351,6 +364,36 @@ mod tests {
             std::fs::read_to_string(dir.path().join("CLAUDE.md")).unwrap(),
             "custom"
         );
+    }
+
+    #[test]
+    fn allow_mount_path_adds_the_project_dir_to_an_existing_config() {
+        let drun_home = tempfile::tempdir().unwrap();
+        let project_dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            drun_home.path().join("config.toml"),
+            "mount_allowlist = []\n",
+        )
+        .unwrap();
+
+        allow_mount_path(drun_home.path(), project_dir.path());
+
+        let config = drun_core::Config::load_from(Some(&drun_home.path().join("config.toml")));
+        assert!(
+            config
+                .mount_allowlist
+                .contains(&project_dir.path().to_path_buf())
+        );
+    }
+
+    #[test]
+    fn allow_mount_path_is_a_no_op_without_a_daemon_config() {
+        let drun_home = tempfile::tempdir().unwrap();
+        let project_dir = tempfile::tempdir().unwrap();
+
+        allow_mount_path(drun_home.path(), project_dir.path());
+
+        assert!(!drun_home.path().join("config.toml").exists());
     }
 
     #[test]

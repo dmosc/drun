@@ -1,4 +1,4 @@
-use crate::config::Config;
+use crate::config::ConfigHandle;
 use crate::error::RunnerError;
 use crate::snapshot::{CheckpointRecord, SessionSnapshot};
 use crate::{Checkpoint, CheckpointRef, FileMap, sandbox, workspace};
@@ -13,7 +13,7 @@ use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
 
 pub struct Session {
-    config: Config,
+    config: ConfigHandle,
     checkpoints: Vec<Checkpoint>,
     checkpoint_idx: usize,
     origins: HashMap<String, PathBuf>,
@@ -26,9 +26,9 @@ pub struct Session {
 }
 
 impl Session {
-    pub fn new(config: &Config) -> anyhow::Result<Self> {
+    pub fn new(config: ConfigHandle) -> anyhow::Result<Self> {
         Ok(Self {
-            config: config.clone(),
+            config,
             checkpoints: vec![Checkpoint::empty(0, HashMap::new())],
             checkpoint_idx: 0,
             origins: HashMap::new(),
@@ -42,7 +42,7 @@ impl Session {
     }
 
     pub fn from_session(
-        config: &Config,
+        config: ConfigHandle,
         source_session_id: &str,
         source: &Session,
         checkpoint_id: Option<usize>,
@@ -81,9 +81,9 @@ impl Session {
         let abs = path
             .canonicalize()
             .map_err(|_| anyhow::anyhow!("path does not exist: {}", path.display()))?;
-        if !self.config.mount_allowlist.is_empty() {
-            let allowed = self
-                .config
+        let config = self.config.get();
+        if !config.mount_allowlist.is_empty() {
+            let allowed = config
                 .mount_allowlist
                 .iter()
                 .any(|prefix| abs.starts_with(prefix));
@@ -91,7 +91,7 @@ impl Session {
                 anyhow::bail!(
                     "'{}' is not in the mount allowlist; permitted prefixes: {}",
                     abs.display(),
-                    self.config
+                    config
                         .mount_allowlist
                         .iter()
                         .map(|p| p.display().to_string())
@@ -102,7 +102,7 @@ impl Session {
         }
 
         let (file_entries, overlay_entries) = if abs.is_dir() {
-            Self::scan_mount_path(&abs, "", &self.config.mount_overlay_paths)?
+            Self::scan_mount_path(&abs, "", &config.mount_overlay_paths)?
         } else {
             let key = abs
                 .file_name()
@@ -481,7 +481,7 @@ impl Session {
         }
     }
 
-    pub fn from_snapshot(config: &Config, snapshot: SessionSnapshot) -> anyhow::Result<Self> {
+    pub fn from_snapshot(config: ConfigHandle, snapshot: SessionSnapshot) -> anyhow::Result<Self> {
         let blob_arcs: Vec<Arc<Vec<u8>>> = snapshot.blobs.into_iter().map(Arc::new).collect();
         let checkpoints: Vec<Checkpoint> = snapshot
             .checkpoints
@@ -525,7 +525,7 @@ impl Session {
             .collect();
 
         Ok(Self {
-            config: config.clone(),
+            config,
             checkpoints,
             checkpoint_idx: snapshot.checkpoint_idx,
             origins,
@@ -623,7 +623,7 @@ impl Session {
     }
 
     fn check_checkpoint_limit(&self) -> anyhow::Result<()> {
-        if let Some(max) = self.config.max_checkpoints
+        if let Some(max) = self.config.get().max_checkpoints
             && self.checkpoints.len() >= max
         {
             anyhow::bail!(
@@ -635,7 +635,12 @@ impl Session {
     }
 
     fn check_workspace_size(&self, files: &FileMap) -> anyhow::Result<()> {
-        if let Some(limit) = self.config.max_workspace_mb.map(|mb| mb * 1024 * 1024) {
+        if let Some(limit) = self
+            .config
+            .get()
+            .max_workspace_mb
+            .map(|mb| mb * 1024 * 1024)
+        {
             let total: u64 = files.values().map(|v| v.len() as u64).sum();
             if total > limit {
                 anyhow::bail!(
@@ -649,23 +654,23 @@ impl Session {
     }
 
     fn check_command_policy(&self, command: &str) -> anyhow::Result<()> {
-        for denied in &self.config.bash_command_denylist {
+        let config = self.config.get();
+        for denied in &config.bash_command_denylist {
             if command.contains(denied.as_str()) {
                 return Err(anyhow::Error::from(RunnerError::CommandDenied(format!(
                     "command denied: matches denylist pattern '{denied}'"
                 ))));
             }
         }
-        if !self.config.bash_command_allowlist.is_empty()
-            && !self
-                .config
+        if !config.bash_command_allowlist.is_empty()
+            && !config
                 .bash_command_allowlist
                 .iter()
                 .any(|a| command.contains(a.as_str()))
         {
             return Err(anyhow::Error::from(RunnerError::CommandDenied(format!(
                 "command denied: not matched by any allowlist pattern; permitted: {}",
-                self.config.bash_command_allowlist.join(", ")
+                config.bash_command_allowlist.join(", ")
             ))));
         }
         Ok(())
@@ -695,7 +700,7 @@ impl Session {
         mut child: Child,
         on_stdout: &mut dyn FnMut(String),
     ) -> anyhow::Result<BashOutput> {
-        let bash_timeout_ms = self.config.bash_timeout_ms;
+        let bash_timeout_ms = self.config.get().bash_timeout_ms;
         let pgid = child.id() as i32;
         let child_stderr = child.stderr.take().unwrap();
         let child_stdout = child.stdout.take().unwrap();
@@ -737,7 +742,7 @@ impl Session {
         Self::kill_process_group(pgid);
         if timed_out.load(Ordering::Relaxed) {
             return Err(anyhow::Error::from(RunnerError::Timeout {
-                timeout_ms: self.config.bash_timeout_ms,
+                timeout_ms: bash_timeout_ms,
             }));
         }
         Ok(BashOutput { stdout, stderr })
@@ -806,9 +811,10 @@ type ScannedOverlays = Vec<(String, PathBuf)>;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::Config;
 
     fn session() -> Session {
-        Session::new(&Config::default()).unwrap()
+        Session::new(Config::default().into()).unwrap()
     }
 
     fn file_map(pairs: &[(&str, &[u8])]) -> FileMap {
@@ -824,12 +830,52 @@ mod tests {
             bash_command_denylist: vec!["rm -rf".to_string()],
             ..Config::default()
         };
-        let mut s = Session::new(&config).unwrap();
+        let mut s = Session::new(config.into()).unwrap();
         let err = s
             .execute_bash("rm -rf /tmp/whatever", &mut |_| {})
             .unwrap_err();
         assert!(err.to_string().contains("command denied"));
         assert_eq!(s.history().len(), 1, "denied command must not checkpoint");
+    }
+
+    #[test]
+    fn mount_reflects_a_config_file_edit_without_recreating_the_session() {
+        let dir = tempfile::tempdir().unwrap();
+        let allowed_dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("file.txt");
+        std::fs::write(&file_path, b"hello").unwrap();
+
+        let config_path = dir.path().join("config.toml");
+        std::fs::write(
+            &config_path,
+            format!(
+                "mount_allowlist = [{:?}]\n",
+                allowed_dir.path().to_str().unwrap()
+            ),
+        )
+        .unwrap();
+
+        let mut s = Session::new(ConfigHandle::new(
+            Config::load_from(Some(&config_path)),
+            Some(config_path.clone()),
+        ))
+        .unwrap();
+
+        assert!(s.mount(&file_path).is_err());
+
+        // Editing the file on disk — no restart, no signal, no shared lock —
+        // must be visible on the very next call against the same session.
+        std::fs::write(
+            &config_path,
+            format!(
+                "mount_allowlist = [{:?}, {:?}]\n",
+                allowed_dir.path().to_str().unwrap(),
+                dir.path().canonicalize().unwrap().to_str().unwrap()
+            ),
+        )
+        .unwrap();
+
+        assert!(s.mount(&file_path).is_ok());
     }
 
     #[test]

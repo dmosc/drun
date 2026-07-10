@@ -133,6 +133,40 @@ impl Config {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct ConfigHandle {
+    fixed: Config,
+    path: Option<PathBuf>,
+}
+
+impl ConfigHandle {
+    pub fn new(config: Config, path: Option<PathBuf>) -> Self {
+        Self {
+            fixed: config,
+            path,
+        }
+    }
+
+    pub fn from_env() -> Self {
+        let path = std::env::var("DRUN_CONFIG").ok().map(PathBuf::from);
+        let config = Config::load_from(path.as_deref());
+        Self::new(config, path)
+    }
+
+    pub fn get(&self) -> Config {
+        match &self.path {
+            Some(path) => Config::load_from(Some(path)),
+            None => self.fixed.clone(),
+        }
+    }
+}
+
+impl From<Config> for ConfigHandle {
+    fn from(config: Config) -> Self {
+        Self::new(config, None)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -310,6 +344,29 @@ mod tests {
             .filter(|d| *d == "pypi.org")
             .count();
         assert_eq!(occurrences, 1);
+    }
+
+    #[test]
+    fn config_handle_without_a_path_stays_fixed() {
+        let handle = ConfigHandle::from(Config {
+            bash_timeout_ms: 1234,
+            ..Config::default()
+        });
+        assert_eq!(handle.get().bash_timeout_ms, 1234);
+        assert_eq!(handle.get().bash_timeout_ms, 1234);
+    }
+
+    #[test]
+    fn config_handle_with_a_path_reflects_edits_made_after_construction() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(&path, "bash_timeout_ms = 1000\n").unwrap();
+
+        let handle = ConfigHandle::new(Config::load_from(Some(&path)), Some(path.clone()));
+        assert_eq!(handle.get().bash_timeout_ms, 1000);
+
+        std::fs::write(&path, "bash_timeout_ms = 2000\n").unwrap();
+        assert_eq!(handle.get().bash_timeout_ms, 2000);
     }
 
     fn load_from_toml(contents: &str) -> Config {

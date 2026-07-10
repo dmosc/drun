@@ -15,7 +15,7 @@ fn using_drun_api_mount_modify_commit_updates_host_file_test() {
     let host_file = dir.path().join("data.txt");
     std::fs::write(&host_file, b"original").unwrap();
 
-    let mut s = Session::new(&cfg()).unwrap();
+    let mut s = Session::new(cfg().into()).unwrap();
     s.mount(dir.path()).unwrap();
     s.write_file("data.txt", b"modified".to_vec()).unwrap();
     s.commit(None).unwrap();

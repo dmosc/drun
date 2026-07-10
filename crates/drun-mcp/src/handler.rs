@@ -1,6 +1,8 @@
 use crate::errors::DrunError;
 use crate::reaper::{self, SessionMap};
-use drun_core::{Config, Session};
+#[cfg(test)]
+use drun_core::Config;
+use drun_core::{ConfigHandle, Session};
 use rust_mcp_sdk::schema::{CallToolResult, schema_utils::CallToolError};
 use std::{
     collections::HashMap,
@@ -8,20 +10,28 @@ use std::{
 };
 
 pub struct DrunHandler {
-    pub(crate) config: Config,
+    pub(crate) config: ConfigHandle,
     pub(crate) sessions: SessionMap,
 }
 
 impl DrunHandler {
+    #[cfg(test)]
     pub fn new(config: Config) -> Self {
         Self {
-            config,
+            config: config.into(),
+            sessions: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
+    pub fn new_live() -> Self {
+        Self {
+            config: ConfigHandle::from_env(),
             sessions: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
     pub fn start_idle_reaper(&self) {
-        if let Some(timeout_secs) = self.config.session_idle_timeout_secs {
+        if let Some(timeout_secs) = self.config.get().session_idle_timeout_secs {
             reaper::spawn(Arc::clone(&self.sessions), timeout_secs);
         }
     }
@@ -82,7 +92,7 @@ impl DrunHandler {
     }
 
     fn check_idle(&self, session_id: &str, session: &Session) -> Result<(), CallToolError> {
-        if let Some(limit_secs) = self.config.session_idle_timeout_secs {
+        if let Some(limit_secs) = self.config.get().session_idle_timeout_secs {
             let idle_secs = session.last_activity.elapsed().as_secs();
             if idle_secs > limit_secs {
                 return Err(
@@ -105,7 +115,7 @@ mod tests {
         let session_id = "s1".to_string();
         handler.sessions.lock().unwrap().insert(
             session_id.clone(),
-            Arc::new(Mutex::new(Session::new(&Config::default()).unwrap())),
+            Arc::new(Mutex::new(Session::new(Config::default().into()).unwrap())),
         );
         (handler, session_id)
     }
@@ -273,7 +283,7 @@ mod tests {
         };
         let handler = DrunHandler::new(config);
         let session_id = "s1".to_string();
-        let mut session = Session::new(&Config::default()).unwrap();
+        let mut session = Session::new(Config::default().into()).unwrap();
         session.last_activity = Instant::now() - Duration::from_secs(120);
         handler
             .sessions
@@ -295,7 +305,7 @@ mod tests {
         };
         let handler = DrunHandler::new(config);
         let session_id = "s1".to_string();
-        let session = Session::new(&Config::default()).unwrap();
+        let session = Session::new(Config::default().into()).unwrap();
         handler
             .sessions
             .lock()
@@ -314,7 +324,7 @@ mod tests {
         };
         let handler = DrunHandler::new(config);
         let session_id = "s1".to_string();
-        let mut session = Session::new(&Config::default()).unwrap();
+        let mut session = Session::new(Config::default().into()).unwrap();
         session.last_activity = Instant::now() - Duration::from_secs(999_999);
         handler
             .sessions
