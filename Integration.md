@@ -65,7 +65,7 @@ latest tag at build time via the GitHub API.
 
 ### Build-time embedding
 
-#### Node.js / Electron (recommended for desktop apps)
+#### Node.js / Electron (desktop apps)
 
 Fetch the binary in a `prebuild` / `premake` script and embed it into your app bundle.
 This keeps the build reproducible without requiring users to install anything.
@@ -290,41 +290,43 @@ On session end, call `session_close` to free resources.
 
 ---
 
-### What is different about migrating an existing product
+### What is different about integrating into an existing product
 
-The general guide above applies to both new and existing projects. The points below are
-specific to the migration case — situations that simply do not arise when drun is
-designed in from the start.
+The general guide above assumes you have full control over the architecture. When
+integrating into a codebase that already exists, you face a different set of engineering
+problems: you have to find where to plug in rather than design the plug from scratch.
 
-**Config files already exist on user machines.**
-When you add drun to a new version of your app, users who update (rather than doing a
-fresh install) will have `settings.local.json` files already written by the old version.
-If an earlier build ever attempted a drun integration with a different transport or URL,
-those stale entries sit in every existing session directory. Your write logic needs to
-actively upgrade them, not just write-if-absent. In the AO migration, sessions created
-before the correct HTTP transport was identified had `"type": "sse"` in their config;
-the updated `ensureDrunMCPServer` function detects and overwrites them on the next run.
+**You don't create the integration points, you find them.**
+An existing app already has a session lifecycle, a build pipeline, a process manager, and
+a config-writing mechanism. Your job is to locate each of those and extend them minimally
+rather than design them. This sounds simpler but is often harder — the right hooks may
+not be obvious, may be scattered across the codebase, and may have assumptions baked in
+that conflict with what drun needs.
 
-**`~/.claude.json` project entries already exist for your users' repos.**
-In a new project, you control when Claude Code first touches a repo and can register
-drun before any project entry is created. In an existing product, users have been opening
-their repos in Claude Code for months. Every repo already has a project entry in
-`~/.claude.json`, often with `"mcpServers": {}`. Because Claude Code uses that entry as
-the authoritative MCP config for the project, it silently overrides anything your
-`settings.local.json` adds. A greenfield integration can avoid this entirely by
-registering at project creation time; a migration must handle the already-polluted state.
+**The existing config-writing mechanism may only cover half the code paths.**
+Most orchestrators write agent config when creating a new session. They may not write it
+again on session resume, because there was no reason to before drun. Once you add drun,
+you need the config present on both paths — creation and resume — which means finding and
+updating two separate call sites, not one. Missing the resume path is easy to overlook
+because it works fine in testing (you only test new sessions) and only fails for users
+who have long-lived sessions.
 
-**Users update, they don't reinstall.**
-Your binary extraction and embedding logic must handle the case where an older version of
-`drun-mcp` is already sitting at the extraction target. A size or hash check is enough,
-but you need to ensure that a user upgrading from v0.3.0 to v0.3.4 gets the new binary
-on next launch rather than continuing to run the old one indefinitely.
+**The `~/.claude.json` project entry scope problem is an engineering problem, not a config problem.**
+If the app has been running agents against user repos, Claude Code has already written
+project entries in `~/.claude.json` for those repos, often with `"mcpServers": {}`.
+That empty object is not neutral — Claude Code treats it as the authoritative MCP config
+for the project and ignores what your `settings.local.json` adds. This is invisible
+during development (you test with fresh repos) but breaks for every existing user whose
+repo already has a project entry. The fix requires understanding Claude Code's
+config precedence hierarchy and writing to the correct scope at the correct time
+(project creation, not per-worktree), which is not documented and has to be reverse-engineered.
 
-**Sessions that predate the integration keep running.**
-An orchestrator that resumes long-lived sessions will resume ones created before drun
-existed. Those sessions have no drun config at all and may be mid-task. You need to
-decide whether to inject the MCP config on resume (which requires the agent to restart)
-or accept that pre-migration sessions run without drun and only new sessions get it.
+**The build pipeline has existing assumptions you cannot break.**
+Downloading an external binary at build time is straightforward in a greenfield project
+where you design the build script. In an existing app, you have to find the right step to
+inject into without breaking code signing, asset bundling, notarization, or whatever else
+the build already does. The injection point matters: too early and the binary may be
+overwritten by a later step; too late and it misses the bundle.
 
 ---
 
