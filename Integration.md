@@ -24,6 +24,29 @@ Your app needs to:
 2. Start it on daemon/server boot
 3. Tell the agent's MCP client where to find it
 
+**Why integrate drun?**
+
+- **Safety by default.** Agent file and shell operations run inside an isolated sandbox.
+  The agent cannot touch files outside the paths you explicitly mount, and cannot make
+  network requests to domains outside an allowlist. Users get capable agents without
+  handing them unrestricted access to the host machine.
+
+- **Rollback without Git.** drun snapshots the sandbox state automatically at each
+  checkpoint. If an agent run goes wrong, you or the user can roll back to any prior
+  state with a single call — no uncommitted changes, no manual undo.
+
+- **Forking and parallel exploration.** A session can be forked from any snapshot,
+  letting agents (or users) explore multiple approaches from the same starting point
+  without side effects between branches.
+
+- **Auditability.** Every file write and shell command is recorded in the session
+  history. You can diff any two checkpoints or replay the full sequence of changes an
+  agent made.
+
+- **Zero user setup.** Because `drun-mcp` is a self-contained binary you embed and
+  start yourself, users install your app and get sandboxed execution immediately — no
+  separate drun install, no CLI commands, no configuration.
+
 ### Getting the binary
 
 Pre-built binaries are published with every drun release on GitHub:
