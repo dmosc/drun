@@ -267,38 +267,73 @@ On session end, call `session_close` to free resources.
 
 ---
 
-### Example: Agent Orchestrator (AO)
+### Example: Agent Orchestrator (AO) — migrating an existing product
 
-[Agent Orchestrator](https://github.com/Domene99/agent-orchestrator) is an Electron
-desktop app that manages multiple Claude Code agent sessions as git worktrees. Here is how
-drun was integrated end-to-end.
+[Agent Orchestrator](https://github.com/AgentWrapper/agent-orchestrator) (AO) is a
+production Electron desktop app that manages multiple Claude Code agent sessions as git
+worktrees. The integration described here was done on a fork
+([Domene99/agent-orchestrator](https://github.com/Domene99/agent-orchestrator)) to
+demonstrate what adding drun to an **already-shipped product** looks like in practice —
+as opposed to designing for it from the start.
 
-#### Build: downloading and embedding at `npm run make`
+AO already had its own daemon (`ao`), its own session/worktree lifecycle, and its own
+mechanism for writing Claude Code hook config (`settings.local.json`) to each agent
+workspace. drun was added on top of all of that without changing the existing
+architecture, which makes it a realistic template for any team that wants to bolt on
+sandboxed execution to a product that is already in users' hands.
 
-`frontend/scripts/build-daemon.mjs` runs as a `premake` hook. It:
+The key constraint: **zero new user steps**. Users should get drun out of the box when
+they install or update the app — no separate install, no CLI command, no config file.
+
+#### Build: adding drun to an existing `npm run make` pipeline
+
+AO already had a `build-daemon.mjs` script that compiled the Go `ao` binary as a
+`premake` step. drun was added by extending that script — the existing pipeline did not
+change, drun was layered in before the `go build` call:
+
 1. Calls the GitHub API to resolve `latest` to a concrete tag
-2. Downloads the platform-appropriate binary (`drun-mcp-macos-arm64` on Apple Silicon)
+2. Downloads the platform-appropriate binary (`drun-mcp-macos-arm64` on Apple Silicon,
+   `drun-mcp-linux-x86_64` on Linux)
 3. Writes it to `backend/internal/drun/binaries/drun-mcp`
-4. Passes `-tags bundled_drun` to `go build` so the binary is embedded in the `ao` daemon
+4. Passes `-tags bundled_drun` to `go build`, which activates the `//go:embed` directive
+   that bakes the drun-mcp binary into the `ao` daemon binary
 
-If the download fails or the platform is unsupported, the build falls back gracefully and
-`ao` resolves `drun-mcp` from PATH at runtime.
+If the download fails or the platform is unsupported, the script falls back to building
+without the tag and `ao` resolves `drun-mcp` from PATH at runtime. The rest of the build
+— Vite bundles, Electron packaging, zip output — was untouched.
 
-#### Runtime: extraction and startup
+This illustrates the migration pattern: **the existing build system does not need to
+change**. You find the step that produces your server/daemon binary and prepend a binary
+download + embed step.
 
-`backend/internal/drun/server.go` manages the drun-mcp subprocess:
-- On daemon start, extracts the embedded binary to `~/.ao/bin/drun-mcp` (idempotency
-  check: skips if file size matches the embedded slice)
-- Probes port 7273 first — if drun-mcp is already running, reuses it
-- Waits up to 10 s for readiness using the MCP `initialize` handshake
-- After confirming readiness, writes the drun entry to `~/.claude.json` at the project
-  scope for the current project (see registration section above)
+#### Runtime: extraction and startup alongside an existing daemon
 
-#### Per-session config: hooks.go
+AO's daemon (`ao`) was already managing its own lifecycle — starting, stopping, and
+health-checking its own HTTP server. drun-mcp was added as a second subprocess managed
+by the same daemon. A new `drun.Server` type was introduced in
+`backend/internal/drun/server.go`; it is started once during `ao`'s boot sequence and
+torn down on shutdown. The rest of `ao`'s startup logic was untouched.
 
-`backend/internal/adapters/agent/claudecode/hooks.go` writes
-`.claude/settings.local.json` into each agent worktree before Claude Code starts. The
-file contains the AO lifecycle hooks AND the drun MCP config:
+`server.go` responsibilities:
+- Probes port 7273 first — if drun-mcp is already running (e.g. from a previous daemon
+  instance), reuses it rather than starting a second one
+- Extracts the embedded binary to `~/.ao/bin/drun-mcp` on first run; skips extraction if
+  the file size matches the embedded bytes (fast idempotency check)
+- Starts `drun-mcp` as a subprocess with `DRUN_SNAPSHOTS_DIR` pointed inside `ao`'s data
+  directory so drun state lives alongside the rest of AO's data
+- Waits up to 10 s for readiness via the MCP `initialize` handshake
+- After confirming readiness, writes the drun MCP entry to `~/.claude.json` at the
+  project scope for the user's current project
+
+The migration effort for this layer was roughly an afternoon: write the `Server` type,
+add two lines to the daemon boot sequence, done.
+
+#### Per-session config: extending an existing hooks mechanism
+
+AO already wrote a `.claude/settings.local.json` to each agent worktree before starting
+Claude Code — it used this to inject lifecycle hooks (session-start, stop, notification,
+etc.). Adding drun MCP was a one-function addition to that existing write path in
+`backend/internal/adapters/agent/claudecode/hooks.go`:
 
 ```go
 const drunMCPURL = "http://127.0.0.1:7273/mcp"
@@ -313,13 +348,22 @@ mcpServers["drun"] = map[string]any{
 ```
 
 The function is idempotent: it compares `type` and `url` before writing, and upgrades
-stale entries (e.g. old `"type": "sse"` from a previous install).
+stale entries left by older app versions (e.g. `"type": "sse"` from an earlier prototype
+that used the wrong transport — see the transport gotchas section above). This matters
+for a migration scenario: users who already had the app installed have existing
+`settings.local.json` files that need to be corrected on the next run, not just on first
+install.
 
-#### Daemon-level drun client
+#### Daemon-level drun client: calling drun outside of agent turns
 
 `backend/internal/drun/client.go` is a minimal Go MCP client the daemon itself uses to
 call drun tools directly (create sessions, mount paths, take snapshots) without going
-through Claude Code. This is useful for automation that happens outside of an agent turn.
+through Claude Code. This is useful for automation that happens outside of an agent turn —
+for example, AO creates and mounts the drun session for a new worktree before the agent
+even starts, so the agent's first tool call lands in an already-prepared sandbox.
+
+This client had to be written from scratch because drun does not ship an official Go
+library (see proposal #5 below).
 
 ---
 
