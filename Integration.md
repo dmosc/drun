@@ -267,6 +267,44 @@ On session end, call `session_close` to free resources.
 
 ---
 
+### What is different about migrating an existing product
+
+The general guide above applies to both new and existing projects. The points below are
+specific to the migration case — situations that simply do not arise when drun is
+designed in from the start.
+
+**Config files already exist on user machines.**
+When you add drun to a new version of your app, users who update (rather than doing a
+fresh install) will have `settings.local.json` files already written by the old version.
+If an earlier build ever attempted a drun integration with a different transport or URL,
+those stale entries sit in every existing session directory. Your write logic needs to
+actively upgrade them, not just write-if-absent. In the AO migration, sessions created
+before the correct HTTP transport was identified had `"type": "sse"` in their config;
+the updated `ensureDrunMCPServer` function detects and overwrites them on the next run.
+
+**`~/.claude.json` project entries already exist for your users' repos.**
+In a new project, you control when Claude Code first touches a repo and can register
+drun before any project entry is created. In an existing product, users have been opening
+their repos in Claude Code for months. Every repo already has a project entry in
+`~/.claude.json`, often with `"mcpServers": {}`. Because Claude Code uses that entry as
+the authoritative MCP config for the project, it silently overrides anything your
+`settings.local.json` adds. A greenfield integration can avoid this entirely by
+registering at project creation time; a migration must handle the already-polluted state.
+
+**Users update, they don't reinstall.**
+Your binary extraction and embedding logic must handle the case where an older version of
+`drun-mcp` is already sitting at the extraction target. A size or hash check is enough,
+but you need to ensure that a user upgrading from v0.3.0 to v0.3.4 gets the new binary
+on next launch rather than continuing to run the old one indefinitely.
+
+**Sessions that predate the integration keep running.**
+An orchestrator that resumes long-lived sessions will resume ones created before drun
+existed. Those sessions have no drun config at all and may be mid-task. You need to
+decide whether to inject the MCP config on resume (which requires the agent to restart)
+or accept that pre-migration sessions run without drun and only new sessions get it.
+
+---
+
 ### Example: Agent Orchestrator (AO) — migrating an existing product
 
 [Agent Orchestrator](https://github.com/AgentWrapper/agent-orchestrator) (AO) is a
