@@ -72,6 +72,25 @@ All notable changes to drun are documented here.
   parsed/merged, it's left untouched and a loud warning with the exact JSON to
   add by hand is printed, instead of silently doing nothing.
 
+### PyPI packaging
+
+- Fixed the `drun-sandbox` PyPI package being stuck at `0.1.1` since its first
+  release, despite every tagged release since then reporting the `publish-pypi`
+  workflow job as green. Root cause: a second, stale `pyproject.toml` at the
+  repo root duplicated (and diverged from) the real one at
+  `crates/drun-py/pyproject.toml`. `maturin build -m crates/drun-py/Cargo.toml`
+  (what CI actually runs) resolves metadata from the `pyproject.toml` next to
+  the given manifest path, not the repo root — so every release silently rebuilt
+  the exact same `drun_sandbox-0.1.1` wheel regardless of the version bump in
+  `Cargo.toml`, and PyPI's `skip-existing: true` swallowed the resulting
+  "already exists" as a quiet no-op instead of a failure. Removed the dead root
+  `pyproject.toml` and changed `crates/drun-py/pyproject.toml`'s hardcoded
+  `version = "0.1.1"` to `dynamic = ["version"]`, so it now tracks
+  `Cargo.toml`'s version like the Rust crates already do. Verified locally with
+  `maturin build` that this now produces `drun_sandbox-0.3.5-*.whl` with the
+  correct version and its `chat`/`test` extras and `drun` console-script entry
+  point intact.
+
 ---
 
 ## v0.3.3 — 2026-07-05

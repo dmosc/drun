@@ -13,9 +13,10 @@
 #   4. Creates a signed git tag on that commit
 #   5. Pushes the commit + tag to origin
 #
-# The tag push triggers two GitHub Actions workflows:
-#   • release.yml  — builds drun-mcp binaries (macOS arm64/x86_64, Linux x86_64)
-#   • pypi.yml     — builds and publishes Python wheels to PyPI
+# The tag push triggers release.yml, which:
+#   • builds drun-mcp binaries (macOS arm64/x86_64, Linux x86_64)
+#   • builds and publishes the drun-sandbox Python wheels to PyPI
+#     (build-wheels + publish-pypi jobs)
 #
 # Prerequisites:
 #   • Working tree must be clean (no uncommitted or staged changes)
