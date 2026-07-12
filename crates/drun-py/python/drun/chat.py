@@ -6,6 +6,8 @@ import json
 import sys
 from typing import TYPE_CHECKING, Any
 
+from .mcp_bridge import DrunMcpBridge
+
 if TYPE_CHECKING:
     from .drun_internal import DrunSession
 
@@ -98,7 +100,7 @@ def run(
     session: "DrunSession",
     prompt: str,
     *,
-    model: str = "ollama/qwen2.5:14b",
+    model: str = "ollama_chat/qwen2.5:14b",
     base_url: str | None = None,
     system: str | None = None,
     max_iterations: int = 30,
@@ -159,10 +161,129 @@ def run(
                 print(
                     f"[drun] model returned empty content "
                     f"(finish_reason={choice.finish_reason!r}). "
-                    "Try a non-thinking model such as ollama/qwen2.5:14b.",
+                    "Try a non-thinking model such as ollama_chat/qwen2.5:14b.",
                     file=sys.stderr,
                 )
             print(final)
             return final
 
     return "(max iterations reached)"
+
+
+MCP_SYSTEM_PROMPT_TEMPLATE = """\
+You are a coding assistant with access to a sandboxed execution environment through \
+drun's tools. Session "{session_id}" is already created, with any requested paths \
+mounted — pass session_id="{session_id}" to every session_* tool call.
+
+Use session_bash for shell commands, session_read_file/session_write_file/
+session_delete_file for file access, session_mount to load more host paths, and
+session_fetch for network requests (subject to the server's domain allowlist). Call
+create_session yourself only if you need a second, independent sandbox.
+"""
+
+
+class ChatAgent:
+    """Runs a tool-calling loop between an LLM and a drun-mcp daemon's full
+    tool suite, via a DrunMcpBridge."""
+
+    def __init__(
+        self,
+        bridge: DrunMcpBridge,
+        model: str = "ollama_chat/qwen2.5:14b",
+        base_url: str | None = None,
+        system: str | None = None,
+        max_iterations: int = 30,
+    ) -> None:
+        self._bridge = bridge
+        self._model = model
+        self._base_url = base_url
+        self._system = system
+        self._max_iterations = max_iterations
+
+    async def run(self, prompt: str, mounts: list[str]) -> str:
+        session_id = await self._bootstrap_session(mounts)
+        tools = await self._bridge.tools()
+        messages: list[dict[str, Any]] = [
+            {"role": "system", "content": self._system_prompt(session_id)},
+            {"role": "user", "content": prompt},
+        ]
+
+        for _ in range(self._max_iterations):
+            message, finish_reason = await self._complete(messages, tools)
+            messages.append(self._message_to_dict(message))
+
+            if not message.tool_calls:
+                return self._final_answer(message, finish_reason)
+
+            for tool_call in message.tool_calls:
+                arguments = json.loads(tool_call.function.arguments)
+                print(f"[{tool_call.function.name}] {arguments}",
+                      file=sys.stderr)
+                result = await self._bridge.call(tool_call.function.name, arguments)
+                messages.append(
+                    {"role": "tool", "tool_call_id": tool_call.id, "content": result}
+                )
+
+        return "(max iterations reached)"
+
+    async def _bootstrap_session(self, mounts: list[str]) -> str:
+        created = await self._bridge.call("create_session")
+        session_id: str = json.loads(created)["session_id"]
+        for path in mounts:
+            await self._bridge.call(
+                "session_mount", {"session_id": session_id, "path": path}
+            )
+        return session_id
+
+    def _system_prompt(self, session_id: str) -> str:
+        return self._system or MCP_SYSTEM_PROMPT_TEMPLATE.format(session_id=session_id)
+
+    async def _complete(
+        self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]
+    ) -> tuple[Any, str]:
+        try:
+            import litellm
+        except ImportError as exc:
+            raise ImportError(
+                "litellm is required for drun chat. "
+                "Install it with: pip install 'drun-sandbox[chat]'"
+            ) from exc
+
+        response = await litellm.acompletion(
+            model=self._model, messages=messages, tools=tools, base_url=self._base_url
+        )
+        choice = response.choices[0]
+        return choice.message, choice.finish_reason
+
+    @staticmethod
+    def _message_to_dict(message: Any) -> dict[str, Any]:
+        message_dict: dict[str, Any] = {
+            "role": "assistant", "content": message.content}
+        if message.tool_calls:
+            message_dict["tool_calls"] = [
+                {
+                    "id": tool_call.id,
+                    "type": "function",
+                    "function": {
+                        "name": tool_call.function.name,
+                        "arguments": tool_call.function.arguments,
+                    },
+                }
+                for tool_call in message.tool_calls
+            ]
+        return message_dict
+
+    @staticmethod
+    def _final_answer(message: Any, finish_reason: str) -> str:
+        # Thinking models (Qwen3, DeepSeek-R1) may put reasoning in
+        # reasoning_content and leave content empty.
+        answer = message.content or getattr(
+            message, "reasoning_content", None) or ""
+        if not answer:
+            print(
+                f"[drun] model returned empty content (finish_reason={finish_reason!r}). "
+                "Try a non-thinking model such as ollama_chat/qwen2.5:14b.",
+                file=sys.stderr,
+            )
+        print(answer)
+        return answer

@@ -267,66 +267,53 @@ destructive past the rollback point once you continue the session; use
 
 ## Path 3 — MCP + Ollama (no API key)
 
-Use the `drun chat` CLI to drive a local Ollama model against the sandbox. This
-is the same tool-use loop as the Python SDK path, running a local model instead
-of a cloud provider. The chat agent only has `execute_bash` and `write_file` —
-no fetch tool — so any external data must be pre-fetched on the host and mounted
-in with `--mount`.
+`drun chat` drives a local Ollama model against a **running `drun-mcp` daemon**
+over MCP — the same daemon and full tool suite Claude Code uses (`session_bash`,
+`session_mount`, `session_fetch`, `session_fork`, and more), just with a local
+model instead of a cloud provider.
 
-### Step 1: install Ollama and pull a model
+### Step 1: install and start the daemon
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/dmosc/drun/main/install.sh | bash
+```
+
+### Step 2: install Ollama and pull a model
 
 ```bash
 # Install from https://ollama.com, then:
 ollama pull qwen2.5:14b
 ```
 
-### Step 2: install the drun Python package
+### Step 3: install the drun Python package and chat
 
 ```bash
 pip install 'drun-sandbox[chat]'
+
+drun chat \
+    --mount ./data \
+    "Load the CSV files in data/, summarize each column using only the
+     standard library, and write a Markdown report"
 ```
 
-This provides the `drun` CLI in addition to the Python API.
+Use the `ollama_chat/` model prefix (the default), not `ollama/` — only
+`ollama_chat/` forwards tool calls to Ollama's native `/api/chat` endpoint;
+`ollama/` silently fails to call any tools.
 
-### Step 3: pre-fetch data and run
-
-```bash
-mkdir -p /tmp/drun-inputs
-curl -s -A "drun-example research@example.com" \
-    "https://data.sec.gov/api/xbrl/companyconcept/CIK0000320193/us-gaap/Revenues.json" \
-    -o /tmp/drun-inputs/revenues.json
-
-DRUN_CONFIG=examples/financial_analysis.toml \
-    drun chat \
-        --model openai/qwen2.5:14b \
-        --base-url http://localhost:11434/v1 \
-        --mount /tmp/drun-inputs \
-        "Parse revenues.json (already in your workspace), filter for 10-K
-         annual filings, build a year-over-year revenue table using only the
-         standard library, and write results.md"
-```
-
-**Mount host files:**
-
-```bash
-DRUN_CONFIG=examples/data_science.toml \
-    drun chat \
-        --model openai/qwen2.5:14b \
-        --base-url http://localhost:11434/v1 \
-        --mount ./data \
-        "Load the CSV files in data/, summarize each column using only the
-         standard library, and write a Markdown report"
-```
+`--mount` paths are mounted into a fresh session before the model sees the
+prompt. The model can also call `session_fetch` directly for network data,
+subject to the daemon's `domain_allowlist`.
 
 **`drun chat` flags:**
 
-| Flag                 | Default              | Description                                     |
-| -------------------- | -------------------- | ----------------------------------------------- |
-| `--model MODEL`      | `ollama/qwen2.5:14b` | litellm model identifier                        |
-| `--base-url URL`     | —                    | API base URL override                           |
-| `--mount PATH`       | —                    | Mount a host path into the session (repeatable) |
-| `--system PROMPT`    | built-in             | Override the system prompt                      |
-| `--max-iterations N` | `30`                 | Maximum agent loop iterations                   |
+| Flag                 | Default                     | Description                                     |
+| -------------------- | --------------------------- | ----------------------------------------------- |
+| `--mcp-url URL`      | `http://127.0.0.1:7273/mcp` | drun-mcp daemon endpoint                        |
+| `--model MODEL`      | `ollama_chat/qwen2.5:14b`   | litellm model identifier                        |
+| `--base-url URL`     | —                           | LLM API base URL override                       |
+| `--mount PATH`       | —                           | Mount a host path into the session (repeatable) |
+| `--system PROMPT`    | built-in                    | Override the system prompt                      |
+| `--max-iterations N` | `30`                        | Maximum agent loop iterations                   |
 
 ---
 

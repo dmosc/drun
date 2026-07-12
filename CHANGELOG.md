@@ -6,6 +6,36 @@ All notable changes to drun are documented here.
 
 ## Unreleased
 
+### `drun chat`
+
+- The `drun chat` CLI now drives a running `drun-mcp` daemon over MCP instead of
+  an embedded, 2-tool subset — it gets the full tool suite (`session_fetch`,
+  `session_fork`, checkpoints, etc.), the same as Claude Code, and shares
+  sessions with the web UI. New `DrunMcpBridge` (MCP client) and `ChatAgent`
+  (tool-calling loop) classes back the CLI. New `--mcp-url` flag (default
+  `http://127.0.0.1:7273/mcp`); a running daemon is now required for
+  `drun
+  chat`. The Python SDK examples (`examples/*.py`) are unaffected — they
+  still use `drun.chat.run()` against an embedded, daemon-less `DrunSession`.
+- Default `--model` changed from `ollama/qwen2.5:14b` to
+  `ollama_chat/qwen2.5:14b`. litellm's `ollama/` prefix routes through Ollama's
+  legacy `/api/generate` endpoint, which emulates tool calling via a JSON-mode
+  hack that silently produces empty responses on models like `gpt-oss`/`qwen3`;
+  `ollama_chat/` routes through Ollama's native `/api/chat` endpoint, which
+  forwards `tools` as real function-calling.
+- Fixed `DrunMcpBridge.call()` swallowing tool-level errors: it now raises with
+  the daemon's actual error text instead of silently returning it as if it were
+  successful output, which previously surfaced as a confusing
+  `json.loads`/`Expecting value` error one layer up.
+- Fixed `DrunMcpBridge.call()` sending no `arguments` field at all for
+  zero-argument tools (e.g. `create_session`) — the `mcp` client omits `None`
+  arguments from the wire request, but the daemon requires the key present. Now
+  sends `{}`.
+- Documented a macOS-specific `session_mount` failure
+  (`Permission denied (os error 13)`) in `docs/troubleshooting.md`: TCC blocks
+  the `drun-mcp` `launchd` agent from reading `~/Desktop`/`~/Documents`/
+  `~/Downloads`/iCloud Drive until the binary is granted Full Disk Access.
+
 ### Reliability fixes
 
 - Config is now re-read from disk on every tool call instead of once at daemon

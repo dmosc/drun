@@ -2,9 +2,13 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import sys
 
-from .chat import run
+from .chat import ChatAgent
+from .mcp_bridge import DrunMcpBridge
+
+DEFAULT_MCP_URL = "http://127.0.0.1:7273/mcp"
 
 
 def main() -> None:
@@ -14,15 +18,23 @@ def main() -> None:
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
     chat_parser = subparsers.add_parser(
-        "chat", help="Run an LLM agent with drun sandbox tools")
+        "chat", help="Run an LLM agent against a running drun-mcp daemon")
     chat_parser.add_argument("prompt", help="Task prompt for the agent")
     chat_parser.add_argument(
+        "--mcp-url",
+        default=DEFAULT_MCP_URL,
+        metavar="URL",
+        help="drun-mcp daemon endpoint. Default: %(default)s",
+    )
+    chat_parser.add_argument(
         "--model",
-        default="ollama/qwen2.5:14b",
+        default="ollama_chat/qwen2.5:14b",
         metavar="MODEL",
         help=(
-            "litellm model identifier. "
-            "Examples: openai/qwen2.5:14b, claude-sonnet-4-6, gpt-4o, "
+            "litellm model identifier. Use the ollama_chat/ prefix (not ollama/) "
+            "for local Ollama models — it's the one that forwards tool calls to "
+            "Ollama's native /api/chat endpoint. "
+            "Examples: ollama_chat/qwen2.5:14b, claude-sonnet-4-6, gpt-4o, "
             "gemini/gemini-2.0-flash. Default: %(default)s"
         ),
     )
@@ -31,7 +43,7 @@ def main() -> None:
         default=None,
         metavar="URL",
         help=(
-            "API base URL override (e.g. http://localhost:11434/v1 for Ollama "
+            "LLM API base URL override (e.g. http://localhost:11434/v1 for Ollama "
             "or any OpenAI-compatible endpoint)."
         ),
     )
@@ -59,42 +71,28 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.command == "chat":
-        _run_chat(args)
+        asyncio.run(_run_chat(args))
 
 
-def _run_chat(args: argparse.Namespace) -> None:
+async def _run_chat(args: argparse.Namespace) -> None:
     try:
-        from .drun_internal import DrunSession
-    except ImportError as exc:
-        print(
-            f"error: drun native extension not found ({exc}). "
-            "Make sure drun-sandbox is installed correctly.",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-
-    session = DrunSession()
-    for path in args.mount:
-        try:
-            session.mount(path)
-        except Exception as exc:
-            print(f"error: could not mount {path!r}: {exc}", file=sys.stderr)
-            sys.exit(1)
-
-    try:
-        run(
-            session,
-            args.prompt,
-            model=args.model,
-            base_url=args.base_url,
-            system=args.system,
-            max_iterations=args.max_iterations,
-        )
+        async with DrunMcpBridge(args.mcp_url) as bridge:
+            agent = ChatAgent(
+                bridge,
+                model=args.model,
+                base_url=args.base_url,
+                system=args.system,
+                max_iterations=args.max_iterations,
+            )
+            await agent.run(args.prompt, args.mount)
     except KeyboardInterrupt:
         print("\ninterrupted", file=sys.stderr)
         sys.exit(1)
     except Exception as exc:
-        print(f"error: {exc}", file=sys.stderr)
+        print(
+            f"error: {exc}\nIs drun-mcp running? Check with: curl {args.mcp_url}",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
 

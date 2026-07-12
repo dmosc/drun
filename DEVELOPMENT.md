@@ -8,8 +8,18 @@ cargo build -p drun-mcp
 
 ## Test
 
+Test drun core libraries.
+
 ```bash
 cargo test --workspace
+```
+
+Test the `drun chat` CLI service.
+
+```bash
+cd crates/drun-py
+pip install -e '.[chat,test]'
+pytest
 ```
 
 ## Coverage

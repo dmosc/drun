@@ -34,9 +34,9 @@ curl -fsSL https://raw.githubusercontent.com/dmosc/drun/main/update.sh | bash
 
 ## Configuration lifecycle
 
-drun re-reads `DRUN_CONFIG` on every tool call. Edits to `config.toml` — by
-hand or via `drun-mcp config add-domain/add-path/remove-domain/remove-path` —
-take effect on the very next call, in every open session, with no restart.
+drun re-reads `DRUN_CONFIG` on every tool call. Edits to `config.toml` — by hand
+or via `drun-mcp config add-domain/add-path/remove-domain/remove-path` — take
+effect on the very next call, in every open session, with no restart.
 
 `web_port` and `session_idle_timeout_secs` are the exceptions: both are only
 applied at daemon startup, so changing either still needs a restart —
@@ -72,6 +72,33 @@ to add the path:
 ```toml
 mount_allowlist = ["/tmp/drun-inputs", "/Users/you/projects/data"]
 ```
+
+---
+
+## macOS: `session_mount` fails with `Permission denied (os error 13)`
+
+This is a plain OS-level error, not a `mount_denied` allowlist rejection — it
+means the daemon process itself couldn't read the path, which on macOS almost
+always means the path is under `~/Desktop`, `~/Documents`, `~/Downloads`, or
+iCloud Drive. macOS's TCC privacy protections gate those specific folders behind
+a per-app permission grant, and a `launchd` background agent (which is how
+`drun-mcp` runs) doesn't inherit whatever access your terminal app already has —
+the `drun-mcp` binary needs its own grant.
+
+**Confirm the diagnosis:** mount a path outside those protected folders (e.g.
+`/tmp`) — if that works, TCC is the cause.
+
+**Fix:** grant the daemon binary Full Disk Access:
+
+1. System Settings → Privacy & Security → Full Disk Access
+2. Click **+**, press `Cmd+Shift+G`, enter `/usr/local/bin/drun-mcp`, add it
+3. Restart the daemon so it picks up the new grant:
+   ```bash
+   launchctl kickstart -k gui/$(id -u)/com.drun.mcp-server
+   ```
+
+After that, mounting paths under `~/Desktop`/`~/Documents`/`~/Downloads` works
+the same as any other path.
 
 ---
 

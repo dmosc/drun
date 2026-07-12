@@ -16,7 +16,8 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-chat = ["litellm>=1.0"]
+chat = ["litellm>=1.0", "mcp>=1.0"]
+test = ["pytest>=8", "pytest-asyncio>=0.24"]
 
 [project.scripts]
 drun = "drun.cli:main"
@@ -24,3 +25,7 @@ drun = "drun.cli:main"
 [tool.maturin]
 python-source = "python"
 module-name = "drun.drun_internal"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
