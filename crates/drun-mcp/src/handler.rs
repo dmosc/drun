@@ -36,6 +36,21 @@ impl DrunHandler {
         }
     }
 
+    pub(crate) fn insert_session(
+        &self,
+        session_id: String,
+        session: Session,
+    ) -> Result<(), CallToolError> {
+        let mut sessions = self.sessions.lock().unwrap();
+        if let Some(max) = self.config.get().max_sessions
+            && sessions.len() >= max
+        {
+            return Err(DrunError::session_limit_reached(max).into_tool_err());
+        }
+        sessions.insert(session_id, Arc::new(Mutex::new(session)));
+        Ok(())
+    }
+
     pub(crate) fn with_session(
         &self,
         session_id: &str,

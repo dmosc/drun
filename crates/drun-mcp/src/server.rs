@@ -25,11 +25,7 @@ use rust_mcp_sdk::{
         ProgressNotificationParams, ProgressToken, RpcError, schema_utils::CallToolError,
     },
 };
-use std::{
-    path::PathBuf,
-    sync::{Arc, Mutex},
-    time::Duration,
-};
+use std::{path::PathBuf, sync::Arc, time::Duration};
 use uuid::Uuid;
 
 #[async_trait]
@@ -88,19 +84,11 @@ impl ServerHandler for DrunHandler {
 
 impl DrunHandler {
     fn handle_create_session(&self) -> Result<CallToolResult, CallToolError> {
-        if let Some(max) = self.config.get().max_sessions
-            && self.sessions.lock().unwrap().len() >= max
-        {
-            return Err(DrunError::session_limit_reached(max).into_tool_err());
-        }
         let session_id = Uuid::new_v4().to_string();
         let session = Session::new(self.config.clone())
             .map_err(|e| DrunError::internal(e).into_tool_err())?;
         let state = SessionState::compute(&session_id, &session, None, vec![]);
-        self.sessions
-            .lock()
-            .unwrap()
-            .insert(session_id, Arc::new(Mutex::new(session)));
+        self.insert_session(session_id, session)?;
         Ok(json(&state))
     }
 
@@ -122,10 +110,7 @@ impl DrunHandler {
         };
         let fork_id = Uuid::new_v4().to_string();
         let state = SessionState::compute(&fork_id, &forked_session, None, vec![]);
-        self.sessions
-            .lock()
-            .unwrap()
-            .insert(fork_id, Arc::new(Mutex::new(forked_session)));
+        self.insert_session(fork_id, forked_session)?;
         Ok(json(&state))
     }
 
@@ -559,10 +544,7 @@ impl DrunHandler {
             .map_err(|e| DrunError::internal(e).into_tool_err())?;
         let session_id = Uuid::new_v4().to_string();
         let state = SessionState::compute(&session_id, &restored, None, vec![]);
-        self.sessions
-            .lock()
-            .unwrap()
-            .insert(session_id, Arc::new(Mutex::new(restored)));
+        self.insert_session(session_id, restored)?;
         Ok(json(&state))
     }
 
@@ -754,6 +736,7 @@ mod tests {
     use crate::tools::HttpHeader;
     use drun_core::Config;
     use rust_mcp_sdk::schema::ContentBlock;
+    use std::sync::Mutex;
 
     #[test]
     fn host_from_url_extracts_https_host() {
@@ -879,6 +862,53 @@ mod tests {
         handler.handle_create_session().unwrap();
         let err = handler.handle_create_session().unwrap_err();
         assert!(err.to_string().contains("session_limit_reached"));
+    }
+
+    #[test]
+    fn session_fork_rejects_once_max_sessions_is_reached() {
+        let config = Config {
+            max_sessions: Some(1),
+            ..Config::default()
+        };
+        let handler = DrunHandler::new(config);
+        insert_session(&handler, "source");
+
+        let err = handler
+            .handle_session_fork(SessionFork {
+                session_id: "source".to_string(),
+                checkpoint_id: None,
+                checkpoint_label: None,
+            })
+            .unwrap_err();
+
+        assert!(err.to_string().contains("session_limit_reached"));
+        assert_eq!(handler.sessions.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn session_restore_rejects_once_max_sessions_is_reached() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = Config {
+            max_sessions: Some(1),
+            ..Config::default()
+        };
+        let handler = DrunHandler::new(config);
+        insert_session(&handler, "original");
+        let snapshot_path = dir.path().join("original.drun");
+        {
+            let sessions = handler.sessions.lock().unwrap();
+            let session = sessions.get("original").unwrap().lock().unwrap();
+            session.snapshot().write(&snapshot_path).unwrap();
+        }
+
+        let err = handler
+            .handle_session_restore(SessionRestore {
+                path: snapshot_path.to_string_lossy().into_owned(),
+            })
+            .unwrap_err();
+
+        assert!(err.to_string().contains("session_limit_reached"));
+        assert_eq!(handler.sessions.lock().unwrap().len(), 1);
     }
 
     #[test]
