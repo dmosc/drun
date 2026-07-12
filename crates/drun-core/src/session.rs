@@ -7,7 +7,7 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
-use std::process::Child;
+use std::process::{Child, Command};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
@@ -715,7 +715,7 @@ impl Session {
                 .is_err()
             {
                 timed_out_flag.store(true, Ordering::Relaxed);
-                Self::kill_process_group(pgid);
+                Self::kill_process_tree(pgid);
                 let _ = child_for_timeout.lock().unwrap().kill();
             }
         });
@@ -739,7 +739,7 @@ impl Session {
         let _ = cancel_tx.send(());
         let stderr = stderr_thread.join().unwrap_or_default();
         let _ = child.lock().unwrap().wait();
-        Self::kill_process_group(pgid);
+        Self::kill_process_tree(pgid);
         if timed_out.load(Ordering::Relaxed) {
             return Err(anyhow::Error::from(RunnerError::Timeout {
                 timeout_ms: bash_timeout_ms,
@@ -747,6 +747,24 @@ impl Session {
         }
         Ok(BashOutput { stdout, stderr })
     }
+
+    /// Kills the sandboxed child's process group, then walks the host process
+    /// table for any descendants left outside that group (e.g. a grandchild
+    /// that called `setsid`) and kills those individually. Process-group
+    /// membership alone isn't reliable for cleanup because a descendant can
+    /// detach into its own session and escape a `kill(-pgid, ...)`.
+    #[cfg(unix)]
+    fn kill_process_tree(pgid: i32) {
+        Self::kill_process_group(pgid);
+        for pid in Self::descendant_pids(pgid) {
+            unsafe {
+                libc::kill(pid, libc::SIGKILL);
+            }
+        }
+    }
+
+    #[cfg(not(unix))]
+    fn kill_process_tree(_pgid: i32) {}
 
     #[cfg(unix)]
     fn kill_process_group(pgid: i32) {
@@ -757,6 +775,32 @@ impl Session {
 
     #[cfg(not(unix))]
     fn kill_process_group(_pgid: i32) {}
+
+    #[cfg(unix)]
+    fn descendant_pids(root_pid: i32) -> Vec<i32> {
+        let Ok(output) = Command::new("ps").args(["-Ao", "pid=,ppid="]).output() else {
+            return Vec::new();
+        };
+        let mut children_by_parent: HashMap<i32, Vec<i32>> = HashMap::new();
+        for line in String::from_utf8_lossy(&output.stdout).lines() {
+            let mut fields = line.split_whitespace();
+            let (Some(pid), Some(ppid)) = (fields.next(), fields.next()) else {
+                continue;
+            };
+            if let (Ok(pid), Ok(ppid)) = (pid.parse(), ppid.parse()) {
+                children_by_parent.entry(ppid).or_default().push(pid);
+            }
+        }
+        let mut descendants = Vec::new();
+        let mut frontier = vec![root_pid];
+        while let Some(pid) = frontier.pop() {
+            if let Some(children) = children_by_parent.get(&pid) {
+                descendants.extend(children);
+                frontier.extend(children);
+            }
+        }
+        descendants
+    }
 
     fn file_content_hash(bytes: &[u8]) -> u64 {
         let mut hasher = DefaultHasher::new();
@@ -822,6 +866,32 @@ mod tests {
             .iter()
             .map(|(k, v)| (k.to_string(), Arc::new(v.to_vec())))
             .collect()
+    }
+
+    #[test]
+    fn descendant_pids_finds_a_grandchild_process() {
+        let mut child = Command::new("sh")
+            .arg("-c")
+            .arg("(sleep 5 & wait) & wait")
+            .stdout(std::process::Stdio::null())
+            .spawn()
+            .unwrap();
+        std::thread::sleep(Duration::from_millis(200));
+
+        let descendants = Session::descendant_pids(child.id() as i32);
+
+        let _ = child.kill();
+        let _ = child.wait();
+        for pid in &descendants {
+            unsafe {
+                libc::kill(*pid, libc::SIGKILL);
+            }
+        }
+
+        assert!(
+            descendants.len() >= 2,
+            "expected the backgrounded subshell and the `sleep` it spawned, got {descendants:?}"
+        );
     }
 
     #[test]

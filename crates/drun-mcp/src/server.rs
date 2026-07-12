@@ -60,7 +60,20 @@ impl ServerHandler for DrunHandler {
             DrunTools::SessionClose(t) => self.handle_session_close(t),
             DrunTools::SessionHistory(t) => self.handle_session_history(t),
             DrunTools::GetSessionState(t) => self.handle_get_session_state(t),
-            DrunTools::SessionBash(t) => self.handle_session_bash(t, runtime, progress_token),
+            DrunTools::SessionBash(t) => {
+                // CallToolError wraps a non-Send `Box<dyn Error>`, so it can't
+                // cross the spawn_blocking join; stringify it inside the
+                // blocking task and rebuild it on this side instead.
+                let handler = self.clone();
+                let result = tokio::task::spawn_blocking(move || {
+                    handler
+                        .handle_session_bash(t, runtime, progress_token)
+                        .map_err(|e| e.to_string())
+                })
+                .await
+                .map_err(|e| DrunError::internal(e).into_tool_err())?;
+                result.map_err(|message| CallToolError(message.into()))
+            }
             DrunTools::SessionRollback(t) => self.handle_session_rollback(t),
             DrunTools::SessionReadFile(t) => self.handle_session_read_file(t),
             DrunTools::SessionWriteFile(t) => self.handle_session_write_file(t),

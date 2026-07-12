@@ -6,6 +6,16 @@ All notable changes to drun are documented here.
 
 ## Unreleased
 
+### `session_bash`
+
+- `session_bash` no longer runs on the shared Tokio worker pool — it now
+  executes on `spawn_blocking`, so a few concurrent, ordinary calls can no
+  longer stall every other session on the daemon for up to `bash_timeout_ms`.
+  The timeout-kill path also now walks the process table for descendants of
+  the sandboxed child instead of only signaling its process group, so a
+  grandchild that detaches (e.g. via `setsid`) is still reaped instead of
+  holding stdout/stderr open past the timeout.
+
 ### Web UI
 
 - The web UI now surfaces daemon and session health that was previously only in

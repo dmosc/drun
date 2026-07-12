@@ -9,6 +9,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+#[derive(Clone)]
 pub struct DrunHandler {
     pub(crate) config: ConfigHandle,
     pub(crate) sessions: SessionMap,
