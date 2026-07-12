@@ -1,11 +1,12 @@
 //! Serializable view types for session and checkpoint state. Each type owns
 //! the logic that builds it from live session data.
 
-use drun_core::{CheckpointRef, FileMap, Session, SnapshotMeta};
+use drun_core::{CheckpointRef, Config, FileMap, Session, SnapshotMeta};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 #[derive(Debug, PartialEq, Serialize)]
 pub(crate) struct SessionSummary {
@@ -97,12 +98,79 @@ impl SnapshotEntry {
 }
 
 #[derive(Debug, PartialEq, Serialize)]
+pub(crate) struct DaemonStatus {
+    version: &'static str,
+    pid: u32,
+    uptime_secs: u64,
+    mcp_port: u16,
+    web_port: u16,
+    session_count: usize,
+    max_sessions: Option<usize>,
+    session_idle_timeout_secs: Option<u64>,
+    max_workspace_mb: Option<u64>,
+    max_checkpoints: Option<usize>,
+    domain_allowlist: Vec<String>,
+    mount_allowlist: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    memory_rss_bytes: Option<u64>,
+}
+
+impl DaemonStatus {
+    pub(crate) fn current(
+        sessions: &HashMap<String, Arc<Mutex<Session>>>,
+        config: &Config,
+        started_at: Instant,
+        mcp_port: u16,
+        web_port: u16,
+    ) -> DaemonStatus {
+        DaemonStatus {
+            version: env!("CARGO_PKG_VERSION"),
+            pid: std::process::id(),
+            uptime_secs: started_at.elapsed().as_secs(),
+            mcp_port,
+            web_port,
+            session_count: sessions.len(),
+            max_sessions: config.max_sessions,
+            session_idle_timeout_secs: config.session_idle_timeout_secs,
+            max_workspace_mb: config.max_workspace_mb,
+            max_checkpoints: config.max_checkpoints,
+            domain_allowlist: config.domain_allowlist.clone(),
+            mount_allowlist: config
+                .mount_allowlist
+                .iter()
+                .map(|p| p.display().to_string())
+                .collect(),
+            memory_rss_bytes: memory_rss_bytes(),
+        }
+    }
+}
+
+fn memory_rss_bytes() -> Option<u64> {
+    let usage: libc::rusage = unsafe {
+        let mut usage = std::mem::zeroed();
+        if libc::getrusage(libc::RUSAGE_SELF, &mut usage) != 0 {
+            return None;
+        }
+        usage
+    };
+    // ru_maxrss is bytes on macOS, kilobytes on Linux.
+    let maxrss = usage.ru_maxrss as u64;
+    Some(if cfg!(target_os = "macos") {
+        maxrss
+    } else {
+        maxrss * 1024
+    })
+}
+
+#[derive(Debug, PartialEq, Serialize)]
 pub(crate) struct SessionTreeNode {
     session_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     label: Option<String>,
     parent_session_id: Option<String>,
     parent_checkpoint_id: Option<usize>,
+    age_secs: u64,
+    idle_secs: u64,
     checkpoints: Vec<CheckpointTreeNode>,
 }
 
@@ -142,6 +210,8 @@ impl SessionTreeNode {
             label: session.label.clone(),
             parent_session_id,
             parent_checkpoint_id,
+            age_secs: session.created_at.elapsed().as_secs(),
+            idle_secs: session.last_activity.elapsed().as_secs(),
             checkpoints,
         }
     }
@@ -316,6 +386,7 @@ impl FileDelta {
 mod tests {
     use super::*;
     use drun_core::{CheckpointRef, Config};
+    use std::time::Duration;
 
     fn file_map(pairs: &[(&str, &[u8])]) -> FileMap {
         pairs
@@ -568,5 +639,40 @@ mod tests {
         let forest = SessionTreeNode::forest(&sessions);
         assert_eq!(forest.len(), 1);
         assert_eq!(forest[0].session_id, "orphan");
+    }
+
+    #[test]
+    fn session_tree_node_reports_age_and_idle_seconds() {
+        let mut session = new_session();
+        session.created_at = Instant::now() - Duration::from_secs(300);
+        session.last_activity = Instant::now() - Duration::from_secs(120);
+        let mut sessions = HashMap::new();
+        sessions.insert("s1".to_string(), Arc::new(Mutex::new(session)));
+
+        let forest = SessionTreeNode::forest(&sessions);
+        assert!(forest[0].age_secs >= 300);
+        assert!(forest[0].idle_secs >= 120 && forest[0].idle_secs < 300);
+    }
+
+    #[test]
+    fn daemon_status_current_reports_session_count_and_config_limits() {
+        let config = Config {
+            max_sessions: Some(10),
+            ..Config::default()
+        };
+        let mut sessions = HashMap::new();
+        sessions.insert("s1".to_string(), Arc::new(Mutex::new(new_session())));
+
+        let status = DaemonStatus::current(&sessions, &config, Instant::now(), 7273, 7274);
+        assert_eq!(status.session_count, 1);
+        assert_eq!(status.max_sessions, Some(10));
+        assert_eq!(status.mcp_port, 7273);
+        assert_eq!(status.web_port, 7274);
+        assert_eq!(status.pid, std::process::id());
+    }
+
+    #[test]
+    fn memory_rss_bytes_returns_a_plausible_value_on_this_platform() {
+        assert!(memory_rss_bytes().unwrap_or(1) > 0);
     }
 }

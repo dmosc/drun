@@ -20,7 +20,7 @@ use rust_mcp_sdk::{
     },
 };
 
-const MCP_PORT: u16 = 7273;
+pub(crate) const MCP_PORT: u16 = 7273;
 
 #[tokio::main]
 async fn main() -> SdkResult<()> {
@@ -41,12 +41,14 @@ async fn main() -> SdkResult<()> {
         _ => {}
     }
 
+    let started_at = std::time::Instant::now();
     let handler = DrunHandler::new_live();
     handler.start_idle_reaper();
 
     if let Some(web_port) = handler.config.get().web_port.filter(|&p| p != 0) {
         let web_sessions = std::sync::Arc::clone(&handler.sessions);
-        tokio::spawn(web::WebServer::new(web_sessions, web_port).serve());
+        let web_config = handler.config.clone();
+        tokio::spawn(web::WebServer::new(web_sessions, web_port, web_config, started_at).serve());
     }
 
     eprintln!("drun: MCP → http://127.0.0.1:{MCP_PORT}/mcp (streamable HTTP)");

@@ -6,6 +6,19 @@ All notable changes to drun are documented here.
 
 ## Unreleased
 
+### Web UI
+
+- The web UI now surfaces daemon and session health that was previously only in
+  memory. A new status strip shows version, PID, uptime, memory (RSS), and
+  session count against `max_sessions`; an expandable "daemon" panel adds ports,
+  idle timeout/workspace/checkpoint limits, and the domain/mount allowlists.
+  Session cards now show an idle badge (`idle 12m`) that turns amber past 50% of
+  the idle timeout and red past 90%, with a "reaps in Xm" countdown, so it's
+  clear which sessions are about to be evicted before it happens. Backed by a
+  new `/api/status` endpoint and `age_secs`/`idle_secs` on each node in
+  `/api/sessions/tree`; no new session-side state was needed since
+  `created_at`/`last_activity` were already tracked, just never serialized.
+
 ### `drun chat`
 
 - The `drun chat` CLI now drives a running `drun-mcp` daemon over MCP instead of
@@ -14,8 +27,7 @@ All notable changes to drun are documented here.
   sessions with the web UI. New `DrunMcpBridge` (MCP client) and `ChatAgent`
   (tool-calling loop) classes back the CLI. New `--mcp-url` flag (default
   `http://127.0.0.1:7273/mcp`); a running daemon is now required for
-  `drun
-  chat`. The Python SDK examples (`examples/*.py`) are unaffected — they
+  `drun chat`. The Python SDK examples (`examples/*.py`) are unaffected — they
   still use `drun.chat.run()` against an embedded, daemon-less `DrunSession`.
 - Default `--model` changed from `ollama/qwen2.5:14b` to
   `ollama_chat/qwen2.5:14b`. litellm's `ollama/` prefix routes through Ollama's

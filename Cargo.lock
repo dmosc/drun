@@ -402,6 +402,7 @@ dependencies = [
  "axum",
  "base64",
  "drun-core",
+ "libc",
  "reqwest",
  "rust-mcp-sdk",
  "serde",

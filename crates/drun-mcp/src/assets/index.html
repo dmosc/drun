@@ -89,6 +89,70 @@
 
     .live-dot.offline { background: var(--text-muted); box-shadow: none; }
 
+    /* ── Status strip ──────────────────────────────────────────────────── */
+    #status-strip {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 24px;
+      background: var(--s1);
+      border-bottom: 1px solid var(--border);
+      font-family: var(--mono);
+      font-size: 11.5px;
+      color: var(--text-dim);
+    }
+
+    .stat-item { white-space: nowrap; }
+    .stat-sep { color: var(--text-muted); }
+
+    .stat-warn   { color: var(--amber); }
+    .stat-danger { color: var(--red); }
+
+    #daemon-toggle {
+      margin-left: auto;
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-family: var(--mono);
+      font-size: 11.5px;
+      cursor: pointer;
+      padding: 2px 4px;
+    }
+
+    #daemon-toggle:hover { color: var(--text-dim); }
+
+    #daemon-panel {
+      background: var(--s1);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 24px 16px;
+    }
+
+    #daemon-panel.hidden { display: none; }
+
+    .daemon-row {
+      display: flex;
+      gap: 10px;
+      padding: 3px 0;
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
+    .daemon-row-label {
+      flex-shrink: 0;
+      width: 90px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      font-size: 10px;
+      letter-spacing: 0.8px;
+      padding-top: 2px;
+    }
+
+    .daemon-row-value {
+      font-family: var(--mono);
+      color: var(--text-dim);
+      word-break: break-word;
+    }
+
     /* ── Page body ─────────────────────────────────────────────────────── */
     #page-body {
       max-width: 1400px;
@@ -198,6 +262,8 @@
 
     .badge-neutral { background: var(--s3); color: var(--text-dim); border: 1px solid var(--border); }
     .badge-fork    { background: var(--s3); color: var(--text-muted); border: 1px solid var(--border); font-size: 10px; }
+    .badge-warn    { background: var(--amber-bg); color: var(--amber); border: 1px solid rgba(240, 152, 46, 0.3); }
+    .badge-danger  { background: var(--red-bg); color: var(--red); border: 1px solid rgba(224, 85, 106, 0.35); }
 
     /* ── Timeline ──────────────────────────────────────────────────────── */
     .timeline-scroll { overflow-x: auto; padding-bottom: 8px; }
@@ -491,6 +557,10 @@
     </div>
   </header>
 
+  <div id="status-strip"></div>
+
+  <div id="daemon-panel" class="hidden"></div>
+
   <div id="page-body">
     <section id="sessions-section">
       <div class="section-label">sessions</div>
@@ -561,6 +631,8 @@
       selectedCpId:       null,
       outputCache:        new Map(),   // `${sessionId}:${cpId}` → { stdout, stderr, diff, fileNames }
       activeTab:          'stdout',
+      daemonStatus:       null,
+      daemonPanelOpen:    false,
     };
 
     // ── Helpers ──────────────────────────────────────────────────────────────
@@ -582,6 +654,15 @@
       if (n < 1024) return `${n} B`;
       if (n < 1048576) return `${(n / 1024).toFixed(1)} KB`;
       return `${(n / 1048576).toFixed(1)} MB`;
+    }
+
+    function fmtDuration(secs) {
+      if (secs < 60) return `${secs}s`;
+      const mins = Math.floor(secs / 60);
+      if (mins < 60) return `${mins}m`;
+      const hours = Math.floor(mins / 60);
+      const remMins = mins % 60;
+      return remMins ? `${hours}h ${remMins}m` : `${hours}h`;
     }
 
     function flattenTree(tree) {
@@ -641,7 +722,85 @@
       return res.text();
     }
 
+    // ── Rendering: daemon status ─────────────────────────────────────────────
+
+    function renderStatusStrip() {
+      const status = viewState.daemonStatus;
+      const strip  = document.getElementById('status-strip');
+      if (!status) { strip.innerHTML = ''; return; }
+
+      const capacity = status.max_sessions
+        ? `${status.session_count}/${status.max_sessions} sessions`
+        : `${status.session_count} sessions`;
+      const capacityClass = status.max_sessions && status.session_count / status.max_sessions >= 0.9
+        ? 'stat-danger' : status.max_sessions && status.session_count / status.max_sessions >= 0.7
+        ? 'stat-warn' : '';
+
+      const items = [
+        `v${escHtml(status.version)}`,
+        `pid ${status.pid}`,
+        `up ${fmtDuration(status.uptime_secs)}`,
+        `<span class="${capacityClass}">${capacity}</span>`,
+      ];
+      if (status.memory_rss_bytes != null) items.push(fmtBytes(status.memory_rss_bytes));
+
+      strip.innerHTML = items
+        .map(item => `<span class="stat-item">${item}</span>`)
+        .join('<span class="stat-sep">·</span>')
+        + `<button id="daemon-toggle">${viewState.daemonPanelOpen ? '▾' : '▸'} daemon</button>`;
+    }
+
+    function renderDaemonPanel() {
+      const panel  = document.getElementById('daemon-panel');
+      const status = viewState.daemonStatus;
+      panel.classList.toggle('hidden', !viewState.daemonPanelOpen || !status);
+      if (!viewState.daemonPanelOpen || !status) return;
+
+      const idleTimeout = status.session_idle_timeout_secs != null
+        ? `${fmtDuration(status.session_idle_timeout_secs)} idle timeout` : 'no idle timeout';
+      const workspace = status.max_workspace_mb != null
+        ? `${status.max_workspace_mb} MB workspace cap` : 'no workspace cap';
+      const checkpoints = status.max_checkpoints != null
+        ? `${status.max_checkpoints} checkpoints/session cap` : 'no checkpoint cap';
+
+      const rows = [
+        ['ports',   `mcp :${status.mcp_port} · web :${status.web_port}`],
+        ['limits',  `${idleTimeout} · ${workspace} · ${checkpoints}`],
+        ['domains', status.domain_allowlist.length ? escHtml(status.domain_allowlist.join(', ')) : 'none allowed'],
+        ['mounts',  status.mount_allowlist.length ? escHtml(status.mount_allowlist.join(', ')) : 'all host paths allowed'],
+      ];
+
+      panel.innerHTML = rows.map(([label, value]) => `
+        <div class="daemon-row">
+          <span class="daemon-row-label">${label}</span>
+          <span class="daemon-row-value">${value}</span>
+        </div>`).join('');
+    }
+
+    document.addEventListener('click', e => {
+      if (e.target.id !== 'daemon-toggle') return;
+      viewState.daemonPanelOpen = !viewState.daemonPanelOpen;
+      renderStatusStrip();
+      renderDaemonPanel();
+    });
+
     // ── Rendering: sessions ──────────────────────────────────────────────────
+
+    function sessionIdleBadge(session) {
+      const idleTimeout = viewState.daemonStatus?.session_idle_timeout_secs;
+      const idleAgo = `idle ${fmtDuration(session.idle_secs)}`;
+      if (idleTimeout == null) {
+        return `<span class="badge badge-neutral">${idleAgo}</span>`;
+      }
+      const frac = session.idle_secs / idleTimeout;
+      if (frac < 0.5) {
+        return `<span class="badge badge-neutral">${idleAgo}</span>`;
+      }
+      const remaining = Math.max(idleTimeout - session.idle_secs, 0);
+      const cls  = frac >= 0.9 ? 'badge-danger' : 'badge-warn';
+      const text = frac >= 1 ? `${idleAgo} · reaping soon` : `${idleAgo} · reaps in ${fmtDuration(remaining)}`;
+      return `<span class="badge ${cls}">${text}</span>`;
+    }
 
     function renderSessionGrid() {
       const grid = document.getElementById('sessions-grid');
@@ -659,13 +818,14 @@
         const isForked  = !!s.parent_session_id;
 
         return `
-          <div class="session-card ${isActive ? 'active' : ''}" onclick="onSessionClick('${escHtml(s.session_id)}')">
+          <div class="session-card ${isActive ? 'active' : ''}" onclick="onSessionClick('${escHtml(s.session_id)}')" title="created ${fmtDuration(s.age_secs)} ago">
             <div class="card-session-id">${escHtml(shortId(s.session_id))}</div>
             <div class="card-session-label ${s.label ? '' : 'unlabeled'}">
               ${s.label ? escHtml(s.label) : 'unlabeled'}
             </div>
             <div class="card-badges">
               <span class="badge badge-neutral">cp ${headCpId ?? '—'} / ${totalCps - 1}</span>
+              ${sessionIdleBadge(s)}
               ${isForked ? `<span class="badge badge-fork" title="forked from ${escHtml(s.parent_session_id)} @ cp${s.parent_checkpoint_id}">⑂ ${escHtml(shortId(s.parent_session_id))}</span>` : ''}
             </div>
           </div>`;
@@ -883,13 +1043,19 @@
 
     async function refresh() {
       try {
-        const tree = await fetchJson('/api/sessions/tree');
-        viewState.sessionTree  = tree;
-        viewState.flatSessions = flattenTree(tree);
+        const [tree, status] = await Promise.all([
+          fetchJson('/api/sessions/tree'),
+          fetchJson('/api/status'),
+        ]);
+        viewState.sessionTree   = tree;
+        viewState.flatSessions  = flattenTree(tree);
+        viewState.daemonStatus  = status;
 
         document.getElementById('live-dot').classList.remove('offline');
         document.getElementById('status-label').textContent = `updated ${new Date().toLocaleTimeString()}`;
 
+        renderStatusStrip();
+        renderDaemonPanel();
         renderSessionGrid();
 
         if (viewState.selectedSessionId && findSession(viewState.selectedSessionId)) {

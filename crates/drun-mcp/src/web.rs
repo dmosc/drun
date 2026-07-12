@@ -7,18 +7,32 @@ use axum::{
     response::{IntoResponse, Response},
     routing::get,
 };
+use drun_core::ConfigHandle;
 use serde::Deserialize;
+use std::time::Instant;
 
 static EMBEDDED_INDEX_HTML: &str = include_str!("assets/index.html");
 
 pub(crate) struct WebServer {
     sessions: SessionMap,
     port: u16,
+    config: ConfigHandle,
+    started_at: Instant,
 }
 
 impl WebServer {
-    pub(crate) fn new(sessions: SessionMap, port: u16) -> Self {
-        Self { sessions, port }
+    pub(crate) fn new(
+        sessions: SessionMap,
+        port: u16,
+        config: ConfigHandle,
+        started_at: Instant,
+    ) -> Self {
+        Self {
+            sessions,
+            port,
+            config,
+            started_at,
+        }
     }
 
     pub(crate) async fn serve(self) {
@@ -26,9 +40,8 @@ impl WebServer {
         match tokio::net::TcpListener::bind(&bind_address).await {
             Ok(listener) => {
                 eprintln!("drun: web UI → http://{bind_address}");
-                axum::serve(listener, build_router(self.sessions))
-                    .await
-                    .ok();
+                let router = build_router(self.sessions, self.config, self.port, self.started_at);
+                axum::serve(listener, router).await.ok();
             }
             Err(error) => {
                 eprintln!("drun: web UI failed to bind on {bind_address}: {error}");
@@ -40,11 +53,21 @@ impl WebServer {
 #[derive(Clone)]
 struct AppState {
     sessions: SessionMap,
+    config: ConfigHandle,
+    mcp_port: u16,
+    web_port: u16,
+    started_at: Instant,
 }
 
-fn build_router(sessions: SessionMap) -> Router {
+fn build_router(
+    sessions: SessionMap,
+    config: ConfigHandle,
+    web_port: u16,
+    started_at: Instant,
+) -> Router {
     Router::new()
         .route("/", get(handle_index))
+        .route("/api/status", get(handle_status))
         .route("/api/sessions/tree", get(handle_session_tree))
         .route(
             "/api/sessions/{session_id}/history",
@@ -62,7 +85,25 @@ fn build_router(sessions: SessionMap) -> Router {
             "/api/sessions/{session_id}/checkpoints/{checkpoint_id}/stderr",
             get(handle_checkpoint_stderr),
         )
-        .with_state(AppState { sessions })
+        .with_state(AppState {
+            sessions,
+            config,
+            mcp_port: crate::MCP_PORT,
+            web_port,
+            started_at,
+        })
+}
+
+async fn handle_status(State(app): State<AppState>) -> Response {
+    let sessions = app.sessions.lock().unwrap();
+    let config = app.config.get();
+    json_response(&state::DaemonStatus::current(
+        &sessions,
+        &config,
+        app.started_at,
+        app.mcp_port,
+        app.web_port,
+    ))
 }
 
 async fn handle_index() -> Response {
@@ -194,6 +235,16 @@ mod tests {
         Arc::new(Mutex::new(map))
     }
 
+    fn app_state(sessions: SessionMap) -> AppState {
+        AppState {
+            sessions,
+            config: Config::default().into(),
+            mcp_port: 7273,
+            web_port: 7274,
+            started_at: Instant::now(),
+        }
+    }
+
     async fn body_string(response: Response) -> String {
         let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         String::from_utf8(bytes.to_vec()).unwrap()
@@ -214,7 +265,7 @@ mod tests {
             "s1",
             Session::new(Config::default().into()).unwrap(),
         )]);
-        let response = handle_session_tree(State(AppState { sessions })).await;
+        let response = handle_session_tree(State(app_state(sessions))).await;
         assert_eq!(response.status(), StatusCode::OK);
         let body = body_string(response).await;
         assert!(body.contains("s1"));
@@ -224,7 +275,7 @@ mod tests {
     async fn handle_checkpoint_history_returns_404_for_an_unknown_session() {
         let sessions = session_map(vec![]);
         let response =
-            handle_checkpoint_history(State(AppState { sessions }), Path("missing".to_string()))
+            handle_checkpoint_history(State(app_state(sessions)), Path("missing".to_string()))
                 .await;
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
@@ -236,7 +287,7 @@ mod tests {
             Session::new(Config::default().into()).unwrap(),
         )]);
         let response =
-            handle_checkpoint_history(State(AppState { sessions }), Path("s1".to_string())).await;
+            handle_checkpoint_history(State(app_state(sessions)), Path("s1".to_string())).await;
         assert_eq!(response.status(), StatusCode::OK);
         let body = body_string(response).await;
         assert!(body.contains("checkpoint_id"));
@@ -249,7 +300,7 @@ mod tests {
         let sessions = session_map(vec![("s1", session)]);
 
         let response = handle_checkpoint_diff(
-            State(AppState { sessions }),
+            State(app_state(sessions)),
             Path("s1".to_string()),
             Query(DiffQueryParams {
                 from: None,
@@ -269,7 +320,7 @@ mod tests {
             Session::new(Config::default().into()).unwrap(),
         )]);
         let response = handle_checkpoint_diff(
-            State(AppState { sessions }),
+            State(app_state(sessions)),
             Path("s1".to_string()),
             Query(DiffQueryParams {
                 from: Some(99),
@@ -287,7 +338,7 @@ mod tests {
             Session::new(Config::default().into()).unwrap(),
         )]);
         let response =
-            handle_checkpoint_stdout(State(AppState { sessions }), Path(("s1".to_string(), 99)))
+            handle_checkpoint_stdout(State(app_state(sessions)), Path(("s1".to_string(), 99)))
                 .await;
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
@@ -299,10 +350,23 @@ mod tests {
             Session::new(Config::default().into()).unwrap(),
         )]);
         let response =
-            handle_checkpoint_stdout(State(AppState { sessions }), Path(("s1".to_string(), 0)))
-                .await;
+            handle_checkpoint_stdout(State(app_state(sessions)), Path(("s1".to_string(), 0))).await;
         assert_eq!(response.status(), StatusCode::OK);
         let body = body_string(response).await;
         assert_eq!(body, "");
+    }
+
+    #[tokio::test]
+    async fn handle_status_reports_session_count_and_ports() {
+        let sessions = session_map(vec![(
+            "s1",
+            Session::new(Config::default().into()).unwrap(),
+        )]);
+        let response = handle_status(State(app_state(sessions))).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = body_string(response).await;
+        assert!(body.contains("\"session_count\":1"));
+        assert!(body.contains("\"mcp_port\":7273"));
+        assert!(body.contains("\"web_port\":7274"));
     }
 }
