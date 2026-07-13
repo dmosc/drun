@@ -93,13 +93,7 @@ impl DrunHandler {
     }
 
     fn handle_session_fork(&self, t: SessionFork) -> Result<CallToolResult, CallToolError> {
-        let source_arc = self
-            .sessions
-            .lock()
-            .unwrap()
-            .get(&t.session_id)
-            .ok_or_else(|| DrunError::session_not_found(&t.session_id).into_tool_err())?
-            .clone();
+        let source_arc = self.resolve_session(&t.session_id)?;
         let forked_session = {
             let source = DrunHandler::lock_recovering(&t.session_id, &source_arc);
             let checkpoint_id = source
@@ -390,9 +384,7 @@ impl DrunHandler {
     }
 
     async fn handle_session_fetch(&self, t: SessionFetch) -> Result<CallToolResult, CallToolError> {
-        if !self.sessions.lock().unwrap().contains_key(&t.session_id) {
-            return Err(DrunError::session_not_found(&t.session_id).into_tool_err());
-        }
+        self.resolve_session(&t.session_id)?;
         let config = self.config.get();
         let url_is_allowed = Self::host_from_url(&t.url).is_some_and(|h| config.domain_allowed(&h));
         if !url_is_allowed {
@@ -525,9 +517,7 @@ impl DrunHandler {
     }
 
     fn handle_session_get_env(&self, t: SessionGetEnv) -> Result<CallToolResult, CallToolError> {
-        if !self.sessions.lock().unwrap().contains_key(&t.session_id) {
-            return Err(DrunError::session_not_found(&t.session_id).into_tool_err());
-        }
+        self.resolve_session(&t.session_id)?;
         if !self.config.get().env_allowlist.contains(&t.name) {
             return Err(DrunError::env_var_denied(&t.name).into_tool_err());
         }
@@ -597,13 +587,7 @@ impl DrunHandler {
         if t.session_id == t.source_session_id {
             return Err(DrunError::internal("cannot merge a session with itself").into_tool_err());
         }
-        let source_arc = self
-            .sessions
-            .lock()
-            .unwrap()
-            .get(&t.source_session_id)
-            .ok_or_else(|| DrunError::session_not_found(&t.source_session_id).into_tool_err())?
-            .clone();
+        let source_arc = self.resolve_session(&t.source_session_id)?;
         let source = DrunHandler::lock_recovering(&t.source_session_id, &source_arc);
         let source_checkpoint_id = source
             .resolve_checkpoint(t.source_checkpoint_id, t.source_checkpoint_label.as_deref())
@@ -1440,6 +1424,18 @@ mod tests {
             .unwrap();
 
         assert!(dir.path().join("s1.drun").exists());
+    }
+
+    #[test]
+    fn session_get_env_returns_session_not_found_for_missing_session() {
+        let handler = DrunHandler::new(Config::default());
+        let err = handler
+            .handle_session_get_env(SessionGetEnv {
+                session_id: "missing".to_string(),
+                name: "PATH".to_string(),
+            })
+            .unwrap_err();
+        assert!(err.to_string().contains("session_not_found"));
     }
 
     #[test]

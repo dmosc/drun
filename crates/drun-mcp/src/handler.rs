@@ -51,18 +51,24 @@ impl DrunHandler {
         Ok(())
     }
 
+    pub(crate) fn resolve_session(
+        &self,
+        session_id: &str,
+    ) -> Result<Arc<Mutex<Session>>, CallToolError> {
+        self.sessions
+            .lock()
+            .unwrap()
+            .get(session_id)
+            .cloned()
+            .ok_or_else(|| DrunError::session_not_found(session_id).into_tool_err())
+    }
+
     pub(crate) fn with_session(
         &self,
         session_id: &str,
         f: impl FnOnce(&Session) -> Result<CallToolResult, CallToolError>,
     ) -> Result<CallToolResult, CallToolError> {
-        let session = self
-            .sessions
-            .lock()
-            .unwrap()
-            .get(session_id)
-            .ok_or_else(|| CallToolError::from(DrunError::session_not_found(session_id)))?
-            .clone();
+        let session = self.resolve_session(session_id)?;
         match session.try_lock() {
             Ok(guard) => f(&guard),
             Err(std::sync::TryLockError::WouldBlock) => {
@@ -79,13 +85,7 @@ impl DrunHandler {
         session_id: &str,
         f: impl FnOnce(&mut Session) -> Result<CallToolResult, CallToolError>,
     ) -> Result<CallToolResult, CallToolError> {
-        let session = self
-            .sessions
-            .lock()
-            .unwrap()
-            .get(session_id)
-            .ok_or_else(|| CallToolError::from(DrunError::session_not_found(session_id)))?
-            .clone();
+        let session = self.resolve_session(session_id)?;
         let mut guard = match session.try_lock() {
             Ok(guard) => guard,
             Err(std::sync::TryLockError::WouldBlock) => {
