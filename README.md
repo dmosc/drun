@@ -27,16 +27,21 @@ place absolute limits that can't be breached by design.
 
 ## Usage
 
+drun supports three independent journeys — pick the one that fits:
+
+- **[Using Claude Code](#using-claude-code)** — drun's MCP tools replace
+  Claude's native file/shell/network tools inside a sandboxed workspace.
+- **[Using drun chat](#using-drun-chat)** — a CLI agent loop against Ollama or
+  any LiteLLM-supported model.
+- **[Using the Python SDK](#using-the-python-sdk)** — script sandboxed sessions
+  directly, no LLM or daemon required.
+
 ### Installing
 
-The following describes installation steps to integrate with Claude Code. There
-are plans in the future to support other user journeys such as OpenAI, Ollama
-and even a Python SDK as well as more programming languages. Consider this
-document as the current source of truth of what's production-ready.
-
-#### Requirements
-
-- [Claude Code](https://code.claude.com/docs/en/quickstart#step-1-install-claude-code).
+Claude Code and drun chat both talk to the same background `drun-mcp` daemon —
+install it once per machine with the steps below, then jump to whichever journey
+you need. The Python SDK is standalone and skips this section entirely; go
+straight to [Using the Python SDK](#using-the-python-sdk).
 
 #### Global install (once per machine)
 
@@ -49,46 +54,18 @@ Installs globally (each step is skipped if already done):
 1. The drun MCP binary to `/usr/local/bin/drun-mcp`.
 2. A global config at `~/.drun/config.toml` with sensible defaults.
 3. `drun-mcp` as a persistent background daemon — via `launchd` on macOS or
-   `systemd` on Linux — so a single process serves all Claude Code windows and
-   terminals on the host simultaneously.
+   `systemd` on Linux — so a single process serves every Claude Code window,
+   terminal, and `drun chat` invocation on the host simultaneously.
 4. The MCP registration in Claude Code pointing at the running daemon over SSE
    (`http://127.0.0.1:7273/sse`) — one registration shared across all projects.
 
-#### Per-project setup
-
-From the root of any project you want drun to manage:
-
-```bash
-drun-mcp init
-```
-
-Creates two files in the current directory (appends if they already exist):
-
-1. `.claude/settings.json` — restricts Claude to drun tools only for this
-   workspace. Native file (`Read`, `Edit`, `Write`, `NotebookEdit`, `Glob`,
-   `Grep`), shell (`Bash`, `BashOutput`, `KillBash`), network (`WebFetch`,
-   `WebSearch`), and subagent delegation (`Task`) tools are all blocked, and
-   drun's MCP tools are pre-allowed so Claude isn't prompted on every call.
-2. `CLAUDE.md` — tells Claude to use drun tools instead of native ones and how
-   to bootstrap a session (`create_session` then `session_mount`).
-
-This restriction is intentionally per-project — you wouldn't want native tools
-blocked globally across every workspace. Run `drun-mcp init` from any project
-root to opt that project into the drun sandbox.
-
 Once installed, the following endpoints are available:
 
-| Endpoint                    | Purpose                                   |
-| --------------------------- | ----------------------------------------- |
-| `http://127.0.0.1:7273/sse` | MCP transport (SSE) — used by Claude Code |
-| `http://127.0.0.1:7273/mcp` | MCP transport (streamable HTTP)           |
-| `http://127.0.0.1:7274`     | Trajectory viewer web UI                  |
-
-Validate that the MCP is live:
-
-```bash
-claude mcp list
-```
+| Endpoint                    | Purpose                                               |
+| --------------------------- | ----------------------------------------------------- |
+| `http://127.0.0.1:7273/sse` | MCP transport (SSE) — used by Claude Code             |
+| `http://127.0.0.1:7273/mcp` | MCP transport (streamable HTTP) — used by `drun chat` |
+| `http://127.0.0.1:7274`     | Trajectory viewer web UI                              |
 
 #### Upgrading
 
@@ -118,6 +95,104 @@ curl -fsSL https://raw.githubusercontent.com/dmosc/drun/main/uninstall.sh | bash
    restored automatically.
 1. Leaves `~/.drun/config.toml` and any `CLAUDE.md` files untouched; delete
    these manually if not needed.
+
+### Using Claude Code
+
+#### Requirements
+
+- [Claude Code](https://code.claude.com/docs/en/quickstart#step-1-install-claude-code).
+- The `drun-mcp` daemon [installed](#global-install-once-per-machine) above.
+
+#### Per-project setup
+
+From the root of any project you want drun to manage:
+
+```bash
+drun-mcp init
+```
+
+Creates two files in the current directory (appends if they already exist):
+
+1. `.claude/settings.json` — restricts Claude to drun tools only for this
+   workspace. Native file (`Read`, `Edit`, `Write`, `NotebookEdit`, `Glob`,
+   `Grep`), shell (`Bash`, `BashOutput`, `KillBash`), network (`WebFetch`,
+   `WebSearch`), and subagent delegation (`Task`) tools are all blocked, and
+   drun's MCP tools are pre-allowed so Claude isn't prompted on every call.
+2. `CLAUDE.md` — tells Claude to use drun tools instead of native ones and how
+   to bootstrap a session (`create_session` then `session_mount`).
+
+This restriction is intentionally per-project; you wouldn't want native tools
+blocked globally across every workspace. Run `drun-mcp init` from any project
+root to opt that project into the drun sandbox.
+
+Validate that the MCP is live:
+
+```bash
+claude mcp list
+```
+
+### Using drun chat
+
+`drun chat` drives an LLM — local via [Ollama](https://ollama.com) or any cloud
+model supported by [LiteLLM](https://docs.litellm.ai/docs/providers) — against a
+sandboxed session.
+
+#### Requirements
+
+- Python 3.9+.
+- The `drun-mcp` daemon [installed](#global-install-once-per-machine) above.
+- [Ollama](https://ollama.com) for local models, or an API key for a cloud
+  model.
+
+```bash
+pip install 'drun-sandbox[chat]'
+```
+
+For a local model, install Ollama and pull a tool-calling-capable model:
+
+```bash
+ollama pull qwen2.5:14b
+```
+
+Then run:
+
+```bash
+drun chat "your prompt" --mount ./my-project
+```
+
+`--model` defaults to `ollama_chat/qwen2.5:14b`. To use a cloud model instead,
+pass `--model` and set the provider's API key:
+
+```bash
+ANTHROPIC_API_KEY=... drun chat "your prompt" --model claude-sonnet-4-6
+```
+
+Run `drun chat --help` for all flags (mounts, system prompt override, max
+iterations).
+
+### Using the Python SDK
+
+For scripting drun sessions directly — no LLM, no daemon required:
+
+#### Requirements
+
+- Python 3.9+.
+
+```bash
+pip install drun-sandbox
+```
+
+```python
+from drun import Session
+
+session = Session()
+session.write_file("hello.py", b"print('hi')")
+checkpoint = session.execute_bash("python3 hello.py")
+print(checkpoint.stdout)
+```
+
+See [`examples/quickstart.py`](examples/quickstart.py) for a fuller walkthrough
+(bash execution, write, diff, rollback, export).
 
 ### Configuration
 
