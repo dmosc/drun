@@ -69,10 +69,7 @@ impl DrunHandler {
                 Err(DrunError::session_busy(session_id).into_tool_err())
             }
             Err(std::sync::TryLockError::Poisoned(poisoned)) => {
-                eprintln!(
-                    "drun: session '{session_id}' recovered from a poisoned lock (a prior call panicked)"
-                );
-                f(&poisoned.into_inner())
+                f(&Self::recover_poison(session_id, poisoned))
             }
         }
     }
@@ -95,15 +92,31 @@ impl DrunHandler {
                 return Err(DrunError::session_busy(session_id).into_tool_err());
             }
             Err(std::sync::TryLockError::Poisoned(poisoned)) => {
-                eprintln!(
-                    "drun: session '{session_id}' recovered from a poisoned lock (a prior call panicked)"
-                );
-                poisoned.into_inner()
+                Self::recover_poison(session_id, poisoned)
             }
         };
         self.check_idle(session_id, &guard)?;
         guard.last_activity = std::time::Instant::now();
         f(&mut guard)
+    }
+
+    pub(crate) fn lock_recovering<'a>(
+        session_id: &str,
+        session: &'a Arc<Mutex<Session>>,
+    ) -> std::sync::MutexGuard<'a, Session> {
+        session
+            .lock()
+            .unwrap_or_else(|poisoned| Self::recover_poison(session_id, poisoned))
+    }
+
+    fn recover_poison<'a>(
+        session_id: &str,
+        poisoned: std::sync::PoisonError<std::sync::MutexGuard<'a, Session>>,
+    ) -> std::sync::MutexGuard<'a, Session> {
+        eprintln!(
+            "drun: session '{session_id}' recovered from a poisoned lock (a prior call panicked)"
+        );
+        poisoned.into_inner()
     }
 
     fn check_idle(&self, session_id: &str, session: &Session) -> Result<(), CallToolError> {

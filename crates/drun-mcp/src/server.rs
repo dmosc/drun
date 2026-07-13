@@ -101,7 +101,7 @@ impl DrunHandler {
             .ok_or_else(|| DrunError::session_not_found(&t.session_id).into_tool_err())?
             .clone();
         let forked_session = {
-            let source = source_arc.lock().unwrap();
+            let source = DrunHandler::lock_recovering(&t.session_id, &source_arc);
             let checkpoint_id = source
                 .resolve_checkpoint(t.checkpoint_id, t.checkpoint_label.as_deref())
                 .map_err(|e| DrunError::from_exec(e).into_tool_err())?;
@@ -132,7 +132,8 @@ impl DrunHandler {
             if let Some(parent_dir) = output_path.parent() {
                 let _ = std::fs::create_dir_all(parent_dir);
             }
-            let _ = session.lock().unwrap().snapshot().write(&output_path);
+            let guard = DrunHandler::lock_recovering(&t.session_id, &session);
+            let _ = guard.snapshot().write(&output_path);
         }
         Ok(text(format!("closed {}", t.session_id)))
     }
@@ -603,7 +604,7 @@ impl DrunHandler {
             .get(&t.source_session_id)
             .ok_or_else(|| DrunError::session_not_found(&t.source_session_id).into_tool_err())?
             .clone();
-        let source = source_arc.lock().unwrap();
+        let source = DrunHandler::lock_recovering(&t.source_session_id, &source_arc);
         let source_checkpoint_id = source
             .resolve_checkpoint(t.source_checkpoint_id, t.source_checkpoint_label.as_deref())
             .map_err(|e| DrunError::from_exec(e).into_tool_err())?;
@@ -954,6 +955,35 @@ mod tests {
     }
 
     #[test]
+    fn session_fork_recovers_from_a_poisoned_source_lock_instead_of_panicking() {
+        let handler = DrunHandler::new(Config::default());
+        insert_session(&handler, "source");
+        let source_arc = handler
+            .sessions
+            .lock()
+            .unwrap()
+            .get("source")
+            .unwrap()
+            .clone();
+        let arc_for_panic = source_arc.clone();
+        let _ = std::thread::spawn(move || {
+            let _guard = arc_for_panic.lock().unwrap();
+            panic!("simulated panic while holding the session lock");
+        })
+        .join();
+        assert!(source_arc.is_poisoned());
+
+        let result = handler
+            .handle_session_fork(SessionFork {
+                session_id: "source".to_string(),
+                checkpoint_id: None,
+                checkpoint_label: None,
+            })
+            .unwrap();
+        assert!(result_text(&result).contains("checkpoint_id"));
+    }
+
+    #[test]
     fn session_close_removes_the_session_from_the_map() {
         let handler = DrunHandler::new(Config::default());
         insert_session(&handler, "s1");
@@ -986,6 +1016,34 @@ mod tests {
         };
         let handler = DrunHandler::new(config);
         insert_session(&handler, "s1");
+
+        handler
+            .handle_session_close(SessionClose {
+                session_id: "s1".to_string(),
+            })
+            .unwrap();
+
+        assert!(dir.path().join("s1.drun").exists());
+    }
+
+    #[test]
+    fn session_close_recovers_from_a_poisoned_lock_when_snapshotting() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = Config {
+            snapshot_on_close: true,
+            snapshots_dir: dir.path().to_path_buf(),
+            ..Config::default()
+        };
+        let handler = DrunHandler::new(config);
+        insert_session(&handler, "s1");
+        let session_arc = handler.sessions.lock().unwrap().get("s1").unwrap().clone();
+        let arc_for_panic = session_arc.clone();
+        let _ = std::thread::spawn(move || {
+            let _guard = arc_for_panic.lock().unwrap();
+            panic!("simulated panic while holding the session lock");
+        })
+        .join();
+        assert!(session_arc.is_poisoned());
 
         handler
             .handle_session_close(SessionClose {
@@ -1481,6 +1539,39 @@ mod tests {
             .unwrap();
         let json = result_json(&result);
         assert_eq!(json["workspace_file_count"], 1);
+    }
+
+    #[test]
+    fn session_merge_recovers_from_a_poisoned_source_lock_instead_of_panicking() {
+        let handler = DrunHandler::new(Config::default());
+        insert_session(&handler, "target");
+        insert_session(&handler, "source");
+        let source_arc = handler
+            .sessions
+            .lock()
+            .unwrap()
+            .get("source")
+            .unwrap()
+            .clone();
+        let arc_for_panic = source_arc.clone();
+        let _ = std::thread::spawn(move || {
+            let _guard = arc_for_panic.lock().unwrap();
+            panic!("simulated panic while holding the session lock");
+        })
+        .join();
+        assert!(source_arc.is_poisoned());
+
+        let result = handler
+            .handle_session_merge(SessionMerge {
+                session_id: "target".to_string(),
+                source_session_id: "source".to_string(),
+                source_checkpoint_id: None,
+                source_checkpoint_label: None,
+                keys: None,
+            })
+            .unwrap();
+        let json = result_json(&result);
+        assert_eq!(json["checkpoint_id"], 1);
     }
 
     #[test]
