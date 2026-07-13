@@ -124,10 +124,14 @@ impl DrunHandler {
         if config.snapshot_on_close {
             let output_path = config.snapshots_dir.join(format!("{}.drun", t.session_id));
             if let Some(parent_dir) = output_path.parent() {
-                let _ = std::fs::create_dir_all(parent_dir);
+                std::fs::create_dir_all(parent_dir)
+                    .map_err(|e| DrunError::internal(e).into_tool_err())?;
             }
             let guard = DrunHandler::lock_recovering(&t.session_id, &session);
-            let _ = guard.snapshot().write(&output_path);
+            guard
+                .snapshot()
+                .write(&output_path)
+                .map_err(|e| DrunError::internal(e).into_tool_err())?;
         }
         Ok(text(format!("closed {}", t.session_id)))
     }
@@ -1016,6 +1020,27 @@ mod tests {
             .unwrap();
 
         assert!(dir.path().join("s1.drun").exists());
+    }
+
+    #[test]
+    fn session_close_surfaces_an_error_when_the_snapshot_directory_cannot_be_created() {
+        let dir = tempfile::tempdir().unwrap();
+        let blocking_file = dir.path().join("blocked");
+        std::fs::write(&blocking_file, b"not a directory").unwrap();
+        let config = Config {
+            snapshot_on_close: true,
+            snapshots_dir: blocking_file.join("nested"),
+            ..Config::default()
+        };
+        let handler = DrunHandler::new(config);
+        insert_session(&handler, "s1");
+
+        let err = handler
+            .handle_session_close(SessionClose {
+                session_id: "s1".to_string(),
+            })
+            .unwrap_err();
+        assert!(!err.to_string().is_empty());
     }
 
     #[test]
