@@ -1,6 +1,7 @@
 //! Serializable view types for session and checkpoint state. Each type owns
 //! the logic that builds it from live session data.
 
+use crate::handler::DrunHandler;
 use drun_core::{CheckpointRef, Config, FileMap, Session, SnapshotMeta};
 use serde::Serialize;
 use std::collections::HashMap;
@@ -26,7 +27,7 @@ impl SessionSummary {
         sessions
             .iter()
             .map(|(id, arc)| {
-                let session = arc.lock().unwrap();
+                let session = DrunHandler::lock_recovering(id, arc);
                 let (parent_session_id, parent_checkpoint_id) =
                     CheckpointRef::split(&session.parent);
                 SessionSummary {
@@ -219,7 +220,7 @@ impl SessionTreeNode {
     pub(crate) fn forest(sessions: &HashMap<String, Arc<Mutex<Session>>>) -> Vec<SessionTreeNode> {
         let locked_sessions: Vec<(String, std::sync::MutexGuard<Session>)> = sessions
             .iter()
-            .map(|(id, arc)| (id.clone(), arc.lock().unwrap()))
+            .map(|(id, arc)| (id.clone(), DrunHandler::lock_recovering(id, arc)))
             .collect();
         let mut children: HashMap<(String, usize), Vec<(String, &Session)>> = HashMap::new();
         let mut roots: Vec<(&str, &Session)> = Vec::new();
@@ -511,6 +512,24 @@ mod tests {
     }
 
     #[test]
+    fn session_summary_all_recovers_from_a_poisoned_lock_instead_of_panicking() {
+        let arc = Arc::new(Mutex::new(new_session()));
+        let arc_for_panic = arc.clone();
+        let _ = std::thread::spawn(move || {
+            let _guard = arc_for_panic.lock().unwrap();
+            panic!("simulated panic while holding the session lock");
+        })
+        .join();
+        assert!(arc.is_poisoned());
+
+        let mut sessions = HashMap::new();
+        sessions.insert("s1".to_string(), arc);
+
+        let summaries = SessionSummary::all(&sessions);
+        assert_eq!(summaries.len(), 1);
+    }
+
+    #[test]
     fn session_state_compute_reports_zero_deltas_with_no_previous_files() {
         let session = new_session();
         let state = SessionState::compute("s1", &session, None, vec![]);
@@ -605,6 +624,24 @@ mod tests {
         assert_eq!(forest.len(), 1);
         assert_eq!(forest[0].session_id, "s1");
         assert!(forest[0].checkpoints[0].forks.is_empty());
+    }
+
+    #[test]
+    fn session_tree_node_forest_recovers_from_a_poisoned_lock_instead_of_panicking() {
+        let arc = Arc::new(Mutex::new(new_session()));
+        let arc_for_panic = arc.clone();
+        let _ = std::thread::spawn(move || {
+            let _guard = arc_for_panic.lock().unwrap();
+            panic!("simulated panic while holding the session lock");
+        })
+        .join();
+        assert!(arc.is_poisoned());
+
+        let mut sessions = HashMap::new();
+        sessions.insert("s1".to_string(), arc);
+
+        let forest = SessionTreeNode::forest(&sessions);
+        assert_eq!(forest.len(), 1);
     }
 
     #[test]

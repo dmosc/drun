@@ -219,7 +219,7 @@ impl DrunHandler {
             let start = (t.offset.unwrap_or(0) as usize).min(total);
             let end = t
                 .limit
-                .map(|l| (start + l as usize).min(total))
+                .map(|l| start.saturating_add(l as usize).min(total))
                 .unwrap_or(total);
             let slice = &all_bytes[start..end];
             let (content, encoding) = match std::str::from_utf8(slice) {
@@ -664,7 +664,7 @@ impl DrunHandler {
             let start = (t.offset.unwrap_or(0) as usize).min(total);
             let end = t
                 .limit
-                .map(|l| (start + l as usize).min(total))
+                .map(|l| start.saturating_add(l as usize).min(total))
                 .unwrap_or(total);
             Ok(text(
                 serde_json::json!({
@@ -1167,6 +1167,34 @@ mod tests {
     }
 
     #[test]
+    fn session_read_file_clamps_a_limit_that_would_overflow_past_total_bytes() {
+        let handler = DrunHandler::new(Config::default());
+        insert_session(&handler, "s1");
+        {
+            let sessions = handler.sessions.lock().unwrap();
+            sessions
+                .get("s1")
+                .unwrap()
+                .lock()
+                .unwrap()
+                .write_file("a.txt", b"hello world".to_vec())
+                .unwrap();
+        }
+
+        let result = handler
+            .handle_session_read_file(SessionReadFile {
+                session_id: "s1".to_string(),
+                path: "a.txt".to_string(),
+                offset: Some(6),
+                limit: Some(u64::MAX),
+            })
+            .unwrap();
+        let json = result_json(&result);
+        assert_eq!(json["content"], "world");
+        assert_eq!(json["has_more"], false);
+    }
+
+    #[test]
     fn session_read_file_base64_encodes_non_utf8_content_when_paginated() {
         let handler = DrunHandler::new(Config::default());
         insert_session(&handler, "s1");
@@ -1623,6 +1651,24 @@ mod tests {
             })
             .unwrap_err();
         assert!(err.to_string().contains("does not exist"));
+    }
+
+    #[test]
+    fn checkpoint_read_stdstreams_clamps_a_limit_that_would_overflow_past_total_bytes() {
+        let handler = DrunHandler::new(Config::default());
+        insert_session(&handler, "s1");
+
+        let result = handler
+            .handle_checkpoint_read_stdstreams(CheckpointReadStdstreams {
+                session_id: "s1".to_string(),
+                checkpoint_id: Some(0),
+                stream: None,
+                offset: Some(0),
+                limit: Some(u64::MAX),
+            })
+            .unwrap();
+        let json = result_json(&result);
+        assert_eq!(json["content"], "");
     }
 
     #[tokio::test]
