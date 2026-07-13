@@ -115,6 +115,4 @@ git push origin HEAD
 git push origin "${NEW_TAG}"
 
 echo ""
-echo "Released ${NEW_TAG}. Workflows now running:"
-echo "  release.yml → drun-mcp binaries (macOS arm64/x86_64, Linux x86_64)"
-echo "  pypi.yml    → Python wheels published to PyPI"
+echo "Released ${NEW_TAG}. Deploying drun across all outlets."
