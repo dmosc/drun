@@ -44,6 +44,7 @@ async fn main() -> SdkResult<()> {
     let started_at = std::time::Instant::now();
     let handler = DrunHandler::new_live();
     handler.start_idle_reaper();
+    handler.start_shutdown_handler();
 
     if let Some(web_port) = handler.config.get().web_port.filter(|&p| p != 0) {
         let web_sessions = std::sync::Arc::clone(&handler.sessions);

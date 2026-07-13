@@ -37,6 +37,30 @@ impl DrunHandler {
         }
     }
 
+    pub fn start_shutdown_handler(&self) {
+        tokio::spawn(async {
+            Self::wait_for_shutdown_signal().await;
+            eprintln!("drun: shutting down, terminating in-flight sandboxed processes...");
+            Session::kill_all_running_children();
+            std::process::exit(0);
+        });
+    }
+
+    #[cfg(unix)]
+    async fn wait_for_shutdown_signal() {
+        let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("failed to install SIGTERM handler");
+        tokio::select! {
+            _ = sigterm.recv() => {}
+            _ = tokio::signal::ctrl_c() => {}
+        }
+    }
+
+    #[cfg(not(unix))]
+    async fn wait_for_shutdown_signal() {
+        let _ = tokio::signal::ctrl_c().await;
+    }
+
     pub(crate) fn insert_session(
         &self,
         session_id: String,

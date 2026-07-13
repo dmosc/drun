@@ -2,14 +2,14 @@ use crate::config::ConfigHandle;
 use crate::error::RunnerError;
 use crate::snapshot::{CheckpointRecord, SessionSnapshot};
 use crate::{Checkpoint, CheckpointRef, FileMap, sandbox, workspace};
-use std::collections::HashMap;
 use std::collections::hash_map::DefaultHasher;
+use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::process::Child;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::{Arc, Mutex, OnceLock, Weak};
 use std::time::{Duration, Instant};
 
 pub struct Session {
@@ -23,6 +23,26 @@ pub struct Session {
     pub parent: Option<CheckpointRef>,
     pub created_at: Instant,
     pub last_activity: Instant,
+}
+
+static RUNNING_CHILD_PGIDS: OnceLock<Mutex<HashSet<i32>>> = OnceLock::new();
+
+struct SessionChildGuard(i32);
+
+impl SessionChildGuard {
+    fn new(pgid: i32) -> Self {
+        Session::running_child_pgids().lock().unwrap().insert(pgid);
+        Self(pgid)
+    }
+}
+
+impl Drop for SessionChildGuard {
+    fn drop(&mut self) {
+        Session::running_child_pgids()
+            .lock()
+            .unwrap()
+            .remove(&self.0);
+    }
 }
 
 impl Session {
@@ -39,6 +59,11 @@ impl Session {
             created_at: Instant::now(),
             last_activity: Instant::now(),
         })
+    }
+
+    /// Process groups of in-flight sandboxed children, keyed by pgid.
+    fn running_child_pgids() -> &'static Mutex<HashSet<i32>> {
+        RUNNING_CHILD_PGIDS.get_or_init(|| Mutex::new(HashSet::new()))
     }
 
     pub fn from_session(
@@ -715,6 +740,7 @@ impl Session {
     ) -> anyhow::Result<BashOutput> {
         let bash_timeout_ms = self.config.get().bash_timeout_ms;
         let pgid = child.id() as i32;
+        let _pgid_guard = SessionChildGuard::new(pgid);
         let child_stderr = child.stderr.take().unwrap();
         let child_stdout = child.stdout.take().unwrap();
         let child = Arc::new(Mutex::new(child));
@@ -757,6 +783,21 @@ impl Session {
             return Err(RunnerError::timeout(bash_timeout_ms).into());
         }
         Ok(BashOutput { stdout, stderr })
+    }
+
+    /// Kills every sandboxed child (and its descendants) currently tracked
+    /// as running. Intended for the daemon's shutdown handler, so an
+    /// in-flight `session_bash` call doesn't outlive the daemon process.
+    pub fn kill_all_running_children() {
+        let pgids: Vec<i32> = Self::running_child_pgids()
+            .lock()
+            .unwrap()
+            .iter()
+            .copied()
+            .collect();
+        for pgid in pgids {
+            Self::kill_process_tree(pgid);
+        }
     }
 
     #[cfg(unix)]
@@ -905,6 +946,37 @@ mod tests {
 
         let _ = child.kill();
         let _ = child.wait();
+    }
+
+    #[test]
+    fn kill_all_running_children_kills_a_registered_process_group() {
+        use std::os::unix::process::CommandExt;
+        // Sandboxed children are spawned as their own process-group leader
+        // (see sandbox.rs) so kill_process_tree's `-pgid` reaches them.
+        let mut child = std::process::Command::new("sleep")
+            .arg("5")
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        let pgid = child.id() as i32;
+        let guard = SessionChildGuard::new(pgid);
+
+        Session::kill_all_running_children();
+
+        let status = child.wait().unwrap();
+        assert!(
+            !status.success(),
+            "child should have been killed, not exited cleanly"
+        );
+
+        drop(guard);
+        assert!(
+            !Session::running_child_pgids()
+                .lock()
+                .unwrap()
+                .contains(&pgid),
+            "dropping the guard should unregister the pgid"
+        );
     }
 
     #[test]
