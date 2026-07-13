@@ -784,6 +784,11 @@ impl Session {
         let mut overlay_entries = vec![];
         for entry in std::fs::read_dir(dir)? {
             let entry = entry?;
+            let file_type = entry.file_type()?;
+            // Skip symlinks to avoid cyclical recursion.
+            if file_type.is_symlink() {
+                continue;
+            }
             let name = entry.file_name().to_string_lossy().into_owned();
             let key = if key_prefix.is_empty() {
                 name.clone()
@@ -791,7 +796,7 @@ impl Session {
                 format!("{key_prefix}/{name}")
             };
             let path = entry.path();
-            if path.is_dir() {
+            if file_type.is_dir() {
                 if overlay_patterns.iter().any(|p| p == &name) {
                     overlay_entries.push((key, path));
                 } else {
@@ -800,7 +805,7 @@ impl Session {
                     file_entries.extend(sub_files);
                     overlay_entries.extend(sub_overlays);
                 }
-            } else if path.is_file() {
+            } else if file_type.is_file() {
                 file_entries.push((key, std::fs::read(&path)?, path));
             }
         }
@@ -905,6 +910,19 @@ mod tests {
             s.current().files.is_empty(),
             "a rejected mount must not partially populate the workspace"
         );
+    }
+
+    #[test]
+    fn mount_ignores_a_symlink_cycle_instead_of_recursing_forever() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.txt"), b"hi").unwrap();
+        std::os::unix::fs::symlink(dir.path(), dir.path().join("loop")).unwrap();
+
+        let mut s = session();
+        let mounted_keys = s.mount(dir.path()).unwrap();
+
+        assert_eq!(mounted_keys, vec!["a.txt".to_string()]);
+        assert!(!s.current().files.contains_key("loop"));
     }
 
     #[test]
