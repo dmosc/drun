@@ -21,62 +21,67 @@ guardrail the agent's behavior across a range of OS-level aspects:
 - Access to filesystem paths (e.g. restrict filesystem access)
 - Resource limits (e.g. memory and duration caps)
 
-Rather than granting your agent raw CRUD access to your host, Drun exposes and
+Rather than granting your agent raw access to your host, Drun exposes and
 enforces a highly-customizable policy layer with deterministic knobs for you to
 place absolute limits that can't be breached by design.
 
 ## Usage
 
-drun supports three independent journeys — pick the one that fits:
+The drun framework can be consumed in the following ways:
 
-- **[Using Claude Code](#using-claude-code)** — drun's MCP tools replace
-  Claude's native file/shell/network tools inside a sandboxed workspace.
-- **[Using drun chat](#using-drun-chat)** — a CLI agent loop against Ollama or
-  any LiteLLM-supported model.
-- **[Using the Python SDK](#using-the-python-sdk)** — script sandboxed sessions
-  directly, no LLM or daemon required.
+- **[Via Claude Code](#claude-code)**: drun's MCP tools replace Claude's native
+  file/shell/network tools inside a sandboxed workspace.
+- **[Standalone CLI](#standalone-cli)**: a CLI agentic loop that's integrated
+  with [Ollama](https://ollama.com/) and [LiteLLM](https://docs.litellm.ai/).
+- **[Using the Python SDK](#python-sdk)**: script sandboxed sessions directly,
+  no LLM or daemon required.
+
+> NOTE: There are plans in the future to support additional model providers like
+> Codex and Gemini CLI. Consider this document as the official reference of
+> production-ready offerings.
 
 ### Installing
 
-Claude Code and drun chat both talk to the same background `drun-mcp` daemon —
-install it once per machine with the steps below, then jump to whichever journey
-you need. The Python SDK is standalone and skips this section entirely; go
-straight to [Using the Python SDK](#using-the-python-sdk).
-
-#### Global install (once per machine)
+All journeys except for the [Python SDK](#using-the-python-sdk) require the
+`drun-mcp` daemon installed and running in the host machine to operate. This is
+done once with:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/dmosc/drun/main/install.sh | bash
 ```
 
-Installs globally (each step is skipped if already done):
+This installs and configures a few things (skips if not applicable):
 
-1. The drun MCP binary to `/usr/local/bin/drun-mcp`.
+1. The `drun-mcp` binary under `/usr/local/bin/drun-mcp`.
 2. A global config at `~/.drun/config.toml` with sensible defaults.
-3. `drun-mcp` as a persistent background daemon — via `launchd` on macOS or
-   `systemd` on Linux — so a single process serves every Claude Code window,
-   terminal, and `drun chat` invocation on the host simultaneously.
+3. `drun-mcp` as a persistent background daemon (`launchd` on macOS, `systemd`
+   on Linux) so a single process serves all simultaneous sessions running on the
+   host.
 4. The MCP registration in Claude Code pointing at the running daemon over SSE
-   (`http://127.0.0.1:7273/sse`) — one registration shared across all projects.
+   (`http://127.0.0.1:7273/sse`).
 
 Once installed, the following endpoints are available:
 
-| Endpoint                    | Purpose                                               |
-| --------------------------- | ----------------------------------------------------- |
-| `http://127.0.0.1:7273/sse` | MCP transport (SSE) — used by Claude Code             |
-| `http://127.0.0.1:7273/mcp` | MCP transport (streamable HTTP) — used by `drun chat` |
-| `http://127.0.0.1:7274`     | Trajectory viewer web UI                              |
+| Endpoint                    | Purpose                                          |
+| --------------------------- | ------------------------------------------------ |
+| `http://127.0.0.1:7273/sse` | MCP transport (SSE); used by Claude Code         |
+| `http://127.0.0.1:7273/mcp` | MCP transport (streamable HTTP); used by the CLI |
+| `http://127.0.0.1:7274`     | Web interface to manage sessions                 |
 
 #### Upgrading
 
 Run the following commands to upgrade drun's MCP to the latest release:
+
+> The upgrade operation hard-reloads the daemon process, effectively dropping
+> all in-memory objects, including ongoing sessions. Be sure to snapshot and
+> close your sessions before updating.
 
 ```bash
 # MCP binary
 curl -fsSL https://raw.githubusercontent.com/dmosc/drun/main/update.sh | bash
 
 # Update to a specific version
-curl -fsSL https://raw.githubusercontent.com/dmosc/drun/main/update.sh | bash -s -- v0.3.1
+curl -fsSL https://raw.githubusercontent.com/dmosc/drun/main/update.sh | bash -s -- v0.3.8
 ```
 
 #### Uninstalling
@@ -96,7 +101,7 @@ curl -fsSL https://raw.githubusercontent.com/dmosc/drun/main/uninstall.sh | bash
 1. Leaves `~/.drun/config.toml` and any `CLAUDE.md` files untouched; delete
    these manually if not needed.
 
-### Using Claude Code
+### Claude Code
 
 #### Requirements
 
@@ -131,7 +136,7 @@ Validate that the MCP is live:
 claude mcp list
 ```
 
-### Using drun chat
+### Standalone CLI
 
 `drun chat` drives an LLM — local via [Ollama](https://ollama.com) or any cloud
 model supported by [LiteLLM](https://docs.litellm.ai/docs/providers) — against a
@@ -170,9 +175,9 @@ ANTHROPIC_API_KEY=... drun chat "your prompt" --model claude-sonnet-4-6
 Run `drun chat --help` for all flags (mounts, system prompt override, max
 iterations).
 
-### Using the Python SDK
+### Python SDK
 
-For scripting drun sessions directly — no LLM, no daemon required:
+Useful to spin up drun sessions programatically.
 
 #### Requirements
 
