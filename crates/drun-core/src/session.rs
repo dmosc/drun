@@ -728,7 +728,7 @@ impl Session {
                 .is_err()
             {
                 timed_out_flag.store(true, Ordering::Relaxed);
-                Self::kill_process_group(pgid);
+                Self::kill_process_tree(pgid);
                 let _ = child_for_timeout.lock().unwrap().kill();
             }
         });
@@ -752,7 +752,7 @@ impl Session {
         let _ = cancel_tx.send(());
         let stderr = stderr_thread.join().unwrap_or_default();
         let _ = child.lock().unwrap().wait();
-        Self::kill_process_group(pgid);
+        Self::kill_process_tree(pgid);
         if timed_out.load(Ordering::Relaxed) {
             return Err(RunnerError::timeout(bash_timeout_ms).into());
         }
@@ -760,14 +760,49 @@ impl Session {
     }
 
     #[cfg(unix)]
-    fn kill_process_group(pgid: i32) {
+    fn kill_process_tree(pid: i32) {
         unsafe {
-            libc::kill(-pgid, libc::SIGKILL);
+            libc::kill(-pid, libc::SIGKILL);
+        }
+        for descendant_pid in Self::descendant_pids(pid) {
+            unsafe {
+                libc::kill(descendant_pid, libc::SIGKILL);
+            }
         }
     }
 
     #[cfg(not(unix))]
-    fn kill_process_group(_pgid: i32) {}
+    fn kill_process_tree(_pid: i32) {}
+
+    #[cfg(unix)]
+    fn descendant_pids(root_pid: i32) -> Vec<i32> {
+        let Ok(output) = std::process::Command::new("ps")
+            .args(["-Ao", "pid=,ppid="])
+            .output()
+        else {
+            return Vec::new();
+        };
+        let parent_of: Vec<(i32, i32)> = String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .filter_map(|line| {
+                let mut fields = line.split_whitespace();
+                let pid: i32 = fields.next()?.parse().ok()?;
+                let ppid: i32 = fields.next()?.parse().ok()?;
+                Some((pid, ppid))
+            })
+            .collect();
+
+        let mut descendants = std::collections::HashSet::new();
+        let mut frontier = vec![root_pid];
+        while let Some(parent_pid) = frontier.pop() {
+            for &(pid, ppid) in &parent_of {
+                if ppid == parent_pid && descendants.insert(pid) {
+                    frontier.push(pid);
+                }
+            }
+        }
+        descendants.into_iter().collect()
+    }
 
     fn file_content_hash(bytes: &[u8]) -> u64 {
         let mut hasher = DefaultHasher::new();
@@ -852,6 +887,24 @@ mod tests {
             .unwrap_err();
         assert!(err.to_string().contains("command denied"));
         assert_eq!(s.history().len(), 1, "denied command must not checkpoint");
+    }
+
+    #[test]
+    fn descendant_pids_finds_a_grandchild_process() {
+        // A plain "sleep 5" tail-call-execs into sh's own pid, so force a
+        // genuine subshell fork to get a real two-level descendant chain.
+        let mut child = std::process::Command::new("sh")
+            .arg("-c")
+            .arg("(sleep 5 & wait) & wait")
+            .spawn()
+            .unwrap();
+        std::thread::sleep(Duration::from_millis(200));
+
+        let descendants = Session::descendant_pids(child.id() as i32);
+        assert_eq!(descendants.len(), 2, "expected a subshell and its sleep");
+
+        let _ = child.kill();
+        let _ = child.wait();
     }
 
     #[test]

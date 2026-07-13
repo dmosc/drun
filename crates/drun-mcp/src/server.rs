@@ -56,7 +56,7 @@ impl ServerHandler for DrunHandler {
             DrunTools::SessionClose(t) => self.handle_session_close(t),
             DrunTools::SessionHistory(t) => self.handle_session_history(t),
             DrunTools::GetSessionState(t) => self.handle_get_session_state(t),
-            DrunTools::SessionBash(t) => self.handle_session_bash(t, runtime, progress_token),
+            DrunTools::SessionBash(t) => self.handle_session_bash(t, runtime, progress_token).await,
             DrunTools::SessionRollback(t) => self.handle_session_rollback(t),
             DrunTools::SessionReadFile(t) => self.handle_session_read_file(t),
             DrunTools::SessionWriteFile(t) => self.handle_session_write_file(t),
@@ -152,27 +152,35 @@ impl DrunHandler {
         })
     }
 
-    fn handle_session_bash(
+    async fn handle_session_bash(
         &self,
         t: SessionBash,
         runtime: Arc<dyn McpServer>,
         progress_token: Option<ProgressToken>,
     ) -> Result<CallToolResult, CallToolError> {
         let progress_tx = Self::spawn_progress_forwarder(runtime, progress_token);
-        self.with_session_mut(&t.session_id, |session| {
-            let previous_files = session.current().files.clone();
-            session
-                .execute_bash(&t.command, &mut |chunk| {
-                    let _ = progress_tx.send(chunk);
+        let handler = self.clone();
+        let result = tokio::task::spawn_blocking(move || {
+            handler
+                .with_session_mut(&t.session_id, |session| {
+                    let previous_files = session.current().files.clone();
+                    session
+                        .execute_bash(&t.command, &mut |chunk| {
+                            let _ = progress_tx.send(chunk);
+                        })
+                        .map_err(|e| DrunError::from_exec(e).into_tool_err())?;
+                    Ok(json(&SessionState::compute(
+                        &t.session_id,
+                        session,
+                        Some(&previous_files),
+                        vec![],
+                    )))
                 })
-                .map_err(|e| DrunError::from_exec(e).into_tool_err())?;
-            Ok(json(&SessionState::compute(
-                &t.session_id,
-                session,
-                Some(&previous_files),
-                vec![],
-            )))
+                .map_err(|e| e.to_string())
         })
+        .await
+        .unwrap_or_else(|join_err| Err(join_err.to_string()));
+        result.map_err(|msg| CallToolError(msg.into()))
     }
 
     fn handle_session_rollback(&self, t: SessionRollback) -> Result<CallToolResult, CallToolError> {
