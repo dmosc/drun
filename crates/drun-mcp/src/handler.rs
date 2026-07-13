@@ -110,7 +110,7 @@ impl DrunHandler {
             .unwrap_or_else(|poisoned| Self::recover_poison(session_id, poisoned))
     }
 
-    fn recover_poison<'a>(
+    pub(crate) fn recover_poison<'a>(
         session_id: &str,
         poisoned: std::sync::PoisonError<std::sync::MutexGuard<'a, Session>>,
     ) -> std::sync::MutexGuard<'a, Session> {

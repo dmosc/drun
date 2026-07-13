@@ -24,9 +24,12 @@ pub(crate) fn spawn(sessions: SessionMap, idle_timeout_secs: u64) {
 
 fn evict_idle(sessions: &SessionMap, timeout_secs: u64) {
     sessions.lock().unwrap().retain(|_, arc| {
-        arc.try_lock()
-            .map(|session| session.last_activity.elapsed().as_secs() <= timeout_secs)
-            .unwrap_or(true) // session is in use — keep it
+        let is_idle = |session: &Session| session.last_activity.elapsed().as_secs() <= timeout_secs;
+        match arc.try_lock() {
+            Ok(session) => is_idle(&session),
+            Err(std::sync::TryLockError::WouldBlock) => true,
+            Err(std::sync::TryLockError::Poisoned(poisoned)) => is_idle(&poisoned.into_inner()),
+        }
     });
 }
 
@@ -72,6 +75,25 @@ mod tests {
 
         evict_idle(&sessions, 60);
         assert!(sessions.lock().unwrap().contains_key("busy"));
+    }
+
+    #[test]
+    fn evict_idle_removes_a_poisoned_session_past_the_timeout() {
+        let sessions = session_map(vec![("poisoned", session_idle_for(120))]);
+        let session_arc = sessions.lock().unwrap().get("poisoned").unwrap().clone();
+        let arc_for_panic = session_arc.clone();
+        let _ = std::thread::spawn(move || {
+            let _guard = arc_for_panic.lock().unwrap();
+            panic!("simulated panic while holding the session lock");
+        })
+        .join();
+        assert!(session_arc.is_poisoned());
+
+        evict_idle(&sessions, 60);
+        assert!(
+            !sessions.lock().unwrap().contains_key("poisoned"),
+            "a poisoned-but-idle session must still be reclaimed, not kept forever"
+        );
     }
 
     #[test]

@@ -186,11 +186,14 @@ fn with_session(
     };
     match session_arc.try_lock() {
         Ok(guard) => handler(&guard),
-        Err(_) => (
+        Err(std::sync::TryLockError::WouldBlock) => (
             StatusCode::SERVICE_UNAVAILABLE,
             format!("session '{session_id}' is currently executing; retry shortly"),
         )
             .into_response(),
+        Err(std::sync::TryLockError::Poisoned(poisoned)) => handler(
+            &crate::handler::DrunHandler::recover_poison(session_id, poisoned),
+        ),
     }
 }
 
@@ -291,6 +294,27 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         let body = body_string(response).await;
         assert!(body.contains("checkpoint_id"));
+    }
+
+    #[tokio::test]
+    async fn handle_checkpoint_history_recovers_from_a_poisoned_lock_instead_of_staying_503_forever()
+     {
+        let sessions = session_map(vec![(
+            "s1",
+            Session::new(Config::default().into()).unwrap(),
+        )]);
+        let session_arc = sessions.lock().unwrap().get("s1").unwrap().clone();
+        let arc_for_panic = session_arc.clone();
+        let _ = std::thread::spawn(move || {
+            let _guard = arc_for_panic.lock().unwrap();
+            panic!("simulated panic while holding the session lock");
+        })
+        .join();
+        assert!(session_arc.is_poisoned());
+
+        let response =
+            handle_checkpoint_history(State(app_state(sessions)), Path("s1".to_string())).await;
+        assert_eq!(response.status(), StatusCode::OK);
     }
 
     #[tokio::test]
