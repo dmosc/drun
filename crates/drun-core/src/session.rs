@@ -123,6 +123,12 @@ impl Session {
             .map(|(key, bytes, host_path)| (key, self.intern_bytes(bytes), host_path))
             .collect();
 
+        let mut prospective_files = self.checkpoints[self.checkpoint_idx].files.clone();
+        for (key, arc, _) in &interned_file_entries {
+            prospective_files.insert(key.clone(), Arc::clone(arc));
+        }
+        self.check_workspace_size(&prospective_files)?;
+
         let mut mounted_keys: Vec<String> = Vec::new();
         let checkpoint = &mut self.checkpoints[self.checkpoint_idx];
         for (key, arc, host_path) in interned_file_entries {
@@ -881,6 +887,24 @@ mod tests {
         .unwrap();
 
         assert!(s.mount(&file_path).is_ok());
+    }
+
+    #[test]
+    fn mount_rejects_a_directory_that_exceeds_max_workspace_mb() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("big.bin"), vec![0u8; 1024]).unwrap();
+
+        let config = Config {
+            max_workspace_mb: Some(0),
+            ..Config::default()
+        };
+        let mut s = Session::new(config.into()).unwrap();
+        let err = s.mount(dir.path()).unwrap_err();
+        assert!(err.to_string().contains("exceeds limit"));
+        assert!(
+            s.current().files.is_empty(),
+            "a rejected mount must not partially populate the workspace"
+        );
     }
 
     #[test]
