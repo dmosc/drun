@@ -49,7 +49,7 @@ impl Session {
     ) -> anyhow::Result<Self> {
         let source_checkpoint_idx = checkpoint_id.unwrap_or(source.checkpoint_idx);
         if source_checkpoint_idx >= source.checkpoints.len() {
-            anyhow::bail!("checkpoint {} does not exist", source_checkpoint_idx);
+            return Err(RunnerError::checkpoint_not_found(source_checkpoint_idx).into());
         }
         let forked_files = source.checkpoints[source_checkpoint_idx].files.clone();
         let inherited_origins: HashMap<String, PathBuf> = source
@@ -78,9 +78,9 @@ impl Session {
     }
 
     pub fn mount(&mut self, path: &Path) -> anyhow::Result<Vec<String>> {
-        let abs = path
-            .canonicalize()
-            .map_err(|_| anyhow::anyhow!("path does not exist: {}", path.display()))?;
+        let abs = path.canonicalize().map_err(|_| {
+            RunnerError::invalid_workspace_path(format!("path does not exist: {}", path.display()))
+        })?;
         let config = self.config.get();
         if !config.mount_allowlist.is_empty() {
             let allowed = config
@@ -88,7 +88,7 @@ impl Session {
                 .iter()
                 .any(|prefix| abs.starts_with(prefix));
             if !allowed {
-                anyhow::bail!(
+                return Err(RunnerError::mount_denied(format!(
                     "'{}' is not in the mount allowlist; permitted prefixes: {}",
                     abs.display(),
                     config
@@ -97,7 +97,8 @@ impl Session {
                         .map(|p| p.display().to_string())
                         .collect::<Vec<_>>()
                         .join(", ")
-                );
+                ))
+                .into());
             }
         }
 
@@ -106,7 +107,12 @@ impl Session {
         } else {
             let key = abs
                 .file_name()
-                .ok_or_else(|| anyhow::anyhow!("path has no filename: {}", abs.display()))?
+                .ok_or_else(|| {
+                    RunnerError::invalid_workspace_path(format!(
+                        "path has no filename: {}",
+                        abs.display()
+                    ))
+                })?
                 .to_string_lossy()
                 .into_owned();
             (vec![(key, std::fs::read(&abs)?, abs.clone())], vec![])
@@ -144,7 +150,7 @@ impl Session {
     pub fn delete_file(&mut self, path: &str) -> anyhow::Result<&Checkpoint> {
         let mut files = self.checkpoints[self.checkpoint_idx].files.clone();
         if files.remove(path).is_none() {
-            anyhow::bail!("'{}' not in current checkpoint", path);
+            return Err(RunnerError::file_not_found_in_current(path).into());
         }
         self.push_checkpoint(files, String::new(), String::new())
     }
@@ -183,7 +189,7 @@ impl Session {
 
     pub fn rollback(&mut self, checkpoint_idx: usize) -> anyhow::Result<()> {
         if checkpoint_idx >= self.checkpoints.len() {
-            anyhow::bail!("checkpoint {} does not exist", checkpoint_idx);
+            return Err(RunnerError::checkpoint_not_found(checkpoint_idx).into());
         }
         self.checkpoint_idx = checkpoint_idx;
         Ok(())
@@ -201,7 +207,7 @@ impl Session {
         let cp = self
             .checkpoints
             .get_mut(checkpoint_id)
-            .ok_or_else(|| anyhow::anyhow!("checkpoint {} does not exist", checkpoint_id))?;
+            .ok_or_else(|| RunnerError::checkpoint_not_found(checkpoint_id))?;
         cp.label = if label.is_empty() { None } else { Some(label) };
         Ok(())
     }
@@ -222,7 +228,7 @@ impl Session {
             (_, Some(lbl)) => self
                 .checkpoint_by_label(lbl)
                 .map(Some)
-                .ok_or_else(|| anyhow::anyhow!("no checkpoint with label '{lbl}'")),
+                .ok_or_else(|| RunnerError::checkpoint_label_not_found(lbl).into()),
             (Some(id), None) => Ok(Some(id as usize)),
             (None, None) => Ok(None),
         }
@@ -244,11 +250,9 @@ impl Session {
             from_id,
             to_id
         );
-        anyhow::ensure!(
-            to_id < self.checkpoints.len(),
-            "checkpoint {} does not exist",
-            to_id
-        );
+        if to_id >= self.checkpoints.len() {
+            return Err(RunnerError::checkpoint_not_found(to_id).into());
+        }
         let combined_stdout = self.checkpoints[from_id..=to_id]
             .iter()
             .map(|c| c.stdout.as_str())
@@ -295,11 +299,9 @@ impl Session {
             from_id,
             to_id
         );
-        anyhow::ensure!(
-            to_id < self.checkpoints.len(),
-            "checkpoint {} does not exist",
-            to_id
-        );
+        if to_id >= self.checkpoints.len() {
+            return Err(RunnerError::checkpoint_not_found(to_id).into());
+        }
         anyhow::ensure!(
             self.checkpoint_idx < from_id || self.checkpoint_idx > to_id,
             "cannot drop the current checkpoint ({})",
@@ -327,7 +329,7 @@ impl Session {
         let source_files = &source
             .checkpoints
             .get(source_checkpoint_id)
-            .ok_or_else(|| anyhow::anyhow!("checkpoint {} does not exist", source_checkpoint_id))?
+            .ok_or_else(|| RunnerError::checkpoint_not_found(source_checkpoint_id))?
             .files;
         let mut merged = self.checkpoints[self.checkpoint_idx].files.clone();
         match keys {
@@ -337,7 +339,9 @@ impl Session {
                         Some(blob) => {
                             merged.insert(key.clone(), Arc::clone(blob));
                         }
-                        None => anyhow::bail!("file '{}' not found in source checkpoint", key),
+                        None => {
+                            return Err(RunnerError::file_not_found_in_source(key).into());
+                        }
                     }
                 }
             }
@@ -369,7 +373,7 @@ impl Session {
             self.validate_file_path(key)?;
             let bytes = current
                 .get(key)
-                .ok_or_else(|| anyhow::anyhow!("'{}' not in current checkpoint", key))?;
+                .ok_or_else(|| RunnerError::file_not_found_in_current(key))?;
             let dest_path = output_dir.join(key);
             if let Some(parent) = dest_path.parent() {
                 std::fs::create_dir_all(parent)?;
@@ -395,7 +399,7 @@ impl Session {
                 .ok_or_else(|| anyhow::anyhow!("'{}' was not mounted from host", key))?;
             let current_bytes = current
                 .get(key)
-                .ok_or_else(|| anyhow::anyhow!("'{}' not in current checkpoint", key))?;
+                .ok_or_else(|| RunnerError::file_not_found_in_current(key))?;
             let mounted_bytes = mounted_files.get(key).map(|a| a.as_slice()).unwrap_or(&[]);
             if current_bytes.as_slice() == mounted_bytes {
                 continue;
@@ -408,10 +412,10 @@ impl Session {
 
     pub fn diff(&self, from_id: usize, to_id: usize) -> anyhow::Result<String> {
         if from_id >= self.checkpoints.len() {
-            anyhow::bail!("checkpoint {} does not exist", from_id);
+            return Err(RunnerError::checkpoint_not_found(from_id).into());
         }
         if to_id >= self.checkpoints.len() {
-            anyhow::bail!("checkpoint {} does not exist", to_id);
+            return Err(RunnerError::checkpoint_not_found(to_id).into());
         }
         let from = &self.checkpoints[from_id].files;
         let to = &self.checkpoints[to_id].files;
@@ -626,28 +630,21 @@ impl Session {
         if let Some(max) = self.config.get().max_checkpoints
             && self.checkpoints.len() >= max
         {
-            anyhow::bail!(
-                "checkpoint limit of {} reached; close or snapshot this session and start a new one",
-                max
-            );
+            return Err(RunnerError::checkpoint_limit_reached(max).into());
         }
         Ok(())
     }
 
     fn check_workspace_size(&self, files: &FileMap) -> anyhow::Result<()> {
-        if let Some(limit) = self
+        if let Some(limit_bytes) = self
             .config
             .get()
             .max_workspace_mb
             .map(|mb| mb * 1024 * 1024)
         {
-            let total: u64 = files.values().map(|v| v.len() as u64).sum();
-            if total > limit {
-                anyhow::bail!(
-                    "workspace size {} bytes exceeds limit of {} bytes",
-                    total,
-                    limit
-                );
+            let actual_bytes: u64 = files.values().map(|v| v.len() as u64).sum();
+            if actual_bytes > limit_bytes {
+                return Err(RunnerError::workspace_size_exceeded(actual_bytes, limit_bytes).into());
             }
         }
         Ok(())
@@ -657,9 +654,10 @@ impl Session {
         let config = self.config.get();
         for denied in &config.bash_command_denylist {
             if command.contains(denied.as_str()) {
-                return Err(anyhow::Error::from(RunnerError::CommandDenied(format!(
+                return Err(RunnerError::command_denied(format!(
                     "command denied: matches denylist pattern '{denied}'"
-                ))));
+                ))
+                .into());
             }
         }
         if !config.bash_command_allowlist.is_empty()
@@ -668,27 +666,36 @@ impl Session {
                 .iter()
                 .any(|a| command.contains(a.as_str()))
         {
-            return Err(anyhow::Error::from(RunnerError::CommandDenied(format!(
+            return Err(RunnerError::command_denied(format!(
                 "command denied: not matched by any allowlist pattern; permitted: {}",
                 config.bash_command_allowlist.join(", ")
-            ))));
+            ))
+            .into());
         }
         Ok(())
     }
 
     fn validate_file_path(&self, key: &str) -> anyhow::Result<()> {
         if key.is_empty() {
-            anyhow::bail!("workspace key must not be empty");
+            return Err(
+                RunnerError::invalid_workspace_path("workspace key must not be empty").into(),
+            );
         }
         use std::path::Component;
         for component in std::path::Path::new(key).components() {
             match component {
                 Component::Normal(_) | Component::CurDir => {}
                 Component::ParentDir => {
-                    anyhow::bail!("workspace key must not contain '..': '{key}'");
+                    return Err(RunnerError::invalid_workspace_path(format!(
+                        "workspace key must not contain '..': '{key}'"
+                    ))
+                    .into());
                 }
                 Component::RootDir | Component::Prefix(_) => {
-                    anyhow::bail!("workspace key must be a relative path: '{key}'");
+                    return Err(RunnerError::invalid_workspace_path(format!(
+                        "workspace key must be a relative path: '{key}'"
+                    ))
+                    .into());
                 }
             }
         }
@@ -741,9 +748,7 @@ impl Session {
         let _ = child.lock().unwrap().wait();
         Self::kill_process_group(pgid);
         if timed_out.load(Ordering::Relaxed) {
-            return Err(anyhow::Error::from(RunnerError::Timeout {
-                timeout_ms: bash_timeout_ms,
-            }));
+            return Err(RunnerError::timeout(bash_timeout_ms).into());
         }
         Ok(BashOutput { stdout, stderr })
     }

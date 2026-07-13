@@ -74,6 +74,38 @@ impl DrunError {
         Self::new("command_denied", message)
     }
 
+    pub fn checkpoint_not_found(message: impl Into<String>) -> Self {
+        Self::new("checkpoint_not_found", message)
+    }
+
+    pub fn checkpoint_limit_reached(limit: usize) -> Self {
+        Self::new(
+            "checkpoint_limit_reached",
+            format!(
+                "checkpoint limit of {limit} reached; close or snapshot this session and start a new one"
+            ),
+        )
+        .with_detail(serde_json::json!({ "limit": limit }))
+    }
+
+    pub fn invalid_workspace_path(message: impl Into<String>) -> Self {
+        Self::new("invalid_workspace_path", message)
+    }
+
+    pub fn mount_denied(message: impl Into<String>) -> Self {
+        Self::new("mount_denied", message)
+    }
+
+    pub fn workspace_size_exceeded(actual_bytes: u64, limit_bytes: u64) -> Self {
+        Self::new(
+            "workspace_size_exceeded",
+            format!("workspace size {actual_bytes} bytes exceeds limit of {limit_bytes} bytes"),
+        )
+        .with_detail(
+            serde_json::json!({ "actual_bytes": actual_bytes, "limit_bytes": limit_bytes }),
+        )
+    }
+
     pub fn fetch_denied(url: &str) -> Self {
         Self::new(
             "fetch_denied",
@@ -117,6 +149,17 @@ impl DrunError {
         match e.downcast_ref::<RunnerError>() {
             Some(RunnerError::Timeout { timeout_ms }) => Self::execution_timeout(*timeout_ms),
             Some(RunnerError::CommandDenied(msg)) => Self::command_denied(msg.clone()),
+            Some(RunnerError::CheckpointNotFound(msg)) => Self::checkpoint_not_found(msg.clone()),
+            Some(RunnerError::CheckpointLimitReached(max)) => Self::checkpoint_limit_reached(*max),
+            Some(RunnerError::FileNotFound(msg)) => Self::new("file_not_found", msg.clone()),
+            Some(RunnerError::InvalidWorkspacePath(msg)) => {
+                Self::invalid_workspace_path(msg.clone())
+            }
+            Some(RunnerError::MountDenied(msg)) => Self::mount_denied(msg.clone()),
+            Some(RunnerError::WorkspaceSizeExceeded {
+                actual_bytes,
+                limit_bytes,
+            }) => Self::workspace_size_exceeded(*actual_bytes, *limit_bytes),
             None => Self::internal(e),
         }
     }

@@ -104,9 +104,9 @@ impl DrunHandler {
             let source = source_arc.lock().unwrap();
             let checkpoint_id = source
                 .resolve_checkpoint(t.checkpoint_id, t.checkpoint_label.as_deref())
-                .map_err(|e| DrunError::internal(e).into_tool_err())?;
+                .map_err(|e| DrunError::from_exec(e).into_tool_err())?;
             Session::from_session(self.config.clone(), &t.session_id, &source, checkpoint_id)
-                .map_err(|e| DrunError::internal(e).into_tool_err())?
+                .map_err(|e| DrunError::from_exec(e).into_tool_err())?
         };
         let fork_id = Uuid::new_v4().to_string();
         let state = SessionState::compute(&fork_id, &forked_session, None, vec![]);
@@ -184,14 +184,14 @@ impl DrunHandler {
         self.with_session_mut(&t.session_id, |session| {
             let checkpoint_id = session
                 .resolve_checkpoint(t.checkpoint_id, t.checkpoint_label.as_deref())
-                .map_err(|e| DrunError::internal(e).into_tool_err())?
+                .map_err(|e| DrunError::from_exec(e).into_tool_err())?
                 .ok_or_else(|| {
                     DrunError::internal("provide checkpoint_id or checkpoint_label").into_tool_err()
                 })?;
             let previous_files = session.current().files.clone();
             session
                 .rollback(checkpoint_id)
-                .map_err(|e| DrunError::internal(e).into_tool_err())?;
+                .map_err(|e| DrunError::from_exec(e).into_tool_err())?;
             Ok(json(&SessionState::compute(
                 &t.session_id,
                 session,
@@ -254,7 +254,7 @@ impl DrunHandler {
             let previous_files = session.current().files.clone();
             session
                 .write_file(&t.path, bytes)
-                .map_err(|e| DrunError::internal(e).into_tool_err())?;
+                .map_err(|e| DrunError::from_exec(e).into_tool_err())?;
             Ok(json(&SessionState::compute(
                 &t.session_id,
                 session,
@@ -272,7 +272,7 @@ impl DrunHandler {
             let previous_files = session.current().files.clone();
             session
                 .delete_file(&t.path)
-                .map_err(|e| DrunError::internal(e).into_tool_err())?;
+                .map_err(|e| DrunError::from_exec(e).into_tool_err())?;
             Ok(json(&SessionState::compute(
                 &t.session_id,
                 session,
@@ -287,7 +287,7 @@ impl DrunHandler {
             let previous_files = session.current().files.clone();
             session
                 .mount(std::path::Path::new(&t.path))
-                .map_err(|e| DrunError::internal(e).into_tool_err())?;
+                .map_err(|e| DrunError::from_exec(e).into_tool_err())?;
             Ok(json(&SessionState::compute(
                 &t.session_id,
                 session,
@@ -301,15 +301,15 @@ impl DrunHandler {
         self.with_session(&t.session_id, |session| {
             let from = session
                 .resolve_checkpoint(t.from_checkpoint_id, t.from_checkpoint_label.as_deref())
-                .map_err(|e| DrunError::internal(e).into_tool_err())?
+                .map_err(|e| DrunError::from_exec(e).into_tool_err())?
                 .unwrap_or(0);
             let to = session
                 .resolve_checkpoint(t.to_checkpoint_id, t.to_checkpoint_label.as_deref())
-                .map_err(|e| DrunError::internal(e).into_tool_err())?
+                .map_err(|e| DrunError::from_exec(e).into_tool_err())?
                 .unwrap_or_else(|| session.current().id);
             let diff = session
                 .diff(from, to)
-                .map_err(|e| DrunError::internal(e).into_tool_err())?;
+                .map_err(|e| DrunError::from_exec(e).into_tool_err())?;
             Ok(text(if diff.is_empty() {
                 "no changes".into()
             } else {
@@ -322,7 +322,7 @@ impl DrunHandler {
         self.with_session(&t.session_id, |session| {
             let paths = session
                 .commit(t.keys)
-                .map_err(|e| DrunError::internal(e).into_tool_err())?;
+                .map_err(|e| DrunError::from_exec(e).into_tool_err())?;
             let committed_files = paths
                 .iter()
                 .map(|p| p.to_string_lossy().into_owned())
@@ -373,7 +373,7 @@ impl DrunHandler {
         self.with_session(&t.session_id, |session| {
             let exported = session
                 .export(&output_dir, t.keys)
-                .map_err(|e| DrunError::internal(e).into_tool_err())?;
+                .map_err(|e| DrunError::from_exec(e).into_tool_err())?;
             let paths: Vec<String> = exported
                 .iter()
                 .map(|p| p.to_string_lossy().into_owned())
@@ -460,7 +460,7 @@ impl DrunHandler {
         self.with_session_mut(&t.session_id, |session| {
             session
                 .write_file(&save_path, body_bytes.to_vec())
-                .map_err(|e| DrunError::internal(e).into_tool_err())?;
+                .map_err(|e| DrunError::from_exec(e).into_tool_err())?;
             Ok(text(
                 serde_json::json!({
                     "status": status,
@@ -571,7 +571,7 @@ impl DrunHandler {
                 .unwrap_or_else(|| session.current().id);
             session
                 .set_checkpoint_label(checkpoint_id, t.label)
-                .map_err(|e| DrunError::internal(e).into_tool_err())?;
+                .map_err(|e| DrunError::from_exec(e).into_tool_err())?;
             Ok(json(&CheckpointSummary::history(session)))
         })
     }
@@ -587,7 +587,7 @@ impl DrunHandler {
                     t.to_checkpoint_id as usize,
                     t.label,
                 )
-                .map_err(|e| DrunError::internal(e).into_tool_err())?;
+                .map_err(|e| DrunError::from_exec(e).into_tool_err())?;
             Ok(json(&CheckpointSummary::history(session)))
         })
     }
@@ -606,11 +606,11 @@ impl DrunHandler {
         let source = source_arc.lock().unwrap();
         let source_checkpoint_id = source
             .resolve_checkpoint(t.source_checkpoint_id, t.source_checkpoint_label.as_deref())
-            .map_err(|e| DrunError::internal(e).into_tool_err())?;
+            .map_err(|e| DrunError::from_exec(e).into_tool_err())?;
         self.with_session_mut(&t.session_id, |session| {
             session
                 .merge_from(&source, source_checkpoint_id, t.keys)
-                .map_err(|e| DrunError::internal(e).into_tool_err())?;
+                .map_err(|e| DrunError::from_exec(e).into_tool_err())?;
             Ok(json(&SessionState::compute(
                 &t.session_id,
                 session,
@@ -627,7 +627,7 @@ impl DrunHandler {
         self.with_session_mut(&t.session_id, |session| {
             session
                 .drop_checkpoints(t.from_checkpoint_id as usize, t.to_checkpoint_id as usize)
-                .map_err(|e| DrunError::internal(e).into_tool_err())?;
+                .map_err(|e| DrunError::from_exec(e).into_tool_err())?;
             Ok(json(&CheckpointSummary::history(session)))
         })
     }
@@ -642,8 +642,10 @@ impl DrunHandler {
                 .map(|id| id as usize)
                 .unwrap_or_else(|| session.current().id);
             let checkpoint = session.history().get(checkpoint_id).ok_or_else(|| {
-                DrunError::internal(format!("checkpoint {} does not exist", checkpoint_id))
-                    .into_tool_err()
+                DrunError::checkpoint_not_found(format!(
+                    "checkpoint {checkpoint_id} does not exist"
+                ))
+                .into_tool_err()
             })?;
             let stream = t.stream.as_deref().unwrap_or("stdout");
             let content = match stream {
@@ -1038,6 +1040,20 @@ mod tests {
     }
 
     #[test]
+    fn session_rollback_returns_checkpoint_not_found_for_an_unknown_checkpoint_id() {
+        let handler = DrunHandler::new(Config::default());
+        insert_session(&handler, "s1");
+        let err = handler
+            .handle_session_rollback(SessionRollback {
+                session_id: "s1".to_string(),
+                checkpoint_id: Some(99),
+                checkpoint_label: None,
+            })
+            .unwrap_err();
+        assert!(err.to_string().contains("checkpoint_not_found"));
+    }
+
+    #[test]
     fn session_read_file_returns_full_utf8_content_without_offset_or_limit() {
         let handler = DrunHandler::new(Config::default());
         insert_session(&handler, "s1");
@@ -1168,6 +1184,40 @@ mod tests {
             })
             .unwrap_err();
         assert!(err.to_string().contains("base64 decode error"));
+    }
+
+    #[test]
+    fn session_write_file_returns_invalid_workspace_path_for_a_path_escaping_the_workspace() {
+        let handler = DrunHandler::new(Config::default());
+        insert_session(&handler, "s1");
+        let err = handler
+            .handle_session_write_file(SessionWriteFile {
+                session_id: "s1".to_string(),
+                path: "../escape.txt".to_string(),
+                content: "hi".to_string(),
+                is_base64: Some(false),
+            })
+            .unwrap_err();
+        assert!(err.to_string().contains("invalid_workspace_path"));
+    }
+
+    #[test]
+    fn session_write_file_returns_workspace_size_exceeded_over_the_configured_limit() {
+        let config = Config {
+            max_workspace_mb: Some(0),
+            ..Config::default()
+        };
+        let handler = DrunHandler::new(config);
+        insert_session(&handler, "s1");
+        let err = handler
+            .handle_session_write_file(SessionWriteFile {
+                session_id: "s1".to_string(),
+                path: "a.txt".to_string(),
+                content: "hi".to_string(),
+                is_base64: Some(false),
+            })
+            .unwrap_err();
+        assert!(err.to_string().contains("workspace_size_exceeded"));
     }
 
     #[test]
@@ -1756,7 +1806,7 @@ mod tests {
     }
 
     #[test]
-    fn session_delete_file_returns_an_error_for_a_missing_path() {
+    fn session_delete_file_returns_file_not_found_for_a_missing_path() {
         let handler = DrunHandler::new(Config::default());
         insert_session(&handler, "s1");
         let err = handler
@@ -1765,7 +1815,7 @@ mod tests {
                 path: "missing.txt".to_string(),
             })
             .unwrap_err();
-        assert!(!err.to_string().is_empty());
+        assert!(err.to_string().contains("file_not_found"));
     }
 
     #[test]
@@ -1782,6 +1832,27 @@ mod tests {
             })
             .unwrap();
         assert_eq!(result_json(&result)["workspace_file_count"], 1);
+    }
+
+    #[test]
+    fn session_mount_returns_mount_denied_for_a_path_outside_the_allowlist() {
+        let source = tempfile::tempdir().unwrap();
+        std::fs::write(source.path().join("a.txt"), b"hi").unwrap();
+        let allowed = tempfile::tempdir().unwrap();
+
+        let config = Config {
+            mount_allowlist: vec![allowed.path().to_path_buf()],
+            ..Config::default()
+        };
+        let handler = DrunHandler::new(config);
+        insert_session(&handler, "s1");
+        let err = handler
+            .handle_session_mount(SessionMount {
+                session_id: "s1".to_string(),
+                path: source.path().to_string_lossy().into_owned(),
+            })
+            .unwrap_err();
+        assert!(err.to_string().contains("mount_denied"));
     }
 
     #[test]
