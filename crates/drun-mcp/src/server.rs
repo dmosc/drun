@@ -25,7 +25,11 @@ use rust_mcp_sdk::{
         ProgressNotificationParams, ProgressToken, RpcError, schema_utils::CallToolError,
     },
 };
-use std::{path::PathBuf, sync::Arc, time::Duration};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+    time::Duration,
+};
 use uuid::Uuid;
 
 #[async_trait]
@@ -357,24 +361,11 @@ impl DrunHandler {
     fn handle_session_export(&self, t: SessionExport) -> Result<CallToolResult, CallToolError> {
         let export_root = self.config.get().export_root;
         let output_dir = match &t.output_dir {
-            Some(dir) => {
-                let p = PathBuf::from(dir);
-                if p.components().any(|c| c == std::path::Component::ParentDir) {
-                    return Err(DrunError::export_denied(
-                        &p.display().to_string(),
-                        "path must not contain '..'",
-                    )
-                    .into());
-                }
-                if !p.starts_with(&export_root) {
-                    return Err(DrunError::export_denied(
-                        &p.display().to_string(),
-                        &export_root.display().to_string(),
-                    )
-                    .into());
-                }
-                p
-            }
+            Some(dir) => Self::path_confined_to_root(
+                PathBuf::from(dir),
+                &export_root,
+                DrunError::export_denied,
+            )?,
             None => export_root.join(&t.session_id),
         };
         self.with_session(&t.session_id, |session| {
@@ -490,24 +481,11 @@ impl DrunHandler {
     ) -> Result<CallToolResult, CallToolError> {
         let snapshots_dir = self.config.get().snapshots_dir;
         let output_path = match t.path {
-            Some(p) => {
-                let p = PathBuf::from(p);
-                if p.components().any(|c| c == std::path::Component::ParentDir) {
-                    return Err(DrunError::snapshot_denied(
-                        &p.display().to_string(),
-                        "path must not contain '..'",
-                    )
-                    .into_tool_err());
-                }
-                if !p.starts_with(&snapshots_dir) {
-                    return Err(DrunError::snapshot_denied(
-                        &p.display().to_string(),
-                        &snapshots_dir.display().to_string(),
-                    )
-                    .into_tool_err());
-                }
-                p
-            }
+            Some(p) => Self::path_confined_to_root(
+                PathBuf::from(p),
+                &snapshots_dir,
+                DrunError::snapshot_denied,
+            )?,
             None => snapshots_dir.join(format!("{}.drun", t.session_id)),
         };
         if let Some(parent_dir) = output_path.parent() {
@@ -726,6 +704,23 @@ impl DrunHandler {
             .filter(|s| !s.is_empty())
             .unwrap_or("fetch");
         format!("downloads/{name}")
+    }
+
+    fn path_confined_to_root(
+        path: PathBuf,
+        root: &Path,
+        denied: impl Fn(&str, &str) -> DrunError,
+    ) -> Result<PathBuf, CallToolError> {
+        if path
+            .components()
+            .any(|c| c == std::path::Component::ParentDir)
+        {
+            return Err(denied(&path.display().to_string(), "path must not contain '..'").into());
+        }
+        if !path.starts_with(root) {
+            return Err(denied(&path.display().to_string(), &root.display().to_string()).into());
+        }
+        Ok(path)
     }
 }
 
@@ -1434,6 +1429,22 @@ mod tests {
             .handle_session_snapshot(SessionSnapshotTool {
                 session_id: "s1".to_string(),
                 path: Some("../escape.drun".to_string()),
+            })
+            .unwrap_err();
+        assert!(err.to_string().contains("snapshot_denied"));
+    }
+
+    #[test]
+    fn session_snapshot_rejects_a_path_outside_the_snapshots_dir() {
+        let config = Config {
+            snapshots_dir: PathBuf::from("drun-snapshots"),
+            ..Config::default()
+        };
+        let handler = DrunHandler::new(config);
+        let err = handler
+            .handle_session_snapshot(SessionSnapshotTool {
+                session_id: "s1".to_string(),
+                path: Some("/tmp/somewhere-else.drun".to_string()),
             })
             .unwrap_err();
         assert!(err.to_string().contains("snapshot_denied"));
