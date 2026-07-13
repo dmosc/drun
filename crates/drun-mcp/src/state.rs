@@ -141,26 +141,26 @@ impl DaemonStatus {
                 .iter()
                 .map(|p| p.display().to_string())
                 .collect(),
-            memory_rss_bytes: memory_rss_bytes(),
+            memory_rss_bytes: Self::memory_rss_bytes(),
         }
     }
-}
 
-fn memory_rss_bytes() -> Option<u64> {
-    let usage: libc::rusage = unsafe {
-        let mut usage = std::mem::zeroed();
-        if libc::getrusage(libc::RUSAGE_SELF, &mut usage) != 0 {
-            return None;
-        }
-        usage
-    };
-    // ru_maxrss is bytes on macOS, kilobytes on Linux.
-    let maxrss = usage.ru_maxrss as u64;
-    Some(if cfg!(target_os = "macos") {
-        maxrss
-    } else {
-        maxrss * 1024
-    })
+    fn memory_rss_bytes() -> Option<u64> {
+        let usage: libc::rusage = unsafe {
+            let mut usage = std::mem::zeroed();
+            if libc::getrusage(libc::RUSAGE_SELF, &mut usage) != 0 {
+                return None;
+            }
+            usage
+        };
+        // ru_maxrss is bytes on macOS, kilobytes on Linux.
+        let maxrss = usage.ru_maxrss as u64;
+        Some(if cfg!(target_os = "macos") {
+            maxrss
+        } else {
+            maxrss * 1024
+        })
+    }
 }
 
 #[derive(Debug, PartialEq, Serialize)]
@@ -710,6 +710,6 @@ mod tests {
 
     #[test]
     fn memory_rss_bytes_returns_a_plausible_value_on_this_platform() {
-        assert!(memory_rss_bytes().unwrap_or(1) > 0);
+        assert!(DaemonStatus::memory_rss_bytes().unwrap_or(1) > 0);
     }
 }
