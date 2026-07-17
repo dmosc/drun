@@ -2,6 +2,7 @@
 //! the logic that builds it from live session data.
 
 use crate::handler::DrunHandler;
+use crate::live_output::LiveOutputRegistry;
 use drun_core::{CheckpointRef, Config, FileMap, Session, SnapshotMeta};
 use serde::Serialize;
 use std::collections::HashMap;
@@ -172,6 +173,7 @@ pub(crate) struct SessionTreeNode {
     parent_checkpoint_id: Option<usize>,
     age_secs: u64,
     idle_secs: u64,
+    running: bool,
     checkpoints: Vec<CheckpointTreeNode>,
 }
 
@@ -180,6 +182,7 @@ impl SessionTreeNode {
         session_id: &str,
         session: &Session,
         children: &HashMap<(String, usize), Vec<(String, &Session)>>,
+        live_output: &LiveOutputRegistry,
     ) -> SessionTreeNode {
         let current_id = session.current().id;
         let checkpoints = session
@@ -190,7 +193,9 @@ impl SessionTreeNode {
                     .get(&(session_id.to_string(), cp.id))
                     .map(|kids| {
                         kids.iter()
-                            .map(|(id, s)| SessionTreeNode::from_session(id, s, children))
+                            .map(|(id, s)| {
+                                SessionTreeNode::from_session(id, s, children, live_output)
+                            })
                             .collect()
                     })
                     .unwrap_or_default();
@@ -213,11 +218,15 @@ impl SessionTreeNode {
             parent_checkpoint_id,
             age_secs: session.created_at.elapsed().as_secs(),
             idle_secs: session.last_activity.elapsed().as_secs(),
+            running: live_output.is_running(session_id),
             checkpoints,
         }
     }
 
-    pub(crate) fn forest(sessions: &HashMap<String, Arc<Mutex<Session>>>) -> Vec<SessionTreeNode> {
+    pub(crate) fn forest(
+        sessions: &HashMap<String, Arc<Mutex<Session>>>,
+        live_output: &LiveOutputRegistry,
+    ) -> Vec<SessionTreeNode> {
         let locked_sessions: Vec<(String, std::sync::MutexGuard<Session>)> = sessions
             .iter()
             .map(|(id, arc)| (id.clone(), DrunHandler::lock_recovering(id, arc)))
@@ -244,7 +253,7 @@ impl SessionTreeNode {
 
         roots
             .into_iter()
-            .map(|(id, session)| SessionTreeNode::from_session(id, session, &children))
+            .map(|(id, session)| SessionTreeNode::from_session(id, session, &children, live_output))
             .collect()
     }
 }
@@ -662,7 +671,7 @@ mod tests {
         let mut sessions = HashMap::new();
         sessions.insert("s1".to_string(), Arc::new(Mutex::new(session)));
 
-        let forest = SessionTreeNode::forest(&sessions);
+        let forest = SessionTreeNode::forest(&sessions, &LiveOutputRegistry::default());
         assert_eq!(forest.len(), 1);
         assert_eq!(forest[0].session_id, "s1");
         assert!(forest[0].checkpoints[0].forks.is_empty());
@@ -682,7 +691,7 @@ mod tests {
         let mut sessions = HashMap::new();
         sessions.insert("s1".to_string(), arc);
 
-        let forest = SessionTreeNode::forest(&sessions);
+        let forest = SessionTreeNode::forest(&sessions, &LiveOutputRegistry::default());
         assert_eq!(forest.len(), 1);
     }
 
@@ -698,7 +707,7 @@ mod tests {
         sessions.insert("parent".to_string(), Arc::new(Mutex::new(parent)));
         sessions.insert("child".to_string(), Arc::new(Mutex::new(child)));
 
-        let forest = SessionTreeNode::forest(&sessions);
+        let forest = SessionTreeNode::forest(&sessions, &LiveOutputRegistry::default());
         assert_eq!(forest.len(), 1);
         assert_eq!(forest[0].session_id, "parent");
         assert_eq!(forest[0].checkpoints[0].forks.len(), 1);
@@ -715,7 +724,7 @@ mod tests {
         let mut sessions = HashMap::new();
         sessions.insert("orphan".to_string(), Arc::new(Mutex::new(session)));
 
-        let forest = SessionTreeNode::forest(&sessions);
+        let forest = SessionTreeNode::forest(&sessions, &LiveOutputRegistry::default());
         assert_eq!(forest.len(), 1);
         assert_eq!(forest[0].session_id, "orphan");
     }
@@ -728,9 +737,24 @@ mod tests {
         let mut sessions = HashMap::new();
         sessions.insert("s1".to_string(), Arc::new(Mutex::new(session)));
 
-        let forest = SessionTreeNode::forest(&sessions);
+        let forest = SessionTreeNode::forest(&sessions, &LiveOutputRegistry::default());
         assert!(forest[0].age_secs >= 300);
         assert!(forest[0].idle_secs >= 120 && forest[0].idle_secs < 300);
+    }
+
+    #[test]
+    fn session_tree_node_reports_running_when_a_command_is_in_flight() {
+        let mut sessions = HashMap::new();
+        sessions.insert("s1".to_string(), Arc::new(Mutex::new(new_session())));
+        let live_output = LiveOutputRegistry::default();
+        let guard = live_output.start("s1", "echo hi");
+
+        let forest = SessionTreeNode::forest(&sessions, &live_output);
+        assert!(forest[0].running);
+
+        drop(guard);
+        let forest = SessionTreeNode::forest(&sessions, &live_output);
+        assert!(!forest[0].running);
     }
 
     #[test]

@@ -305,6 +305,17 @@
     .badge-fork    { background: var(--s3); color: var(--text-muted); border: 1px solid var(--border); font-size: 10px; }
     .badge-warn    { background: var(--amber-bg); color: var(--amber); border: 1px solid rgba(240, 152, 46, 0.3); }
     .badge-danger  { background: var(--red-bg); color: var(--red); border: 1px solid rgba(224, 85, 106, 0.35); }
+    .badge-live    { background: var(--green-bg); color: var(--green); border: 1px solid rgba(79, 217, 138, 0.35); }
+
+    @keyframes livePulse {
+      0%, 100% { opacity: 1; }
+      50%      { opacity: 0.35; }
+    }
+
+    .live-indicator-dot {
+      display: inline-block;
+      animation: livePulse 1.4s ease-in-out infinite;
+    }
 
     /* ── Timeline ──────────────────────────────────────────────────────── */
     .timeline-scroll { overflow-x: auto; padding-bottom: 8px; }
@@ -717,6 +728,22 @@
       </div>
     </section>
 
+    <section id="live-section" class="hidden">
+      <div class="section-title-row">
+        <span class="section-label">live output</span>
+        <span class="mono-id" id="live-session-id"></span>
+      </div>
+      <div class="panel">
+        <div class="panel-head">
+          <span class="command-text" id="live-command"></span>
+          <span class="badge badge-live"><span class="live-indicator-dot">●</span>&nbsp;running</span>
+        </div>
+        <div class="output-scroll" id="live-output-scroll">
+          <pre class="output-pre" id="live-output-pre"></pre>
+        </div>
+      </div>
+    </section>
+
     <section id="detail-section" class="hidden">
       <div class="section-title-row">
         <span class="section-label">checkpoint</span>
@@ -787,6 +814,7 @@
       activeTab:          'stdout',
       daemonStatus:       null,
       daemonPanelOpen:    false,
+      liveOutput:         null,   // { running, command, output } for the selected session
     };
 
     // ── Helpers ──────────────────────────────────────────────────────────────
@@ -881,6 +909,7 @@
     const Api = {
       status:            () => fetchJson('/api/status'),
       sessionsTree:       () => fetchJson('/api/sessions/tree'),
+      liveOutput:        sessionId => fetchJson(`/api/sessions/${sessionId}/live`),
       checkpointHistory: sessionId => fetchJson(`/api/sessions/${sessionId}/history`),
       checkpointFiles:   (sessionId, cpId) => fetchJson(`/api/sessions/${sessionId}/checkpoints/${cpId}/files`),
       stdout:            (sessionId, cpId) => fetchText(`/api/sessions/${sessionId}/checkpoints/${cpId}/stdout`),
@@ -1037,7 +1066,7 @@
             </div>
             <div class="card-badges">
               <span class="badge badge-neutral">cp ${headCpId ?? '—'} / ${totalCps - 1}</span>
-              ${sessionIdleBadge(s)}
+              ${s.running ? '<span class="badge badge-live"><span class="live-indicator-dot">●</span>&nbsp;running</span>' : sessionIdleBadge(s)}
               ${isForked ? `<span class="badge badge-fork" title="forked from ${escHtml(s.parent_session_id)} @ cp${s.parent_checkpoint_id}">⑂ ${escHtml(shortId(s.parent_session_id))}</span>` : ''}
             </div>
           </div>`;
@@ -1082,6 +1111,23 @@
             ${forksHtml}
           </div>`;
       }).join('');
+    }
+
+    // ── Rendering: live output ────────────────────────────────────────────────
+
+    function renderLiveSection() {
+      const section = document.getElementById('live-section');
+      const live = viewState.liveOutput;
+      if (!live?.running) { section.classList.add('hidden'); return; }
+
+      section.classList.remove('hidden');
+      document.getElementById('live-session-id').textContent = shortId(viewState.selectedSessionId);
+      document.getElementById('live-command').textContent = live.command ? `$ ${live.command}` : '';
+
+      const pre = document.getElementById('live-output-pre');
+      pre.textContent = live.output || '(no output yet)';
+      const scroll = document.getElementById('live-output-scroll');
+      scroll.scrollTop = scroll.scrollHeight;
     }
 
     // ── Rendering: checkpoint detail ─────────────────────────────────────────
@@ -1268,10 +1314,12 @@
       viewState.selectedCpId      = null;
       viewState.selectedFilePath  = null;
       viewState.checkpointHistory = [];
+      viewState.liveOutput        = null;
 
       renderSessionGrid();
       document.getElementById('detail-section').classList.add('hidden');
       renderTimeline();
+      renderLiveSection();
 
       try {
         viewState.checkpointHistory = await Api.checkpointHistory(sessionId);
@@ -1279,6 +1327,21 @@
       } catch (e) {
         console.error('Failed to load history:', e);
       }
+
+      await refreshLiveOutput();
+    }
+
+    async function refreshLiveOutput() {
+      const sessionId = viewState.selectedSessionId;
+      if (!sessionId) { viewState.liveOutput = null; renderLiveSection(); return; }
+
+      try {
+        viewState.liveOutput = await Api.liveOutput(sessionId);
+      } catch (e) {
+        console.error('Failed to load live output:', e);
+        viewState.liveOutput = null;
+      }
+      if (viewState.selectedSessionId === sessionId) renderLiveSection();
     }
 
     async function onCheckpointClick(cpId) {
@@ -1351,8 +1414,10 @@
         viewState.selectedSessionId = null;
         viewState.selectedCpId      = null;
         viewState.selectedFilePath  = null;
+        viewState.liveOutput        = null;
         document.getElementById('timeline-section').classList.add('hidden');
         document.getElementById('detail-section').classList.add('hidden');
+        renderLiveSection();
       }
       await refresh();
     }
@@ -1397,13 +1462,16 @@
           } catch (_) {}
           renderTimeline();
           if (viewState.selectedCpId != null) renderCheckpointDetail();
+          await refreshLiveOutput();
         } else if (viewState.selectedSessionId) {
           // Selected session no longer exists (destroyed or reaped) — clear the stale detail view.
           viewState.selectedSessionId = null;
           viewState.selectedCpId      = null;
           viewState.selectedFilePath  = null;
+          viewState.liveOutput        = null;
           document.getElementById('timeline-section').classList.add('hidden');
           document.getElementById('detail-section').classList.add('hidden');
+          renderLiveSection();
         }
       } catch (e) {
         document.getElementById('live-dot').classList.add('offline');

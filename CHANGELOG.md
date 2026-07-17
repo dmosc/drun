@@ -8,6 +8,14 @@ All notable changes to drun are documented here.
 
 ### Web UI
 
+- Sessions running a `session_bash` command now stream live: a "● running" badge
+  replaces the idle badge on the session card, and selecting the session shows a
+  live output panel with the command and its stdout growing in real time, on the
+  existing 2s poll cycle — no more staring at "busy" until a long command
+  finishes. Backed by a new in-memory `LiveOutputRegistry` (an RAII guard clears
+  its entry on every exit path — success, error, or panic — mirroring
+  `Session`'s existing `SessionChildGuard` pattern), a `running` field on each
+  `/api/sessions/tree` node, and a new `/api/sessions/{id}/live` endpoint.
 - Checkpoint detail now shows a real file tree (click any file to preview its
   content — text, or the image itself for `png`/`jpg`/`gif`/`webp`/`svg`)
   instead of just the added/modified/removed file list; entries still carry +/~

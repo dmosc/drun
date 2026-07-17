@@ -1,4 +1,5 @@
 use crate::handler::{self, CloseSessionError};
+use crate::live_output::{LiveEntry, LiveOutputRegistry};
 use crate::reaper::SessionMap;
 use crate::response::mime_type_for_extension;
 use crate::state;
@@ -18,6 +19,7 @@ pub(crate) struct WebServer {
     port: u16,
     config: ConfigHandle,
     started_at: Instant,
+    live_output: LiveOutputRegistry,
 }
 
 impl WebServer {
@@ -28,12 +30,14 @@ impl WebServer {
         port: u16,
         config: ConfigHandle,
         started_at: Instant,
+        live_output: LiveOutputRegistry,
     ) -> Self {
         Self {
             sessions,
             port,
             config,
             started_at,
+            live_output,
         }
     }
 
@@ -42,8 +46,13 @@ impl WebServer {
         match tokio::net::TcpListener::bind(&bind_address).await {
             Ok(listener) => {
                 eprintln!("drun: web UI → http://{bind_address}");
-                let router =
-                    Self::build_router(self.sessions, self.config, self.port, self.started_at);
+                let router = Self::build_router(
+                    self.sessions,
+                    self.config,
+                    self.port,
+                    self.started_at,
+                    self.live_output,
+                );
                 axum::serve(listener, router).await.ok();
             }
             Err(error) => {
@@ -57,11 +66,16 @@ impl WebServer {
         config: ConfigHandle,
         web_port: u16,
         started_at: Instant,
+        live_output: LiveOutputRegistry,
     ) -> Router {
         Router::new()
             .route("/", get(Self::handle_index))
             .route("/api/status", get(Self::handle_status))
             .route("/api/sessions/tree", get(Self::handle_session_tree))
+            .route(
+                "/api/sessions/{session_id}/live",
+                get(Self::handle_live_output),
+            )
             .route(
                 "/api/sessions/{session_id}/history",
                 get(Self::handle_checkpoint_history),
@@ -96,6 +110,7 @@ impl WebServer {
                 mcp_port: crate::MCP_PORT,
                 web_port,
                 started_at,
+                live_output,
             })
     }
 
@@ -123,7 +138,24 @@ impl WebServer {
 
     async fn handle_session_tree(State(app): State<AppState>) -> Response {
         let sessions = app.sessions.lock().unwrap();
-        Self::json_response(&state::SessionTreeNode::forest(&sessions))
+        Self::json_response(&state::SessionTreeNode::forest(&sessions, &app.live_output))
+    }
+
+    async fn handle_live_output(
+        State(app): State<AppState>,
+        Path(session_id): Path<String>,
+    ) -> Response {
+        // Deliberately checks presence in the session map only, not
+        // `with_session`'s try_lock — a session busy running a command is
+        // exactly the case this endpoint exists to serve, not a 503.
+        if !app.sessions.lock().unwrap().contains_key(&session_id) {
+            return (
+                StatusCode::NOT_FOUND,
+                format!("session '{session_id}' not found"),
+            )
+                .into_response();
+        }
+        Self::json_response(&LiveOutput::from(app.live_output.snapshot(&session_id)))
     }
 
     async fn handle_checkpoint_history(
@@ -321,6 +353,7 @@ struct AppState {
     mcp_port: u16,
     web_port: u16,
     started_at: Instant,
+    live_output: LiveOutputRegistry,
 }
 
 #[derive(Deserialize)]
@@ -333,6 +366,31 @@ struct DiffQueryParams {
 struct FileEntry {
     path: String,
     size_bytes: usize,
+}
+
+#[derive(Serialize)]
+struct LiveOutput {
+    running: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    command: Option<String>,
+    output: String,
+}
+
+impl From<Option<LiveEntry>> for LiveOutput {
+    fn from(entry: Option<LiveEntry>) -> Self {
+        match entry {
+            Some(LiveEntry { command, output }) => LiveOutput {
+                running: true,
+                command: Some(command),
+                output,
+            },
+            None => LiveOutput {
+                running: false,
+                command: None,
+                output: String::new(),
+            },
+        }
+    }
 }
 
 #[cfg(test)]
@@ -358,6 +416,7 @@ mod tests {
             mcp_port: 7273,
             web_port: 7274,
             started_at: Instant::now(),
+            live_output: LiveOutputRegistry::default(),
         }
     }
 
@@ -627,5 +686,48 @@ mod tests {
         )
         .await;
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn handle_live_output_reports_not_running_for_an_idle_session() {
+        let sessions = session_map(vec![(
+            "s1",
+            Session::new(Config::default().into()).unwrap(),
+        )]);
+        let response =
+            WebServer::handle_live_output(State(app_state(sessions)), Path("s1".to_string())).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = body_string(response).await;
+        assert_eq!(body, r#"{"running":false,"output":""}"#);
+    }
+
+    #[tokio::test]
+    async fn handle_live_output_returns_404_for_an_unknown_session() {
+        let response = WebServer::handle_live_output(
+            State(app_state(session_map(vec![]))),
+            Path("missing".to_string()),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn handle_live_output_streams_the_command_and_output_so_far() {
+        let sessions = session_map(vec![(
+            "s1",
+            Session::new(Config::default().into()).unwrap(),
+        )]);
+        let state = app_state(sessions);
+        let guard = state.live_output.start("s1", "echo hi");
+        guard.append("hello");
+
+        let response = WebServer::handle_live_output(State(state), Path("s1".to_string())).await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = body_string(response).await;
+        assert_eq!(
+            body,
+            r#"{"running":true,"command":"echo hi","output":"hello\n"}"#
+        );
     }
 }

@@ -160,9 +160,11 @@ impl DrunHandler {
         let result = tokio::task::spawn_blocking(move || {
             handler
                 .with_session_mut(&t.session_id, |session| {
+                    let live_output = handler.live_output.start(&t.session_id, &t.command);
                     let previous_files = session.current().files.clone();
                     session
                         .execute_bash(&t.command, &mut |chunk| {
+                            live_output.append(&chunk);
                             let _ = progress_tx.send(chunk);
                         })
                         .map_err(|e| DrunError::from_exec(e).into_tool_err())?;
@@ -338,7 +340,7 @@ impl DrunHandler {
 
     fn handle_session_tree(&self) -> Result<CallToolResult, CallToolError> {
         let sessions = self.sessions.lock().unwrap().clone();
-        Ok(json(&SessionTreeNode::forest(&sessions)))
+        Ok(json(&SessionTreeNode::forest(&sessions, &self.live_output)))
     }
 
     fn handle_list_snapshots(&self) -> Result<CallToolResult, CallToolError> {

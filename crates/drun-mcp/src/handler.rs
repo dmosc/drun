@@ -1,4 +1,5 @@
 use crate::errors::DrunError;
+use crate::live_output::LiveOutputRegistry;
 use crate::reaper::{self, SessionMap};
 #[cfg(test)]
 use drun_core::Config;
@@ -43,6 +44,7 @@ pub(crate) fn close_session(
 pub struct DrunHandler {
     pub(crate) config: ConfigHandle,
     pub(crate) sessions: SessionMap,
+    pub(crate) live_output: LiveOutputRegistry,
 }
 
 impl DrunHandler {
@@ -51,6 +53,7 @@ impl DrunHandler {
         Self {
             config: config.into(),
             sessions: Arc::new(Mutex::new(HashMap::new())),
+            live_output: LiveOutputRegistry::default(),
         }
     }
 
@@ -58,6 +61,7 @@ impl DrunHandler {
         Self {
             config: ConfigHandle::from_env(),
             sessions: Arc::new(Mutex::new(HashMap::new())),
+            live_output: LiveOutputRegistry::default(),
         }
     }
 

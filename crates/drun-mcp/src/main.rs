@@ -2,6 +2,7 @@ mod config_cmd;
 mod errors;
 mod handler;
 mod init;
+mod live_output;
 mod reaper;
 mod response;
 mod server;
@@ -49,7 +50,17 @@ async fn main() -> SdkResult<()> {
     if let Some(web_port) = handler.config.get().web_port.filter(|&p| p != 0) {
         let web_sessions = std::sync::Arc::clone(&handler.sessions);
         let web_config = handler.config.clone();
-        tokio::spawn(web::WebServer::new(web_sessions, web_port, web_config, started_at).serve());
+        let web_live_output = handler.live_output.clone();
+        tokio::spawn(
+            web::WebServer::new(
+                web_sessions,
+                web_port,
+                web_config,
+                started_at,
+                web_live_output,
+            )
+            .serve(),
+        );
     }
 
     eprintln!("drun: MCP → http://127.0.0.1:{MCP_PORT}/mcp (streamable HTTP)");
