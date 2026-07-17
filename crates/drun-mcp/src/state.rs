@@ -389,7 +389,7 @@ impl FileDelta {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use drun_core::{CheckpointRef, Config};
+    use drun_core::{CheckpointRecord, CheckpointRef, Config, SessionSnapshot};
     use std::time::Duration;
 
     fn file_map(pairs: &[(&str, &[u8])]) -> FileMap {
@@ -397,6 +397,36 @@ mod tests {
             .iter()
             .map(|(k, v)| (k.to_string(), Arc::new(v.to_vec())))
             .collect()
+    }
+
+    fn session_with_command(command: Option<String>) -> Session {
+        let snapshot = SessionSnapshot {
+            checkpoint_idx: 1,
+            parent: None,
+            label: None,
+            origins: HashMap::new(),
+            overlays: HashMap::new(),
+            blobs: vec![],
+            checkpoints: vec![
+                CheckpointRecord {
+                    id: 0,
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    label: None,
+                    command: None,
+                    files: HashMap::new(),
+                },
+                CheckpointRecord {
+                    id: 1,
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    label: None,
+                    command,
+                    files: HashMap::new(),
+                },
+            ],
+        };
+        Session::from_snapshot(Config::default().into(), snapshot).unwrap()
     }
 
     fn new_session() -> Session {
@@ -570,8 +600,7 @@ mod tests {
 
     #[test]
     fn checkpoint_summary_history_reports_the_executed_command() {
-        let mut session = new_session();
-        session.execute_bash("echo hi", &mut |_| {}).unwrap();
+        let session = session_with_command(Some("echo hi".to_string()));
 
         let history = CheckpointSummary::history(&session);
         assert_eq!(history[0].command, None);

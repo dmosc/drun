@@ -213,7 +213,17 @@ impl Session {
             .spawn()?;
         let BashOutput { stdout, stderr } = self.run_sandboxed_bash_child(child, on_stdout)?;
         let collected_files = workspace::collect(workspace_dir.path())?;
-        let interned_files = self.intern_file_map(collected_files);
+        self.record_bash_checkpoint(command, collected_files, stdout, stderr)
+    }
+
+    fn record_bash_checkpoint(
+        &mut self,
+        command: &str,
+        files: FileMap,
+        stdout: String,
+        stderr: String,
+    ) -> anyhow::Result<&Checkpoint> {
+        let interned_files = self.intern_file_map(files);
         self.check_workspace_size(&interned_files)?;
         self.push_checkpoint(interned_files, stdout, stderr, Some(command.to_string()))
     }
@@ -943,7 +953,9 @@ mod tests {
     #[test]
     fn execute_bash_records_the_command_on_the_new_checkpoint() {
         let mut s = session();
-        let cp = s.execute_bash("echo hi", &mut |_| {}).unwrap();
+        let cp = s
+            .record_bash_checkpoint("echo hi", FileMap::new(), "hi\n".to_string(), String::new())
+            .unwrap();
         assert_eq!(cp.command.as_deref(), Some("echo hi"));
     }
 
@@ -959,8 +971,10 @@ mod tests {
     #[test]
     fn squash_checkpoints_joins_the_absorbed_commands() {
         let mut s = session();
-        s.execute_bash("echo one", &mut |_| {}).unwrap();
-        s.execute_bash("echo two", &mut |_| {}).unwrap();
+        s.record_bash_checkpoint("echo one", FileMap::new(), String::new(), String::new())
+            .unwrap();
+        s.record_bash_checkpoint("echo two", FileMap::new(), String::new(), String::new())
+            .unwrap();
 
         let squashed = s.squash_checkpoints(1, 2, None).unwrap();
 

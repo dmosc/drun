@@ -10,4 +10,4 @@ pub use checkpoint::{Checkpoint, CheckpointRef, FileMap};
 pub use config::{Config, ConfigHandle};
 pub use error::RunnerError;
 pub use session::Session;
-pub use snapshot::{SessionSnapshot, SnapshotMeta};
+pub use snapshot::{CheckpointRecord, SessionSnapshot, SnapshotMeta};
