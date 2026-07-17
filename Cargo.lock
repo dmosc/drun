@@ -361,7 +361,7 @@ dependencies = [
 
 [[package]]
 name = "drun"
-version = "0.3.11"
+version = "0.3.12"
 dependencies = [
  "drun-core",
  "pyo3",
@@ -370,7 +370,7 @@ dependencies = [
 
 [[package]]
 name = "drun-core"
-version = "0.3.11"
+version = "0.3.12"
 dependencies = [
  "anyhow",
  "libc",
@@ -395,7 +395,7 @@ dependencies = [
 
 [[package]]
 name = "drun-mcp"
-version = "0.3.11"
+version = "0.3.12"
 dependencies = [
  "anyhow",
  "async-trait",
