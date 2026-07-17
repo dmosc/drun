@@ -21,14 +21,29 @@ All notable changes to drun are documented here.
 
 ### `drun chat`
 
+- Added `--session-id` to `drun chat`, to attach to an already-running session
+  (e.g. one created from Claude Code, the web UI, or a prior `drun chat` call)
+  instead of always creating a new one. `DrunMcpBridge` now owns session
+  bootstrapping end to end: given a `session_id` it validates the session exists
+  (via `get_session_state`, failing fast with the daemon's error if not) before
+  mounting any `--mount` paths into it; given none, it falls back to
+  `create_session` as before.
+- Unified the CLI's `ChatAgent` loop and the Python SDK examples' standalone
+  `drun.chat.run()` function, which had drifted into two near-identical
+  tool-calling loops (one against the MCP daemon, one against an embedded
+  `DrunSession` with a hardcoded 2-tool subset). `chat.run()` is gone; the
+  examples (`financial_analysis.py`, `data_science.py`,
+  `fibonacci_benchmark.py`) now build a `ChatAgent` with a new
+  `LocalSessionBridge`, which adapts a `Session` to the same `Bridge` interface
+  `DrunMcpBridge` implements. `ChatAgent.run()` no longer takes a `mounts`
+  argument — mounting is bridge bootstrap logic, not loop logic.
 - The `drun chat` CLI now drives a running `drun-mcp` daemon over MCP instead of
   an embedded, 2-tool subset — it gets the full tool suite (`session_fetch`,
   `session_fork`, checkpoints, etc.), the same as Claude Code, and shares
   sessions with the web UI. New `DrunMcpBridge` (MCP client) and `ChatAgent`
   (tool-calling loop) classes back the CLI. New `--mcp-url` flag (default
   `http://127.0.0.1:7273/mcp`); a running daemon is now required for
-  `drun chat`. The Python SDK examples (`examples/*.py`) are unaffected — they
-  still use `drun.chat.run()` against an embedded, daemon-less `DrunSession`.
+  `drun chat`.
 - Default `--model` changed from `ollama/qwen2.5:14b` to
   `ollama_chat/qwen2.5:14b`. litellm's `ollama/` prefix routes through Ollama's
   legacy `/api/generate` endpoint, which emulates tool calling via a JSON-mode

@@ -35,11 +35,12 @@ Note on packages:
     only the standard library — no pyperf, no tabulate.
 """
 
+import asyncio
 import os
 import textwrap
 
 from drun import Session
-from drun.chat import run
+from drun.chat import ChatAgent, LocalSessionBridge
 
 PROMPT = textwrap.dedent("""\
     You are operating inside a drun sandbox. Your job has two parts: first
@@ -175,13 +176,13 @@ def main():
     session = Session()
     session.mount("examples/")
 
-    run(
-        session,
-        PROMPT,
+    agent = ChatAgent(
+        LocalSessionBridge(session),
         model=model,
         base_url=base_url,
         max_iterations=60,
     )
+    asyncio.run(agent.run(PROMPT))
 
     export_dir = os.environ.get("EXPORT_DIR", "/tmp/drun-fibonacci-results")
     exported = session.export(export_dir)

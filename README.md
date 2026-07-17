@@ -172,8 +172,14 @@ pass `--model` and set the provider's API key:
 ANTHROPIC_API_KEY=... drun chat "your prompt" --model claude-sonnet-4-6
 ```
 
-Run `drun chat --help` for all flags (mounts, system prompt override, max
-iterations).
+Each `drun chat` call creates a new session by default. Pass `--session-id` to
+attach to one that's already running instead:
+
+```bash
+drun chat "keep going on the report in results.md" --session-id <id>
+```
+
+Run `drun chat --help` for all flags.
 
 ### Python SDK
 

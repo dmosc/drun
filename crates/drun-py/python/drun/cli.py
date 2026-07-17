@@ -48,6 +48,12 @@ def main() -> None:
         ),
     )
     chat_parser.add_argument(
+        "--session-id",
+        default=None,
+        metavar="ID",
+        help="Attach to an existing session instead of creating a new one",
+    )
+    chat_parser.add_argument(
         "--mount",
         action="append",
         metavar="PATH",
@@ -76,7 +82,9 @@ def main() -> None:
 
 async def _run_chat(args: argparse.Namespace) -> None:
     try:
-        async with DrunMcpBridge(args.mcp_url) as bridge:
+        async with DrunMcpBridge(
+            args.mcp_url, session_id=args.session_id, mounts=args.mount
+        ) as bridge:
             agent = ChatAgent(
                 bridge,
                 model=args.model,
@@ -84,7 +92,7 @@ async def _run_chat(args: argparse.Namespace) -> None:
                 system=args.system,
                 max_iterations=args.max_iterations,
             )
-            await agent.run(args.prompt, args.mount)
+            await agent.run(args.prompt)
     except KeyboardInterrupt:
         print("\ninterrupted", file=sys.stderr)
         sys.exit(1)

@@ -306,14 +306,15 @@ subject to the daemon's `domain_allowlist`.
 
 **`drun chat` flags:**
 
-| Flag                 | Default                     | Description                                     |
-| -------------------- | --------------------------- | ----------------------------------------------- |
-| `--mcp-url URL`      | `http://127.0.0.1:7273/mcp` | drun-mcp daemon endpoint                        |
-| `--model MODEL`      | `ollama_chat/qwen2.5:14b`   | litellm model identifier                        |
-| `--base-url URL`     | —                           | LLM API base URL override                       |
-| `--mount PATH`       | —                           | Mount a host path into the session (repeatable) |
-| `--system PROMPT`    | built-in                    | Override the system prompt                      |
-| `--max-iterations N` | `30`                        | Maximum agent loop iterations                   |
+| Flag                 | Default                     | Description                                                 |
+| -------------------- | --------------------------- | ----------------------------------------------------------- |
+| `--mcp-url URL`      | `http://127.0.0.1:7273/mcp` | drun-mcp daemon endpoint                                    |
+| `--model MODEL`      | `ollama_chat/qwen2.5:14b`   | litellm model identifier                                    |
+| `--base-url URL`     | —                           | LLM API base URL override                                   |
+| `--session-id ID`    | —                           | Attach to an existing session instead of creating a new one |
+| `--mount PATH`       | —                           | Mount a host path into the session (repeatable)             |
+| `--system PROMPT`    | built-in                    | Override the system prompt                                  |
+| `--max-iterations N` | `30`                        | Maximum agent loop iterations                               |
 
 ---
 

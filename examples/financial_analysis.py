@@ -38,12 +38,13 @@ Expected behavior:
     4. Session is preserved as a .drun snapshot (snapshot_on_close = true).
 """
 
+import asyncio
 import os
 import textwrap
 import urllib.request
 
 from drun import Session
-from drun.chat import run
+from drun.chat import ChatAgent, LocalSessionBridge
 
 EDGAR_URL = (
     "https://data.sec.gov/api/xbrl/companyconcept/CIK0000320193/us-gaap/Revenues.json"
@@ -111,13 +112,13 @@ def main():
     session = Session()
     session.write_file("revenues.json", revenues_json)
 
-    run(
-        session,
-        PROMPT,
+    agent = ChatAgent(
+        LocalSessionBridge(session),
         model=model,
         base_url=base_url,
         max_iterations=30,
     )
+    asyncio.run(agent.run(PROMPT))
 
     export_dir = "/tmp/drun-financial"
     exported = session.export(export_dir)

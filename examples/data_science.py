@@ -39,12 +39,13 @@ Expected behavior:
        /tmp/drun-data-science/results.md.
 """
 
+import asyncio
 import os
 import textwrap
 import urllib.request
 
 from drun import Session
-from drun.chat import run
+from drun.chat import ChatAgent, LocalSessionBridge
 
 IRIS_URL = "https://raw.githubusercontent.com/mwaskom/seaborn-data/master/iris.csv"
 
@@ -116,13 +117,13 @@ def main():
     session = Session()
     session.write_file("iris.csv", iris_csv)
 
-    run(
-        session,
-        PROMPT,
+    agent = ChatAgent(
+        LocalSessionBridge(session),
         model=model,
         base_url=base_url,
         max_iterations=30,
     )
+    asyncio.run(agent.run(PROMPT))
 
     export_dir = "/tmp/drun-data-science"
     exported = session.export(export_dir)
