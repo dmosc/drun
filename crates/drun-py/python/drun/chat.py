@@ -84,7 +84,11 @@ class ChatAgent:
             ) from exc
 
         response = await litellm.acompletion(
-            model=self._model, messages=messages, tools=tools, base_url=self._base_url
+            model=self._model,
+            messages=messages,
+            tools=tools,
+            base_url=self._base_url,
+            _skip_mcp_handler=True,
         )
         choice = response.choices[0]
         return choice.message, choice.finish_reason
