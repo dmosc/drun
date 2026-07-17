@@ -9,6 +9,36 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+pub(crate) enum CloseSessionError {
+    NotFound,
+    Io(std::io::Error),
+}
+
+pub(crate) fn close_session(
+    sessions: &SessionMap,
+    config: &ConfigHandle,
+    session_id: &str,
+) -> Result<(), CloseSessionError> {
+    let session = sessions
+        .lock()
+        .unwrap()
+        .remove(session_id)
+        .ok_or(CloseSessionError::NotFound)?;
+    let config = config.get();
+    if config.snapshot_on_close {
+        let output_path = config.snapshots_dir.join(format!("{session_id}.drun"));
+        if let Some(parent_dir) = output_path.parent() {
+            std::fs::create_dir_all(parent_dir).map_err(CloseSessionError::Io)?;
+        }
+        let guard = DrunHandler::lock_recovering(session_id, &session);
+        guard
+            .snapshot()
+            .write(&output_path)
+            .map_err(|e| CloseSessionError::Io(std::io::Error::other(e)))?;
+    }
+    Ok(())
+}
+
 #[derive(Clone)]
 pub struct DrunHandler {
     pub(crate) config: ConfigHandle,

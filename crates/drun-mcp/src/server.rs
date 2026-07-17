@@ -2,7 +2,7 @@
 //! appropriate Session method, wrapping results as MCP CallToolResult responses.
 
 use crate::errors::DrunError;
-use crate::handler::DrunHandler;
+use crate::handler::{self, DrunHandler};
 use crate::response::{file_content, json, text};
 use crate::state::{
     CheckpointSummary, SessionState, SessionSummary, SessionTreeNode, SnapshotEntry,
@@ -118,25 +118,14 @@ impl DrunHandler {
     }
 
     fn handle_session_close(&self, t: SessionClose) -> Result<CallToolResult, CallToolError> {
-        let session = self
-            .sessions
-            .lock()
-            .unwrap()
-            .remove(&t.session_id)
-            .ok_or_else(|| DrunError::session_not_found(&t.session_id).into_tool_err())?;
-        let config = self.config.get();
-        if config.snapshot_on_close {
-            let output_path = config.snapshots_dir.join(format!("{}.drun", t.session_id));
-            if let Some(parent_dir) = output_path.parent() {
-                std::fs::create_dir_all(parent_dir)
-                    .map_err(|e| DrunError::internal(e).into_tool_err())?;
-            }
-            let guard = DrunHandler::lock_recovering(&t.session_id, &session);
-            guard
-                .snapshot()
-                .write(&output_path)
-                .map_err(|e| DrunError::internal(e).into_tool_err())?;
-        }
+        handler::close_session(&self.sessions, &self.config, &t.session_id).map_err(
+            |e| match e {
+                handler::CloseSessionError::NotFound => {
+                    DrunError::session_not_found(&t.session_id).into_tool_err()
+                }
+                handler::CloseSessionError::Io(err) => DrunError::internal(err).into_tool_err(),
+            },
+        )?;
         Ok(text(format!("closed {}", t.session_id)))
     }
 

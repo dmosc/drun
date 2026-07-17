@@ -301,6 +301,8 @@ pub(crate) struct CheckpointSummary {
     checkpoint_id: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     label: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    command: Option<String>,
     stdout_bytes: usize,
     stderr_bytes: usize,
     file_count: usize,
@@ -325,6 +327,7 @@ impl CheckpointSummary {
                 CheckpointSummary {
                     checkpoint_id: checkpoint.id,
                     label: checkpoint.label.clone(),
+                    command: checkpoint.command.clone(),
                     stdout_bytes: checkpoint.stdout.len(),
                     stderr_bytes: checkpoint.stderr.len(),
                     file_count: checkpoint.files.len(),
@@ -563,6 +566,16 @@ mod tests {
             state.committed_files,
             vec!["a.txt".to_string(), "b.txt".to_string()]
         );
+    }
+
+    #[test]
+    fn checkpoint_summary_history_reports_the_executed_command() {
+        let mut session = new_session();
+        session.execute_bash("echo hi", &mut |_| {}).unwrap();
+
+        let history = CheckpointSummary::history(&session);
+        assert_eq!(history[0].command, None);
+        assert_eq!(history[1].command.as_deref(), Some("echo hi"));
     }
 
     #[test]

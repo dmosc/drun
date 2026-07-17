@@ -15,6 +15,8 @@ pub struct DrunCheckpoint {
     pub files: HashMap<String, Vec<u8>>,
     #[pyo3(get)]
     pub label: Option<String>,
+    #[pyo3(get)]
+    pub command: Option<String>,
 }
 
 pub fn checkpoint_to_py(c: &drun_core::Checkpoint) -> DrunCheckpoint {
@@ -28,6 +30,7 @@ pub fn checkpoint_to_py(c: &drun_core::Checkpoint) -> DrunCheckpoint {
             .map(|(k, arc)| (k.clone(), (**arc).clone()))
             .collect(),
         label: c.label.clone(),
+        command: c.command.clone(),
     }
 }
 
@@ -46,6 +49,7 @@ mod tests {
             stderr: "err".to_string(),
             files,
             label: Some("milestone".to_string()),
+            command: Some("echo hi".to_string()),
         };
 
         let py_checkpoint = checkpoint_to_py(&checkpoint);
@@ -58,5 +62,6 @@ mod tests {
             Some(&b"contents".to_vec())
         );
         assert_eq!(py_checkpoint.label.as_deref(), Some("milestone"));
+        assert_eq!(py_checkpoint.command.as_deref(), Some("echo hi"));
     }
 }

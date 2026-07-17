@@ -223,11 +223,52 @@
     .session-card:hover  { border-color: var(--border-hi); background: var(--s2); }
     .session-card.active { border-color: var(--accent); background: var(--accent-bg); }
 
+    .card-header-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      margin-bottom: 5px;
+    }
+
     .card-session-id {
       font-family: var(--mono);
       font-size: 11px;
       color: var(--text-muted);
-      margin-bottom: 5px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .card-actions {
+      display: flex;
+      gap: 2px;
+      flex-shrink: 0;
+    }
+
+    .icon-btn {
+      background: none;
+      border: 1px solid transparent;
+      border-radius: 4px;
+      color: var(--text-muted);
+      font-family: var(--mono);
+      font-size: 11px;
+      line-height: 1;
+      padding: 3px 5px;
+      cursor: pointer;
+      transition: color 0.12s, border-color 0.12s, background 0.12s;
+    }
+
+    .icon-btn:hover {
+      color: var(--text);
+      border-color: var(--border-hi);
+      background: var(--s2);
+    }
+
+    .icon-btn-danger:hover {
+      color: var(--red);
+      border-color: rgba(224, 85, 106, 0.4);
+      background: var(--red-bg);
     }
 
     .card-session-label {
@@ -382,6 +423,48 @@
 
 
     /* ── Checkpoint detail ─────────────────────────────────────────────── */
+    .command-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--s1);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 9px 14px;
+      margin-bottom: 14px;
+    }
+
+    .command-prompt {
+      color: var(--accent);
+      font-family: var(--mono);
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+
+    .command-text {
+      font-family: var(--mono);
+      font-size: 12.5px;
+      color: var(--text);
+      overflow-x: auto;
+      white-space: pre;
+      flex: 1;
+    }
+
+    .copy-btn {
+      background: none;
+      border: 1px solid var(--border-hi);
+      border-radius: 4px;
+      color: var(--text-dim);
+      font-family: var(--mono);
+      font-size: 10.5px;
+      padding: 2px 7px;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: color 0.12s, border-color 0.12s;
+    }
+
+    .copy-btn:hover { color: var(--text); border-color: var(--accent); }
+
     .detail-grid {
       display: grid;
       grid-template-columns: 260px 1fr;
@@ -436,7 +519,19 @@
       padding: 5px 14px;
       font-family: var(--mono);
       font-size: 12px;
+      cursor: default;
     }
+
+    .file-row.tree-file {
+      cursor: pointer;
+      border-radius: 4px;
+      margin: 0 6px;
+      width: calc(100% - 12px);
+    }
+
+    .file-row.tree-file:hover { background: var(--s2); }
+    .file-row.tree-file.active { background: var(--accent-bg); }
+    .file-row.tree-file.active .file-path { color: var(--accent); }
 
     .file-sigil {
       width: 12px;
@@ -454,13 +549,57 @@
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+      flex: 1;
     }
+
+    .file-size {
+      color: var(--text-muted);
+      font-size: 10.5px;
+      flex-shrink: 0;
+    }
+
+    .tree-dir { margin: 0; }
+
+    .tree-dir-label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 14px;
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--text-dim);
+      cursor: pointer;
+      list-style: none;
+    }
+
+    .tree-dir-label::-webkit-details-marker { display: none; }
+    .tree-dir-label::before { content: '▸'; color: var(--text-muted); font-size: 10px; width: 8px; }
+    .tree-dir[open] > .tree-dir-label::before { content: '▾'; }
+
+    .tree-dir-body { padding-left: 14px; }
+
+    .tree-removed { border-top: 1px solid var(--border); margin-top: 4px; padding-top: 4px; }
 
     .panel-empty {
       padding: 14px;
       font-size: 12px;
       color: var(--text-muted);
       font-style: italic;
+    }
+
+    .file-pane-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 8px 14px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .file-preview-image {
+      max-width: 100%;
+      border-radius: 4px;
+      display: block;
     }
 
     /* ── Output tabs ───────────────────────────────────────────────────── */
@@ -583,6 +722,13 @@
         <span class="section-label">checkpoint</span>
         <span class="mono-id" id="detail-heading"></span>
       </div>
+
+      <div class="command-row" id="command-row" style="display:none">
+        <span class="command-prompt">$</span>
+        <code class="command-text" id="command-text"></code>
+        <button class="copy-btn" id="copy-command-btn">copy</button>
+      </div>
+
       <div class="detail-grid">
 
         <div class="panel" id="files-panel">
@@ -604,6 +750,7 @@
               stderr<span class="tab-hint" id="hint-stderr"></span>
             </button>
             <button class="tab-btn" data-tab="diff">diff</button>
+            <button class="tab-btn" data-tab="file">file</button>
           </div>
           <div id="pane-stdout" class="tab-pane active">
             <div class="output-scroll"><span class="loading-note">loading…</span></div>
@@ -613,6 +760,9 @@
           </div>
           <div id="pane-diff" class="tab-pane">
             <div class="output-scroll"><span class="loading-note">loading…</span></div>
+          </div>
+          <div id="pane-file" class="tab-pane">
+            <div class="output-scroll"><span class="output-empty">select a file from the tree to preview it</span></div>
           </div>
         </div>
 
@@ -629,7 +779,11 @@
       selectedSessionId:  null,
       checkpointHistory:  [],
       selectedCpId:       null,
-      outputCache:        new Map(),   // `${sessionId}:${cpId}` → { stdout, stderr, diff, fileNames }
+      selectedFilePath:   null,
+      // `${sessionId}:${cpId}` → { stdout, stderr, diff, fileNames, files }
+      outputCache:        new Map(),
+      // `${sessionId}:${cpId}:${path}` → { kind: 'text'|'image'|'binary', content?, url? }
+      fileCache:          new Map(),
       activeTab:          'stdout',
       daemonStatus:       null,
       daemonPanelOpen:    false,
@@ -709,6 +863,8 @@
     }
 
     // ── API ──────────────────────────────────────────────────────────────────
+    // Every server endpoint the UI talks to is called through here — no other
+    // function builds a `/api/...` URL by hand.
 
     async function fetchJson(url) {
       const res = await fetch(url);
@@ -720,6 +876,56 @@
       const res = await fetch(url);
       if (!res.ok) throw new Error(`${res.status} ${url}`);
       return res.text();
+    }
+
+    const Api = {
+      status:            () => fetchJson('/api/status'),
+      sessionsTree:       () => fetchJson('/api/sessions/tree'),
+      checkpointHistory: sessionId => fetchJson(`/api/sessions/${sessionId}/history`),
+      checkpointFiles:   (sessionId, cpId) => fetchJson(`/api/sessions/${sessionId}/checkpoints/${cpId}/files`),
+      stdout:            (sessionId, cpId) => fetchText(`/api/sessions/${sessionId}/checkpoints/${cpId}/stdout`),
+      stderr:            (sessionId, cpId) => fetchText(`/api/sessions/${sessionId}/checkpoints/${cpId}/stderr`),
+      diff:              (sessionId, fromId, toId) => fetchText(`/api/sessions/${sessionId}/diff?from=${fromId}&to=${toId}`),
+
+      async fileContent(sessionId, cpId, path) {
+        const url = `/api/sessions/${sessionId}/checkpoints/${cpId}/files/${path.split('/').map(encodeURIComponent).join('/')}`;
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`${res.status} ${url}`);
+        const contentType = res.headers.get('content-type') || '';
+        if (contentType.startsWith('image/')) return { kind: 'image', url };
+        if (res.headers.get('x-drun-binary') === 'true') return { kind: 'binary' };
+        return { kind: 'text', content: await res.text() };
+      },
+
+      async deleteSession(sessionId) {
+        const res = await fetch(`/api/sessions/${sessionId}`, { method: 'DELETE' });
+        if (!res.ok && res.status !== 404) throw new Error(`${res.status} deleting ${sessionId}`);
+      },
+    };
+
+    // ── Clipboard ────────────────────────────────────────────────────────────
+
+    async function copyToClipboard(text, btn) {
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch (e) {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+      }
+      flashButton(btn);
+    }
+
+    function flashButton(btn) {
+      if (!btn) return;
+      const original = btn.textContent;
+      btn.textContent = '✓';
+      setTimeout(() => { btn.textContent = original; }, 1000);
     }
 
     // ── Rendering: daemon status ─────────────────────────────────────────────
@@ -819,7 +1025,13 @@
 
         return `
           <div class="session-card ${isActive ? 'active' : ''}" onclick="onSessionClick('${escHtml(s.session_id)}')" title="created ${fmtDuration(s.age_secs)} ago">
-            <div class="card-session-id">${escHtml(shortId(s.session_id))}</div>
+            <div class="card-header-row">
+              <div class="card-session-id" title="${escHtml(s.session_id)}">${escHtml(shortId(s.session_id))}</div>
+              <div class="card-actions">
+                <button class="icon-btn" title="copy session id" onclick="event.stopPropagation(); copyToClipboard('${escHtml(s.session_id)}', this)">⧉</button>
+                <button class="icon-btn icon-btn-danger" title="destroy session" onclick="event.stopPropagation(); onDestroySessionClick('${escHtml(s.session_id)}')">✕</button>
+              </div>
+            </div>
             <div class="card-session-label ${s.label ? '' : 'unlabeled'}">
               ${s.label ? escHtml(s.label) : 'unlabeled'}
             </div>
@@ -891,6 +1103,8 @@
       const labelSuffix = treeCp?.label ? ` · "${escHtml(treeCp.label)}"` : '';
       document.getElementById('detail-heading').innerHTML = `#${cpId}${labelSuffix}`;
 
+      renderCommandRow(hist);
+
       // File counts badge
       if (hist) {
         const parts = [];
@@ -901,30 +1115,7 @@
         document.getElementById('files-counts').innerHTML = parts.join('<span style="color:var(--border-hi)"> · </span>');
       }
 
-      // Files body — use parsed names from diff if available, fall back to count summary
-      const filesBody = document.getElementById('files-body');
-      if (cached?.fileNames) {
-        const { added, modified, removed } = cached.fileNames;
-        if (added.length + modified.length + removed.length === 0) {
-          filesBody.innerHTML = '<div class="panel-empty">no file changes</div>';
-        } else {
-          const rows = [
-            ...added.map(f    => fileRow('+', 'sigil-a', f)),
-            ...modified.map(f => fileRow('~', 'sigil-m', f)),
-            ...removed.map(f  => fileRow('-', 'sigil-r', f)),
-          ];
-          filesBody.innerHTML = rows.join('');
-        }
-      } else if (hist) {
-        const rows = [];
-        if (hist.files_added_count    > 0) rows.push(fileRow('+', 'sigil-a', `${hist.files_added_count} added`));
-        if (hist.files_modified_count > 0) rows.push(fileRow('~', 'sigil-m', `${hist.files_modified_count} modified`));
-        if (hist.files_removed_count  > 0) rows.push(fileRow('-', 'sigil-r', `${hist.files_removed_count} removed`));
-        if (rows.length === 0) rows.push('<div class="panel-empty">no file changes</div>');
-        filesBody.innerHTML = rows.join('');
-      } else {
-        filesBody.innerHTML = '<div class="loading-note">loading…</div>';
-      }
+      renderFilesPanel(cached);
 
       // Stdout / stderr hints
       if (hist) {
@@ -936,10 +1127,106 @@
       renderOutputPane('stdout', cached?.stdout);
       renderOutputPane('stderr', cached?.stderr);
       renderDiffPane(cached?.diff);
+      renderFilePane(viewState.selectedFilePath
+        ? viewState.fileCache.get(`${sessionId}:${cpId}:${viewState.selectedFilePath}`)
+        : undefined);
     }
 
-    function fileRow(sigil, sigilClass, path) {
-      return `<div class="file-row"><span class="file-sigil ${sigilClass}">${sigil}</span><span class="file-path">${escHtml(path)}</span></div>`;
+    function renderCommandRow(hist) {
+      const row = document.getElementById('command-row');
+      if (!hist?.command) { row.style.display = 'none'; return; }
+      row.style.display = '';
+      document.getElementById('command-text').textContent = hist.command;
+      document.getElementById('copy-command-btn').onclick = () =>
+        copyToClipboard(hist.command, document.getElementById('copy-command-btn'));
+    }
+
+    // ── Rendering: file tree ──────────────────────────────────────────────────
+
+    function buildFileTree(files) {
+      const root = { name: '', children: new Map(), file: null };
+      for (const file of files) {
+        const parts = file.path.split('/');
+        let node = root;
+        for (const part of parts.slice(0, -1)) {
+          if (!node.children.has(part)) node.children.set(part, { name: part, children: new Map(), file: null });
+          node = node.children.get(part);
+        }
+        const leafName = parts[parts.length - 1];
+        node.children.set(leafName, { name: leafName, children: new Map(), file });
+      }
+      return root;
+    }
+
+    function renderFileTreeChildren(children, deltaByPath) {
+      const entries = [...children.values()].sort((a, b) => {
+        const aIsDir = a.file === null, bIsDir = b.file === null;
+        return aIsDir !== bIsDir ? (aIsDir ? -1 : 1) : a.name.localeCompare(b.name);
+      });
+      return entries.map(node => {
+        if (node.file === null) {
+          return `
+            <details class="tree-dir" open>
+              <summary class="tree-dir-label">${escHtml(node.name)}</summary>
+              <div class="tree-dir-body">${renderFileTreeChildren(node.children, deltaByPath)}</div>
+            </details>`;
+        }
+        const path      = node.file.path;
+        const delta     = deltaByPath.get(path);
+        const sigil     = delta === 'added'    ? '<span class="file-sigil sigil-a">+</span>'
+                        : delta === 'modified' ? '<span class="file-sigil sigil-m">~</span>'
+                        : '<span class="file-sigil"></span>';
+        const isActive  = path === viewState.selectedFilePath;
+        return `
+          <div class="file-row tree-file ${isActive ? 'active' : ''}" onclick="onFileClick('${escHtml(path)}')" title="${escHtml(path)}">
+            ${sigil}<span class="file-path">${escHtml(node.name)}</span><span class="file-size">${fmtBytes(node.file.size_bytes)}</span>
+          </div>`;
+      }).join('');
+    }
+
+    function renderFilesPanel(cached) {
+      const filesBody = document.getElementById('files-body');
+      if (!cached?.files) { filesBody.innerHTML = '<div class="loading-note">loading…</div>'; return; }
+
+      const deltaByPath = new Map();
+      for (const f of cached.fileNames?.added    || []) deltaByPath.set(f, 'added');
+      for (const f of cached.fileNames?.modified || []) deltaByPath.set(f, 'modified');
+      const removed = cached.fileNames?.removed || [];
+
+      if (cached.files.length === 0 && removed.length === 0) {
+        filesBody.innerHTML = '<div class="panel-empty">workspace is empty</div>';
+        return;
+      }
+
+      const tree = buildFileTree(cached.files);
+      const treeHtml = renderFileTreeChildren(tree.children, deltaByPath);
+      const removedHtml = removed.length
+        ? `<div class="tree-removed">${removed.map(f => `
+            <div class="file-row"><span class="file-sigil sigil-r">-</span><span class="file-path">${escHtml(f)}</span></div>`).join('')}</div>`
+        : '';
+      filesBody.innerHTML = treeHtml + removedHtml;
+    }
+
+    function renderFilePane(fileState) {
+      const pane = document.getElementById('pane-file');
+      if (!viewState.selectedFilePath) {
+        pane.innerHTML = '<div class="output-scroll"><span class="output-empty">select a file from the tree to preview it</span></div>';
+        return;
+      }
+      const head = `
+        <div class="file-pane-head">
+          <span class="mono-id">${escHtml(viewState.selectedFilePath)}</span>
+          <button class="copy-btn" onclick="copyToClipboard('${escHtml(viewState.selectedFilePath)}', this)">copy path</button>
+        </div>`;
+      if (fileState === undefined) {
+        pane.innerHTML = `${head}<div class="output-scroll"><span class="loading-note">loading…</span></div>`;
+      } else if (fileState.kind === 'image') {
+        pane.innerHTML = `${head}<div class="output-scroll"><img class="file-preview-image" src="${fileState.url}" alt="${escHtml(viewState.selectedFilePath)}"></div>`;
+      } else if (fileState.kind === 'binary') {
+        pane.innerHTML = `${head}<div class="output-scroll"><span class="output-empty">binary file — cannot preview</span></div>`;
+      } else {
+        pane.innerHTML = `${head}<div class="output-scroll"><pre class="output-pre">${escHtml(fileState.content)}</pre></div>`;
+      }
     }
 
     function renderOutputPane(stream, content) {
@@ -979,6 +1266,7 @@
       if (viewState.selectedSessionId === sessionId) return;
       viewState.selectedSessionId = sessionId;
       viewState.selectedCpId      = null;
+      viewState.selectedFilePath  = null;
       viewState.checkpointHistory = [];
 
       renderSessionGrid();
@@ -986,7 +1274,7 @@
       renderTimeline();
 
       try {
-        viewState.checkpointHistory = await fetchJson(`/api/sessions/${sessionId}/history`);
+        viewState.checkpointHistory = await Api.checkpointHistory(sessionId);
         renderTimeline();
       } catch (e) {
         console.error('Failed to load history:', e);
@@ -995,7 +1283,8 @@
 
     async function onCheckpointClick(cpId) {
       if (viewState.selectedCpId === cpId) return;
-      viewState.selectedCpId = cpId;
+      viewState.selectedCpId     = cpId;
+      viewState.selectedFilePath = null;
 
       renderTimeline();
       renderCheckpointDetail();
@@ -1006,22 +1295,66 @@
       if (viewState.outputCache.has(cacheKey)) return;
 
       try {
-        const [stdout, stderr, diff] = await Promise.all([
-          fetchText(`/api/sessions/${sessionId}/checkpoints/${cpId}/stdout`),
-          fetchText(`/api/sessions/${sessionId}/checkpoints/${cpId}/stderr`),
-          cpId > 0
-            ? fetchText(`/api/sessions/${sessionId}/diff?from=${cpId - 1}&to=${cpId}`)
-            : Promise.resolve(''),
+        const [stdout, stderr, diff, files] = await Promise.all([
+          Api.stdout(sessionId, cpId),
+          Api.stderr(sessionId, cpId),
+          cpId > 0 ? Api.diff(sessionId, cpId - 1, cpId) : Promise.resolve(''),
+          Api.checkpointFiles(sessionId, cpId),
         ]);
 
         const fileNames = extractFileNamesFromDiff(diff);
-        viewState.outputCache.set(cacheKey, { stdout, stderr, diff, fileNames });
+        viewState.outputCache.set(cacheKey, { stdout, stderr, diff, fileNames, files });
       } catch (e) {
         console.error('Failed to load checkpoint output:', e);
-        viewState.outputCache.set(cacheKey, { stdout: '', stderr: '', diff: '', fileNames: { added: [], modified: [], removed: [] } });
+        viewState.outputCache.set(cacheKey, {
+          stdout: '', stderr: '', diff: '',
+          fileNames: { added: [], modified: [], removed: [] },
+          files: [],
+        });
       }
 
       if (viewState.selectedCpId === cpId) renderCheckpointDetail();
+    }
+
+    async function onFileClick(path) {
+      viewState.selectedFilePath = path;
+      switchTab('file');
+      renderFilesPanel(viewState.outputCache.get(`${viewState.selectedSessionId}:${viewState.selectedCpId}`));
+      renderFilePane(undefined);
+
+      const sessionId = viewState.selectedSessionId;
+      const cpId      = viewState.selectedCpId;
+      const cacheKey  = `${sessionId}:${cpId}:${path}`;
+      if (!viewState.fileCache.has(cacheKey)) {
+        try {
+          viewState.fileCache.set(cacheKey, await Api.fileContent(sessionId, cpId, path));
+        } catch (e) {
+          console.error('Failed to load file content:', e);
+          viewState.fileCache.set(cacheKey, { kind: 'binary' });
+        }
+      }
+      if (viewState.selectedFilePath === path) renderFilePane(viewState.fileCache.get(cacheKey));
+    }
+
+    async function onDestroySessionClick(sessionId) {
+      if (!confirm(`Destroy session ${sessionId}?\n\nThis permanently discards its workspace and checkpoint history — it cannot be undone.`)) {
+        return;
+      }
+      try {
+        await Api.deleteSession(sessionId);
+      } catch (e) {
+        console.error('Failed to destroy session:', e);
+        alert(`Failed to destroy session: ${e.message}`);
+        return;
+      }
+      if (viewState.selectedSessionId === sessionId) {
+        viewState.selectedSessionId = null;
+        viewState.selectedCpId      = null;
+        viewState.selectedFilePath  = null;
+        document.getElementById('timeline-section').classList.add('hidden');
+        document.getElementById('detail-section').classList.add('hidden');
+      }
+      await refresh();
     }
 
     function switchTab(tabName) {
@@ -1044,8 +1377,8 @@
     async function refresh() {
       try {
         const [tree, status] = await Promise.all([
-          fetchJson('/api/sessions/tree'),
-          fetchJson('/api/status'),
+          Api.sessionsTree(),
+          Api.status(),
         ]);
         viewState.sessionTree   = tree;
         viewState.flatSessions  = flattenTree(tree);
@@ -1060,10 +1393,17 @@
 
         if (viewState.selectedSessionId && findSession(viewState.selectedSessionId)) {
           try {
-            viewState.checkpointHistory = await fetchJson(`/api/sessions/${viewState.selectedSessionId}/history`);
+            viewState.checkpointHistory = await Api.checkpointHistory(viewState.selectedSessionId);
           } catch (_) {}
           renderTimeline();
           if (viewState.selectedCpId != null) renderCheckpointDetail();
+        } else if (viewState.selectedSessionId) {
+          // Selected session no longer exists (destroyed or reaped) — clear the stale detail view.
+          viewState.selectedSessionId = null;
+          viewState.selectedCpId      = null;
+          viewState.selectedFilePath  = null;
+          document.getElementById('timeline-section').classList.add('hidden');
+          document.getElementById('detail-section').classList.add('hidden');
         }
       } catch (e) {
         document.getElementById('live-dot').classList.add('offline');

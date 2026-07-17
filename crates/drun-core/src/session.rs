@@ -174,7 +174,7 @@ impl Session {
         let arc = self.intern_bytes(content);
         files.insert(path.to_string(), arc);
         self.check_workspace_size(&files)?;
-        self.push_checkpoint(files, String::new(), String::new())?;
+        self.push_checkpoint(files, String::new(), String::new(), None)?;
         Ok(())
     }
 
@@ -183,7 +183,7 @@ impl Session {
         if files.remove(path).is_none() {
             return Err(RunnerError::file_not_found_in_current(path).into());
         }
-        self.push_checkpoint(files, String::new(), String::new())
+        self.push_checkpoint(files, String::new(), String::new(), None)
     }
 
     pub fn execute_bash(
@@ -215,7 +215,7 @@ impl Session {
         let collected_files = workspace::collect(workspace_dir.path())?;
         let interned_files = self.intern_file_map(collected_files);
         self.check_workspace_size(&interned_files)?;
-        self.push_checkpoint(interned_files, stdout, stderr)
+        self.push_checkpoint(interned_files, stdout, stderr, Some(command.to_string()))
     }
 
     pub fn rollback(&mut self, checkpoint_idx: usize) -> anyhow::Result<()> {
@@ -296,6 +296,11 @@ impl Session {
             .filter(|s| !s.is_empty())
             .collect::<Vec<_>>()
             .join("\n");
+        let combined_command = self.checkpoints[from_id..=to_id]
+            .iter()
+            .filter_map(|c| c.command.as_deref())
+            .collect::<Vec<_>>()
+            .join(" && ");
         let terminal_files = self.checkpoints[to_id].files.clone();
         let squashed = Checkpoint {
             id: from_id,
@@ -303,6 +308,7 @@ impl Session {
             stderr: combined_stderr,
             files: terminal_files,
             label,
+            command: (!combined_command.is_empty()).then_some(combined_command),
         };
         let removed_count = to_id - from_id;
         self.checkpoints
@@ -383,7 +389,7 @@ impl Session {
             }
         }
         self.check_workspace_size(&merged)?;
-        self.push_checkpoint(merged, String::new(), String::new())
+        self.push_checkpoint(merged, String::new(), String::new(), None)
     }
 
     pub fn export(
@@ -500,6 +506,7 @@ impl Session {
                     stdout: cp.stdout.clone(),
                     stderr: cp.stderr.clone(),
                     label: cp.label.clone(),
+                    command: cp.command.clone(),
                     files,
                 }
             })
@@ -532,6 +539,7 @@ impl Session {
                     stdout: record.stdout,
                     stderr: record.stderr,
                     label: record.label,
+                    command: record.command,
                     files,
                 }
             })
@@ -636,6 +644,7 @@ impl Session {
         files: FileMap,
         stdout: String,
         stderr: String,
+        command: Option<String>,
     ) -> anyhow::Result<&Checkpoint> {
         self.check_checkpoint_limit()?;
         let discarding_forward_history = self.checkpoints.len() > self.checkpoint_idx + 1;
@@ -649,6 +658,7 @@ impl Session {
             stderr,
             files,
             label: None,
+            command,
         });
         self.checkpoint_idx = id;
         if discarding_forward_history {
@@ -931,6 +941,33 @@ mod tests {
     }
 
     #[test]
+    fn execute_bash_records_the_command_on_the_new_checkpoint() {
+        let mut s = session();
+        let cp = s.execute_bash("echo hi", &mut |_| {}).unwrap();
+        assert_eq!(cp.command.as_deref(), Some("echo hi"));
+    }
+
+    #[test]
+    fn write_file_and_delete_file_leave_the_checkpoints_command_unset() {
+        let mut s = session();
+        s.write_file("a.txt", b"hi".to_vec()).unwrap();
+        assert_eq!(s.current().command, None);
+        s.delete_file("a.txt").unwrap();
+        assert_eq!(s.current().command, None);
+    }
+
+    #[test]
+    fn squash_checkpoints_joins_the_absorbed_commands() {
+        let mut s = session();
+        s.execute_bash("echo one", &mut |_| {}).unwrap();
+        s.execute_bash("echo two", &mut |_| {}).unwrap();
+
+        let squashed = s.squash_checkpoints(1, 2, None).unwrap();
+
+        assert_eq!(squashed.command.as_deref(), Some("echo one && echo two"));
+    }
+
+    #[test]
     fn descendant_pids_finds_a_grandchild_process() {
         // A plain "sleep 5" tail-call-execs into sh's own pid, so force a
         // genuine subshell fork to get a real two-level descendant chain.
@@ -1192,6 +1229,7 @@ mod tests {
                 stderr: String::new(),
                 files,
                 label: None,
+                command: None,
             }
         );
     }

@@ -8,6 +8,23 @@ All notable changes to drun are documented here.
 
 ### Web UI
 
+- Checkpoint detail now shows a real file tree (click any file to preview its
+  content — text, or the image itself for `png`/`jpg`/`gif`/`webp`/`svg`)
+  instead of just the added/modified/removed file list; entries still carry +/~
+  sigils for what changed since the previous checkpoint. Checkpoints created by
+  `session_bash` also show the executed command, with a copy button. Backed by
+  new `command` fields on `Checkpoint`/`CheckpointRecord`/`CheckpointSummary`
+  (persisted through snapshots) and two new endpoints:
+  `/api/sessions/{id}/checkpoints/{cp}/files` (path + size listing) and
+  `/api/sessions/{id}/checkpoints/{cp}/files/{*path}` (raw content, with an
+  `x-drun-binary` header for non-UTF-8 files the browser shouldn't try to render
+  as text).
+- Session cards get two new buttons: copy the session id to the clipboard, and
+  destroy the session outright (with a confirmation prompt — this discards its
+  workspace and checkpoint history, honoring `snapshot_on_close` exactly like
+  `session_close` does, since it's the same underlying operation via a new
+  `DELETE /api/sessions/{id}` endpoint and a `close_session` helper shared with
+  the MCP tool).
 - The web UI now surfaces daemon and session health that was previously only in
   memory. A new status strip shows version, PID, uptime, memory (RSS), and
   session count against `max_sessions`; an expandable "daemon" panel adds ports,

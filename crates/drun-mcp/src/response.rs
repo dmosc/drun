@@ -10,7 +10,7 @@ pub fn json(value: &impl Serialize) -> CallToolResult {
     text(serde_json::to_string(value).unwrap_or_else(|_| "null".into()))
 }
 
-fn mime_type_for_extension(path: &str) -> Option<&'static str> {
+pub(crate) fn mime_type_for_extension(path: &str) -> Option<&'static str> {
     let ext = path.rsplit('.').next().unwrap_or("").to_lowercase();
     match ext.as_str() {
         "png" => Some("image/png"),
