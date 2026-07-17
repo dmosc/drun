@@ -29,3 +29,17 @@ jobs:
       - uses: taiki-e/install-action@cargo-llvm-cov
       - name: Coverage summary
         run: cargo llvm-cov --workspace --summary-only | tee -a "$GITHUB_STEP_SUMMARY"
+
+  drun-py:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install ".[chat,test]"
+        working-directory: crates/drun-py
+      - run: pytest
+        working-directory: crates/drun-py
