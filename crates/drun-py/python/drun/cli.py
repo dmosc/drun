@@ -85,14 +85,18 @@ async def _run_chat(args: argparse.Namespace) -> None:
         async with DrunMcpBridge(
             args.mcp_url, session_id=args.session_id, mounts=args.mount
         ) as bridge:
-            agent = ChatAgent(
-                bridge,
-                model=args.model,
-                base_url=args.base_url,
-                system=args.system,
-                max_iterations=args.max_iterations,
-            )
-            await agent.run(args.prompt)
+            try:
+                agent = ChatAgent(
+                    bridge,
+                    model=args.model,
+                    base_url=args.base_url,
+                    system=args.system,
+                    max_iterations=args.max_iterations,
+                )
+                await agent.run(args.prompt)
+            except Exception as exc:
+                print(f"error: {exc}", file=sys.stderr)
+                sys.exit(1)
     except KeyboardInterrupt:
         print("\ninterrupted", file=sys.stderr)
         sys.exit(1)
