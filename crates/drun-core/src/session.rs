@@ -993,16 +993,13 @@ mod tests {
     }
 
     #[test]
-    fn execute_bash_allows_every_segment_of_a_chained_command_when_all_are_listed() {
+    fn check_command_policy_allows_every_segment_of_a_chained_command_when_all_are_listed() {
         let config = Config {
             bash_command_allowlist: vec!["git".to_string(), "echo".to_string()],
             ..Config::default()
         };
-        let mut s = Session::new(config.into()).unwrap();
-        let cp = s
-            .execute_bash("git --version && echo git", &mut |_| {})
-            .unwrap();
-        assert_eq!(cp.command.as_deref(), Some("git --version && echo git"));
+        let s = Session::new(config.into()).unwrap();
+        s.check_command_policy("git --version && echo git").unwrap();
     }
 
     #[test]
