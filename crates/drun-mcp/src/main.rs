@@ -21,7 +21,14 @@ use rust_mcp_sdk::{
     },
 };
 
-pub(crate) const MCP_PORT: u16 = 7273;
+pub(crate) const DEFAULT_MCP_PORT: u16 = 7273;
+
+pub(crate) fn mcp_port() -> u16 {
+    std::env::var("DRUN_MCP_PORT")
+        .ok()
+        .and_then(|p| p.parse().ok())
+        .unwrap_or(DEFAULT_MCP_PORT)
+}
 
 #[tokio::main]
 async fn main() -> SdkResult<()> {
@@ -63,15 +70,16 @@ async fn main() -> SdkResult<()> {
         );
     }
 
-    eprintln!("drun: MCP → http://127.0.0.1:{MCP_PORT}/mcp (streamable HTTP)");
-    eprintln!("drun: MCP → http://127.0.0.1:{MCP_PORT}/sse (SSE)");
+    let mcp_port = mcp_port();
+    eprintln!("drun: MCP → http://127.0.0.1:{mcp_port}/mcp (streamable HTTP)");
+    eprintln!("drun: MCP → http://127.0.0.1:{mcp_port}/sse (SSE)");
 
     hyper_server::create_server(
         build_server_details(),
         handler.to_mcp_server_handler(),
         HyperServerOptions {
             host: "127.0.0.1".into(),
-            port: MCP_PORT,
+            port: mcp_port,
             ..Default::default()
         },
     )

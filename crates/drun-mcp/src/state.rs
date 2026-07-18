@@ -766,10 +766,16 @@ mod tests {
         let mut sessions = HashMap::new();
         sessions.insert("s1".to_string(), Arc::new(Mutex::new(new_session())));
 
-        let status = DaemonStatus::current(&sessions, &config, Instant::now(), 7273, 7274);
+        let status = DaemonStatus::current(
+            &sessions,
+            &config,
+            Instant::now(),
+            crate::DEFAULT_MCP_PORT,
+            7274,
+        );
         assert_eq!(status.session_count, 1);
         assert_eq!(status.max_sessions, Some(10));
-        assert_eq!(status.mcp_port, 7273);
+        assert_eq!(status.mcp_port, crate::DEFAULT_MCP_PORT);
         assert_eq!(status.web_port, 7274);
         assert_eq!(status.pid, std::process::id());
     }

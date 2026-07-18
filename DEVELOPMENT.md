@@ -44,20 +44,43 @@ cargo llvm-cov --workspace --html --open
 
 ## Run locally
 
-If you installed drun via `install.sh`, the launchd agent (macOS) or systemd
-service (Linux) will restart the installed binary within milliseconds of any
-`pkill`. Suspend it first so the local build can bind the ports:
+Run a local build. First create a dedicated `config.toml` with at the very least
+a `web_port` configured:
+
+```toml
+# .drun/config.toml
+web_port = 1234
+```
+
+Then, compile the binary and run the server.
 
 ```bash
-# macOS — suspend the launchd agent
-launchctl unload ~/Library/LaunchAgents/com.drun.mcp-server.plist 2>/dev/null
+cargo build -p drun-mcp
+DRUN_CONFIG="$PWD/.drun/config.toml" DRUN_MCP_PORT=8273 ./target/debug/drun-mcp
+```
 
-# Linux — suspend the systemd service
-systemctl --user stop drun-mcp.service
+- `DRUN_MCP_PORT` — MCP port.
+- `DRUN_CONFIG` — path to a config.toml.
 
-# Kill any process still holding the ports, then start the local build
-pkill -f "drun-mcp$" 2>/dev/null; sleep 0.3
-DRUN_CONFIG="$PWD/.drun/config.toml" ./target/debug/drun-mcp
+If you're using Claude, register the MCP under a dedicated name:
+
+```bash
+claude mcp add --transport sse drun-dev http://127.0.0.1:8273/sse
+```
+
+Confirm it's up:
+
+```bash
+curl -s http://127.0.0.1:8274/api/status
+```
+
+### Cleanup
+
+Kill the terminal where you have your MCP running and also remove the entry from
+your Claude MCPs list if you registered it.
+
+```bash
+claude mcp remove drun-dev
 ```
 
 ## Test drun init
@@ -91,69 +114,6 @@ drun: initialized for /path/to/some-project
 
 The project path is appended to `~/.drun/projects` (checked for duplicates
 before writing).
-
-Expected startup output:
-
-```
-drun: MCP → http://127.0.0.1:7273/mcp (streamable HTTP)
-drun: MCP → http://127.0.0.1:7273/sse (SSE)
-drun: web UI → http://127.0.0.1:7274
-```
-
-## Register with Claude Code
-
-```bash
-# Remove the previously installed entry, if any
-claude mcp remove drun 2>/dev/null
-
-# Point Claude Code at the local daemon
-claude mcp add --transport sse drun http://127.0.0.1:7273/sse
-
-# Confirm
-claude mcp list
-```
-
-## Validate
-
-```bash
-# SSE endpoint (Ctrl-C to exit)
-curl -N http://127.0.0.1:7273/sse
-
-# Streamable HTTP endpoint
-curl http://127.0.0.1:7273/mcp
-
-# Sessions API (returns empty JSON tree before any sessions exist)
-curl -s http://127.0.0.1:7274/api/sessions/tree
-
-# Confirm exactly one process is running
-pgrep -fl "drun-mcp$"
-```
-
-Open a new chat tab in VSCode — it connects to the running daemon via SSE. Call
-`create_session` from it, then check `http://127.0.0.1:7274` in a browser to see
-the session appear. Repeat in a second chat tab — both sessions surface in the
-same UI, confirming the shared `SessionMap`.
-
-## Reload after changes
-
-Config edits (`config.toml`) take effect on the next tool call with no restart.
-Code changes and the web UI HTML (compiled into the binary) still need a rebuild
-and restart:
-
-```bash
-cargo build -p drun-mcp
-pkill -f "drun-mcp$" 2>/dev/null; sleep 0.3; DRUN_CONFIG="$PWD/.drun/config.toml" ./target/debug/drun-mcp &
-```
-
-When done, restore the installed daemon:
-
-```bash
-# macOS
-launchctl load -w ~/Library/LaunchAgents/com.drun.mcp-server.plist
-
-# Linux
-# systemctl --user start drun-mcp.service
-```
 
 ## Test the installed binary with a local build
 
