@@ -2,11 +2,11 @@
 
 <div align="center">
 
-![drun architecture](assets/architecture.png)
+![drun logo](assets/logo.png)
 
 </div>
 
-## Ephemeral runtime harness for agentic workflows
+## Git for agents with ephemeral runtime
 
 Drun is a platform that allows you to virtualize components of your host into an
 ephemeral runtime to serve as the agent's workspace with git-like primitives
@@ -24,6 +24,12 @@ guardrail the agent's behavior across a range of OS-level aspects:
 Rather than granting your agent raw access to your host, Drun exposes and
 enforces a highly-customizable policy layer with deterministic knobs for you to
 place absolute limits that can't be breached by design.
+
+<div align="center">
+
+![drun architecture](assets/architecture.png)
+
+</div>
 
 ## Usage
 
@@ -214,25 +220,25 @@ without it, built-in defaults apply.
 The following is a reference of all the controls available for tuning. All
 fields are optional.
 
-| Field                       | Default                                                              | Description                                                                                                                                                                                                   |
-| --------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `domain_allowlist`          | `["pypi.org", "files.pythonhosted.org", "cdn.jsdelivr.net"]`         | Additional domains reachable via `session_fetch`. Use `["*"]` to allow all, or `"*.example.com"` for subdomains.                                                                                              |
-| `fetch_timeout_ms`          | `60000`                                                              | Timeout for the full `session_fetch` response in milliseconds.                                                                                                                                                |
-| `connect_timeout_ms`        | `30000`                                                              | TCP connection timeout for `session_fetch` in milliseconds.                                                                                                                                                   |
-| `bash_timeout_ms`           | `30000`                                                              | Maximum wall time for a single `session_bash` call.                                                                                                                                                           |
-| `max_workspace_mb`          | `512`                                                                | Maximum workspace size per session in megabytes. Checked before each new checkpoint is appended.                                                                                                              |
-| `max_sessions`              | `50`                                                                 | Maximum number of concurrent sessions.                                                                                                                                                                        |
-| `max_checkpoints`           | `200`                                                                | Maximum checkpoints stored per session. When the limit is reached, squash or drop old checkpoints.                                                                                                            |
-| `session_idle_timeout_secs` | `3600`                                                               | Seconds of inactivity before a session is considered abandoned and rejected.                                                                                                                                  |
-| `mount_allowlist`           | `[]`                                                                 | Host path prefixes that `session_mount` may read from. Empty means all paths are permitted. Non-empty restricts mounts to the listed prefixes.                                                                |
-| `mount_overlay_paths`       | `["node_modules", ".venv", "venv", "target", "__pycache__", ".git"]` | Directory names that `session_mount` registers as read-only host overlays instead of loading into the workspace. Overlay dirs are symlinked at execution time and never checkpointed. Set to `[]` to disable. |
-| `export_root`               | `"drun-export"`                                                      | Directory that `session_export` must write into. Relative paths are resolved from the current working directory.                                                                                              |
-| `snapshots_dir`             | `"drun-snapshots"`                                                   | Directory where `session_snapshot` writes `.drun` files.                                                                                                                                                      |
-| `snapshot_on_close`         | `false`                                                              | When `true`, automatically write a snapshot when `session_close` is called.                                                                                                                                   |
-| `env_allowlist`             | `[]`                                                                 | Host environment variable names exposed to agents via `session_get_env`. Empty means no variables are exposed.                                                                                                |
-| `bash_command_denylist`     | `[]`                                                                 | Command substrings always rejected by `session_bash` before execution.                                                                                                                                        |
-| `bash_command_allowlist`    | `[]`                                                                 | Command substrings permitted by `session_bash`. Empty means all commands are allowed (subject to the denylist).                                                                                               |
-| `web_port`                  | `7274`                                                               | TCP port for the trajectory viewer web UI. Set to `0`, or remove the field from the config file, to disable it.                                                                                               |
+| Field                       | Default                                                              | Description                                                                                                                                                                                                                                                                |
+| --------------------------- | -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `domain_allowlist`          | `["pypi.org", "files.pythonhosted.org", "cdn.jsdelivr.net"]`         | Domains reachable via `session_fetch`. Defaults to the three built-ins if the key is absent; setting it explicitly (including `[]`) replaces the defaults outright, so an operator can restrict below them. Use `["*"]` to allow all, or `"*.example.com"` for subdomains. |
+| `fetch_timeout_ms`          | `60000`                                                              | Timeout for the full `session_fetch` response in milliseconds.                                                                                                                                                                                                             |
+| `connect_timeout_ms`        | `30000`                                                              | TCP connection timeout for `session_fetch` in milliseconds.                                                                                                                                                                                                                |
+| `bash_timeout_ms`           | `30000`                                                              | Maximum wall time for a single `session_bash` call.                                                                                                                                                                                                                        |
+| `max_workspace_mb`          | `512`                                                                | Maximum workspace size per session in megabytes. Checked before each new checkpoint is appended.                                                                                                                                                                           |
+| `max_sessions`              | `50`                                                                 | Maximum number of concurrent sessions.                                                                                                                                                                                                                                     |
+| `max_checkpoints`           | `200`                                                                | Maximum checkpoints stored per session. When the limit is reached, squash or drop old checkpoints.                                                                                                                                                                         |
+| `session_idle_timeout_secs` | `3600`                                                               | Seconds of inactivity before a session is considered abandoned and rejected.                                                                                                                                                                                               |
+| `mount_allowlist`           | `[]`                                                                 | Host path prefixes that `session_mount` may read from. Empty means all paths are permitted. Non-empty restricts mounts to the listed prefixes.                                                                                                                             |
+| `mount_overlay_paths`       | `["node_modules", ".venv", "venv", "target", "__pycache__", ".git"]` | Directory names that `session_mount` registers as read-only host overlays instead of loading into the workspace. Overlay dirs are symlinked at execution time and never checkpointed. Set to `[]` to disable.                                                              |
+| `export_root`               | `"drun-export"`                                                      | Directory that `session_export` must write into. Relative paths are resolved from the current working directory.                                                                                                                                                           |
+| `snapshots_dir`             | `"drun-snapshots"`                                                   | Directory where `session_snapshot` writes `.drun` files.                                                                                                                                                                                                                   |
+| `snapshot_on_close`         | `false`                                                              | When `true`, automatically write a snapshot when `session_close` is called.                                                                                                                                                                                                |
+| `env_allowlist`             | `[]`                                                                 | Host environment variable names exposed to agents via `session_get_env`. Empty means no variables are exposed.                                                                                                                                                             |
+| `bash_command_denylist`     | `[]`                                                                 | Command substrings always rejected by `session_bash` before execution.                                                                                                                                                                                                     |
+| `bash_command_allowlist`    | `[]`                                                                 | Command substrings permitted by `session_bash`. Empty means all commands are allowed (subject to the denylist).                                                                                                                                                            |
+| `web_port`                  | `7274`                                                               | TCP port for the trajectory viewer web UI. Set to `0`, or remove the field from the config file, to disable it.                                                                                                                                                            |
 
 #### Updating configuration via the CLI
 
