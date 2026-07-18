@@ -92,7 +92,8 @@ impl DrunHandler {
         let session = Session::new(self.config.clone())
             .map_err(|e| DrunError::internal(e).into_tool_err())?;
         let state = SessionState::compute(&session_id, &session, None, vec![]);
-        self.insert_session(session_id, session)?;
+        self.insert_session(session_id, session)
+            .map_err(|max| DrunError::session_limit_reached(max).into_tool_err())?;
         Ok(json(&state))
     }
 
@@ -108,7 +109,8 @@ impl DrunHandler {
         };
         let fork_id = Uuid::new_v4().to_string();
         let state = SessionState::compute(&fork_id, &forked_session, None, vec![]);
-        self.insert_session(fork_id, forked_session)?;
+        self.insert_session(fork_id, forked_session)
+            .map_err(|max| DrunError::session_limit_reached(max).into_tool_err())?;
         Ok(json(&state))
     }
 
@@ -118,14 +120,12 @@ impl DrunHandler {
     }
 
     fn handle_session_close(&self, t: SessionClose) -> Result<CallToolResult, CallToolError> {
-        handler::close_session(&self.sessions, &self.config, &t.session_id).map_err(
-            |e| match e {
-                handler::CloseSessionError::NotFound => {
-                    DrunError::session_not_found(&t.session_id).into_tool_err()
-                }
-                handler::CloseSessionError::Io(err) => DrunError::internal(err).into_tool_err(),
-            },
-        )?;
+        self.close_session(&t.session_id).map_err(|e| match e {
+            handler::CloseSessionError::NotFound => {
+                DrunError::session_not_found(&t.session_id).into_tool_err()
+            }
+            handler::CloseSessionError::Io(err) => DrunError::internal(err).into_tool_err(),
+        })?;
         Ok(text(format!("closed {}", t.session_id)))
     }
 
@@ -516,7 +516,8 @@ impl DrunHandler {
             .map_err(|e| DrunError::internal(e).into_tool_err())?;
         let session_id = Uuid::new_v4().to_string();
         let state = SessionState::compute(&session_id, &restored, None, vec![]);
-        self.insert_session(session_id, restored)?;
+        self.insert_session(session_id, restored)
+            .map_err(|max| DrunError::session_limit_reached(max).into_tool_err())?;
         Ok(json(&state))
     }
 

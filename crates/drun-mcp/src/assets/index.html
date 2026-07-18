@@ -181,6 +181,12 @@
 
     .section-title-row .section-label { margin-bottom: 0; }
 
+    .detail-actions {
+      margin-left: auto;
+      display: flex;
+      gap: 6px;
+    }
+
     .mono-id {
       font-family: var(--mono);
       font-size: 13px;
@@ -748,6 +754,10 @@
       <div class="section-title-row">
         <span class="section-label">checkpoint</span>
         <span class="mono-id" id="detail-heading"></span>
+        <div class="detail-actions">
+          <button class="copy-btn" id="fork-here-btn" onclick="onForkFromHereClick()">fork from here</button>
+          <button class="copy-btn" id="rollback-here-btn" onclick="onRollbackHereClick()">rollback to here</button>
+        </div>
       </div>
 
       <div class="command-row" id="command-row" style="display:none">
@@ -906,6 +916,16 @@
       return res.text();
     }
 
+    async function postJson(url, body) {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
+      return res.json();
+    }
+
     const Api = {
       status:            () => fetchJson('/api/status'),
       sessionsTree:       () => fetchJson('/api/sessions/tree'),
@@ -915,6 +935,10 @@
       stdout:            (sessionId, cpId) => fetchText(`/api/sessions/${sessionId}/checkpoints/${cpId}/stdout`),
       stderr:            (sessionId, cpId) => fetchText(`/api/sessions/${sessionId}/checkpoints/${cpId}/stderr`),
       diff:              (sessionId, fromId, toId) => fetchText(`/api/sessions/${sessionId}/diff?from=${fromId}&to=${toId}`),
+      fork:              (sessionId, checkpointId) => postJson(`/api/sessions/${sessionId}/fork`, { checkpoint_id: checkpointId }),
+      rollback:          (sessionId, checkpointId) => postJson(`/api/sessions/${sessionId}/rollback`, { checkpoint_id: checkpointId }),
+      setLabel:          (sessionId, label) => postJson(`/api/sessions/${sessionId}/label`, { label }),
+      snapshot:          sessionId => postJson(`/api/sessions/${sessionId}/snapshot`, undefined),
 
       async fileContent(sessionId, cpId, path) {
         const url = `/api/sessions/${sessionId}/checkpoints/${cpId}/files/${path.split('/').map(encodeURIComponent).join('/')}`;
@@ -1058,6 +1082,8 @@
               <div class="card-session-id" title="${escHtml(s.session_id)}">${escHtml(shortId(s.session_id))}</div>
               <div class="card-actions">
                 <button class="icon-btn" title="copy session id" onclick="event.stopPropagation(); copyToClipboard('${escHtml(s.session_id)}', this)">⧉</button>
+                <button class="icon-btn" title="edit label" onclick="event.stopPropagation(); onEditLabelClick('${escHtml(s.session_id)}')">✎</button>
+                <button class="icon-btn" title="write snapshot to disk" onclick="event.stopPropagation(); onSnapshotClick('${escHtml(s.session_id)}', this)">⇩</button>
                 <button class="icon-btn icon-btn-danger" title="destroy session" onclick="event.stopPropagation(); onDestroySessionClick('${escHtml(s.session_id)}')">✕</button>
               </div>
             </div>
@@ -1148,6 +1174,7 @@
       // Heading
       const labelSuffix = treeCp?.label ? ` · "${escHtml(treeCp.label)}"` : '';
       document.getElementById('detail-heading').innerHTML = `#${cpId}${labelSuffix}`;
+      document.getElementById('rollback-here-btn').style.display = treeCp?.is_current ? 'none' : '';
 
       renderCommandRow(hist);
 
@@ -1418,6 +1445,63 @@
         document.getElementById('timeline-section').classList.add('hidden');
         document.getElementById('detail-section').classList.add('hidden');
         renderLiveSection();
+      }
+      await refresh();
+    }
+
+    async function onEditLabelClick(sessionId) {
+      const next = prompt('Label for this session (empty to clear):', findSession(sessionId)?.label || '');
+      if (next === null) return;
+      try {
+        await Api.setLabel(sessionId, next);
+      } catch (e) {
+        console.error('Failed to set label:', e);
+        alert(`Failed to set label: ${e.message}`);
+        return;
+      }
+      await refresh();
+    }
+
+    async function onSnapshotClick(sessionId, btn) {
+      try {
+        await Api.snapshot(sessionId);
+      } catch (e) {
+        console.error('Failed to snapshot session:', e);
+        alert(`Failed to snapshot: ${e.message}`);
+        return;
+      }
+      flashButton(btn);
+    }
+
+    async function onForkFromHereClick() {
+      const sessionId = viewState.selectedSessionId;
+      const cpId      = viewState.selectedCpId;
+      if (sessionId == null || cpId == null) return;
+      let forked;
+      try {
+        forked = await Api.fork(sessionId, cpId);
+      } catch (e) {
+        console.error('Failed to fork session:', e);
+        alert(`Failed to fork: ${e.message}`);
+        return;
+      }
+      await refresh();
+      await onSessionClick(forked.session_id);
+    }
+
+    async function onRollbackHereClick() {
+      const sessionId = viewState.selectedSessionId;
+      const cpId      = viewState.selectedCpId;
+      if (sessionId == null || cpId == null) return;
+      if (!confirm(`Roll back session ${shortId(sessionId)} to checkpoint #${cpId}?\n\nEvery checkpoint after this point is permanently discarded on the next write — it cannot be undone.`)) {
+        return;
+      }
+      try {
+        await Api.rollback(sessionId, cpId);
+      } catch (e) {
+        console.error('Failed to roll back session:', e);
+        alert(`Failed to roll back: ${e.message}`);
+        return;
       }
       await refresh();
     }

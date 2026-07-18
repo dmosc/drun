@@ -15,31 +15,6 @@ pub(crate) enum CloseSessionError {
     Io(std::io::Error),
 }
 
-pub(crate) fn close_session(
-    sessions: &SessionMap,
-    config: &ConfigHandle,
-    session_id: &str,
-) -> Result<(), CloseSessionError> {
-    let session = sessions
-        .lock()
-        .unwrap()
-        .remove(session_id)
-        .ok_or(CloseSessionError::NotFound)?;
-    let config = config.get();
-    if config.snapshot_on_close {
-        let output_path = config.snapshots_dir.join(format!("{session_id}.drun"));
-        if let Some(parent_dir) = output_path.parent() {
-            std::fs::create_dir_all(parent_dir).map_err(CloseSessionError::Io)?;
-        }
-        let guard = DrunHandler::lock_recovering(session_id, &session);
-        guard
-            .snapshot()
-            .write(&output_path)
-            .map_err(|e| CloseSessionError::Io(std::io::Error::other(e)))?;
-    }
-    Ok(())
-}
-
 #[derive(Clone)]
 pub struct DrunHandler {
     pub(crate) config: ConfigHandle,
@@ -95,18 +70,36 @@ impl DrunHandler {
         let _ = tokio::signal::ctrl_c().await;
     }
 
-    pub(crate) fn insert_session(
-        &self,
-        session_id: String,
-        session: Session,
-    ) -> Result<(), CallToolError> {
-        let mut sessions = self.sessions.lock().unwrap();
+    pub(crate) fn insert_session(&self, session_id: String, session: Session) -> Result<(), usize> {
+        let mut guard = self.sessions.lock().unwrap();
         if let Some(max) = self.config.get().max_sessions
-            && sessions.len() >= max
+            && guard.len() >= max
         {
-            return Err(DrunError::session_limit_reached(max).into_tool_err());
+            return Err(max);
         }
-        sessions.insert(session_id, Arc::new(Mutex::new(session)));
+        guard.insert(session_id, Arc::new(Mutex::new(session)));
+        Ok(())
+    }
+
+    pub(crate) fn close_session(&self, session_id: &str) -> Result<(), CloseSessionError> {
+        let session = self
+            .sessions
+            .lock()
+            .unwrap()
+            .remove(session_id)
+            .ok_or(CloseSessionError::NotFound)?;
+        let config = self.config.get();
+        if config.snapshot_on_close {
+            let output_path = config.snapshots_dir.join(format!("{session_id}.drun"));
+            if let Some(parent_dir) = output_path.parent() {
+                std::fs::create_dir_all(parent_dir).map_err(CloseSessionError::Io)?;
+            }
+            let guard = Self::lock_recovering(session_id, &session);
+            guard
+                .snapshot()
+                .write(&output_path)
+                .map_err(|e| CloseSessionError::Io(std::io::Error::other(e)))?;
+        }
         Ok(())
     }
 

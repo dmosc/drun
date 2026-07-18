@@ -1,43 +1,33 @@
-use crate::handler::{self, CloseSessionError};
-use crate::live_output::{LiveEntry, LiveOutputRegistry};
+use crate::handler::{CloseSessionError, DrunHandler};
+use crate::live_output::LiveEntry;
 use crate::reaper::SessionMap;
 use crate::response::mime_type_for_extension;
 use crate::state;
 use axum::{
     Router,
-    extract::{Path, Query, State},
+    extract::{Json, Path, Query, State},
     http::{HeaderMap, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
-    routing::get,
+    routing::{get, post},
 };
-use drun_core::ConfigHandle;
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
+use uuid::Uuid;
 
 pub(crate) struct WebServer {
-    sessions: SessionMap,
+    handler: DrunHandler,
     port: u16,
-    config: ConfigHandle,
     started_at: Instant,
-    live_output: LiveOutputRegistry,
 }
 
 impl WebServer {
     const EMBEDDED_INDEX_HTML: &'static str = include_str!("assets/index.html");
 
-    pub(crate) fn new(
-        sessions: SessionMap,
-        port: u16,
-        config: ConfigHandle,
-        started_at: Instant,
-        live_output: LiveOutputRegistry,
-    ) -> Self {
+    pub(crate) fn new(handler: DrunHandler, port: u16, started_at: Instant) -> Self {
         Self {
-            sessions,
+            handler,
             port,
-            config,
             started_at,
-            live_output,
         }
     }
 
@@ -46,13 +36,7 @@ impl WebServer {
         match tokio::net::TcpListener::bind(&bind_address).await {
             Ok(listener) => {
                 eprintln!("drun: web UI → http://{bind_address}");
-                let router = Self::build_router(
-                    self.sessions,
-                    self.config,
-                    self.port,
-                    self.started_at,
-                    self.live_output,
-                );
+                let router = Self::build_router(self.handler, self.port, self.started_at);
                 axum::serve(listener, router).await.ok();
             }
             Err(error) => {
@@ -61,13 +45,7 @@ impl WebServer {
         }
     }
 
-    fn build_router(
-        sessions: SessionMap,
-        config: ConfigHandle,
-        web_port: u16,
-        started_at: Instant,
-        live_output: LiveOutputRegistry,
-    ) -> Router {
+    fn build_router(handler: DrunHandler, web_port: u16, started_at: Instant) -> Router {
         Router::new()
             .route("/", get(Self::handle_index))
             .route("/api/status", get(Self::handle_status))
@@ -104,19 +82,33 @@ impl WebServer {
                 "/api/sessions/{session_id}",
                 axum::routing::delete(Self::handle_session_delete),
             )
+            .route(
+                "/api/sessions/{session_id}/fork",
+                post(Self::handle_session_fork),
+            )
+            .route(
+                "/api/sessions/{session_id}/rollback",
+                post(Self::handle_session_rollback),
+            )
+            .route(
+                "/api/sessions/{session_id}/label",
+                post(Self::handle_session_label),
+            )
+            .route(
+                "/api/sessions/{session_id}/snapshot",
+                post(Self::handle_session_snapshot),
+            )
             .with_state(AppState {
-                sessions,
-                config,
+                handler,
                 mcp_port: crate::mcp_port(),
                 web_port,
                 started_at,
-                live_output,
             })
     }
 
     async fn handle_status(State(app): State<AppState>) -> Response {
-        let sessions = app.sessions.lock().unwrap();
-        let config = app.config.get();
+        let sessions = app.handler.sessions.lock().unwrap();
+        let config = app.handler.config.get();
         Self::json_response(&state::DaemonStatus::current(
             &sessions,
             &config,
@@ -137,8 +129,11 @@ impl WebServer {
     }
 
     async fn handle_session_tree(State(app): State<AppState>) -> Response {
-        let sessions = app.sessions.lock().unwrap();
-        Self::json_response(&state::SessionTreeNode::forest(&sessions, &app.live_output))
+        let sessions = app.handler.sessions.lock().unwrap();
+        Self::json_response(&state::SessionTreeNode::forest(
+            &sessions,
+            &app.handler.live_output,
+        ))
     }
 
     async fn handle_live_output(
@@ -148,21 +143,29 @@ impl WebServer {
         // Deliberately checks presence in the session map only, not
         // `with_session`'s try_lock — a session busy running a command is
         // exactly the case this endpoint exists to serve, not a 503.
-        if !app.sessions.lock().unwrap().contains_key(&session_id) {
+        if !app
+            .handler
+            .sessions
+            .lock()
+            .unwrap()
+            .contains_key(&session_id)
+        {
             return (
                 StatusCode::NOT_FOUND,
                 format!("session '{session_id}' not found"),
             )
                 .into_response();
         }
-        Self::json_response(&LiveOutput::from(app.live_output.snapshot(&session_id)))
+        Self::json_response(&LiveOutput::from(
+            app.handler.live_output.snapshot(&session_id),
+        ))
     }
 
     async fn handle_checkpoint_history(
         State(app): State<AppState>,
         Path(session_id): Path<String>,
     ) -> Response {
-        Self::with_session(&app.sessions, &session_id, |session| {
+        Self::with_session(&app.handler.sessions, &session_id, |session| {
             Self::json_response(&state::CheckpointSummary::history(session))
         })
     }
@@ -173,7 +176,7 @@ impl WebServer {
         Query(params): Query<DiffQueryParams>,
     ) -> Response {
         let from_id = params.from.unwrap_or(0);
-        Self::with_session(&app.sessions, &session_id, move |session| {
+        Self::with_session(&app.handler.sessions, &session_id, move |session| {
             let to_id = params.to.unwrap_or(session.current().id);
             match session.diff(from_id, to_id) {
                 Ok(diff) => (StatusCode::OK, diff).into_response(),
@@ -186,7 +189,7 @@ impl WebServer {
         State(app): State<AppState>,
         Path((session_id, checkpoint_id)): Path<(String, usize)>,
     ) -> Response {
-        Self::read_checkpoint_stream(&app.sessions, &session_id, checkpoint_id, |cp| {
+        Self::read_checkpoint_stream(&app.handler.sessions, &session_id, checkpoint_id, |cp| {
             cp.stdout.clone()
         })
     }
@@ -195,7 +198,7 @@ impl WebServer {
         State(app): State<AppState>,
         Path((session_id, checkpoint_id)): Path<(String, usize)>,
     ) -> Response {
-        Self::read_checkpoint_stream(&app.sessions, &session_id, checkpoint_id, |cp| {
+        Self::read_checkpoint_stream(&app.handler.sessions, &session_id, checkpoint_id, |cp| {
             cp.stderr.clone()
         })
     }
@@ -204,26 +207,27 @@ impl WebServer {
         State(app): State<AppState>,
         Path((session_id, checkpoint_id)): Path<(String, usize)>,
     ) -> Response {
-        Self::with_session(&app.sessions, &session_id, |session| {
-            match session.history().get(checkpoint_id) {
-                Some(checkpoint) => {
-                    let mut files: Vec<FileEntry> = checkpoint
-                        .files
-                        .iter()
-                        .map(|(path, bytes)| FileEntry {
-                            path: path.clone(),
-                            size_bytes: bytes.len(),
-                        })
-                        .collect();
-                    files.sort_by(|a, b| a.path.cmp(&b.path));
-                    Self::json_response(&files)
-                }
-                None => (
-                    StatusCode::NOT_FOUND,
-                    format!("checkpoint {checkpoint_id} not found"),
-                )
-                    .into_response(),
+        Self::with_session(&app.handler.sessions, &session_id, |session| match session
+            .history()
+            .get(checkpoint_id)
+        {
+            Some(checkpoint) => {
+                let mut files: Vec<FileEntry> = checkpoint
+                    .files
+                    .iter()
+                    .map(|(path, bytes)| FileEntry {
+                        path: path.clone(),
+                        size_bytes: bytes.len(),
+                    })
+                    .collect();
+                files.sort_by(|a, b| a.path.cmp(&b.path));
+                Self::json_response(&files)
             }
+            None => (
+                StatusCode::NOT_FOUND,
+                format!("checkpoint {checkpoint_id} not found"),
+            )
+                .into_response(),
         })
     }
 
@@ -231,7 +235,7 @@ impl WebServer {
         State(app): State<AppState>,
         Path((session_id, checkpoint_id, path)): Path<(String, usize, String)>,
     ) -> Response {
-        Self::with_session(&app.sessions, &session_id, move |session| {
+        Self::with_session(&app.handler.sessions, &session_id, move |session| {
             let Some(checkpoint) = session.history().get(checkpoint_id) else {
                 return (
                     StatusCode::NOT_FOUND,
@@ -254,7 +258,7 @@ impl WebServer {
         State(app): State<AppState>,
         Path(session_id): Path<String>,
     ) -> Response {
-        match handler::close_session(&app.sessions, &app.config, &session_id) {
+        match app.handler.close_session(&session_id) {
             Ok(()) => StatusCode::NO_CONTENT.into_response(),
             Err(CloseSessionError::NotFound) => (
                 StatusCode::NOT_FOUND,
@@ -265,6 +269,121 @@ impl WebServer {
                 (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()).into_response()
             }
         }
+    }
+
+    async fn handle_session_fork(
+        State(app): State<AppState>,
+        Path(session_id): Path<String>,
+        body: Option<Json<ForkRequest>>,
+    ) -> Response {
+        let ForkRequest {
+            checkpoint_id,
+            checkpoint_label,
+        } = body.map(|Json(b)| b).unwrap_or_default();
+        Self::with_session(&app.handler.sessions, &session_id, |source| {
+            let resolved = match source
+                .resolve_checkpoint(checkpoint_id, checkpoint_label.as_deref())
+            {
+                Ok(resolved) => resolved,
+                Err(error) => return (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
+            };
+            let forked = match drun_core::Session::from_session(
+                app.handler.config.clone(),
+                &session_id,
+                source,
+                resolved,
+            ) {
+                Ok(forked) => forked,
+                Err(error) => {
+                    return (StatusCode::BAD_REQUEST, error.to_string()).into_response();
+                }
+            };
+            let fork_id = Uuid::new_v4().to_string();
+            let state = state::SessionState::compute(&fork_id, &forked, None, vec![]);
+            match app.handler.insert_session(fork_id, forked) {
+                Ok(()) => Self::json_response(&state),
+                Err(max) => (
+                    StatusCode::TOO_MANY_REQUESTS,
+                    format!("session limit reached (max {max})"),
+                )
+                    .into_response(),
+            }
+        })
+    }
+
+    async fn handle_session_rollback(
+        State(app): State<AppState>,
+        Path(session_id): Path<String>,
+        body: Option<Json<RollbackRequest>>,
+    ) -> Response {
+        let RollbackRequest {
+            checkpoint_id,
+            checkpoint_label,
+        } = body.map(|Json(b)| b).unwrap_or_default();
+        Self::with_session_mut(&app.handler.sessions, &session_id, |session| {
+            let resolved = match session
+                .resolve_checkpoint(checkpoint_id, checkpoint_label.as_deref())
+            {
+                Ok(Some(id)) => id,
+                Ok(None) => {
+                    return (
+                        StatusCode::BAD_REQUEST,
+                        "provide checkpoint_id or checkpoint_label",
+                    )
+                        .into_response();
+                }
+                Err(error) => return (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
+            };
+            let previous_files = session.current().files.clone();
+            match session.rollback(resolved) {
+                Ok(()) => Self::json_response(&state::SessionState::compute(
+                    &session_id,
+                    session,
+                    Some(&previous_files),
+                    vec![],
+                )),
+                Err(error) => (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
+            }
+        })
+    }
+
+    async fn handle_session_label(
+        State(app): State<AppState>,
+        Path(session_id): Path<String>,
+        Json(body): Json<LabelRequest>,
+    ) -> Response {
+        let response_id = session_id.clone();
+        Self::with_session_mut(&app.handler.sessions, &session_id, move |session| {
+            session.set_label(body.label);
+            Self::json_response(&state::SessionState::compute(
+                &response_id,
+                session,
+                None,
+                vec![],
+            ))
+        })
+    }
+
+    async fn handle_session_snapshot(
+        State(app): State<AppState>,
+        Path(session_id): Path<String>,
+    ) -> Response {
+        let snapshots_dir = app.handler.config.get().snapshots_dir;
+        let output_path = snapshots_dir.join(format!("{session_id}.drun"));
+        if let Some(parent) = output_path.parent()
+            && let Err(error) = std::fs::create_dir_all(parent)
+        {
+            return (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()).into_response();
+        }
+        Self::with_session(&app.handler.sessions, &session_id, |session| match session
+            .snapshot()
+            .write(&output_path)
+        {
+            Ok(()) => Self::json_response(&serde_json::json!({
+                "snapshot_path": output_path.to_string_lossy(),
+            })),
+            Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()).into_response(),
+        })
     }
 
     fn file_response(path: &str, bytes: &[u8]) -> Response {
@@ -320,6 +439,34 @@ impl WebServer {
         }
     }
 
+    fn with_session_mut(
+        sessions: &SessionMap,
+        session_id: &str,
+        handler: impl FnOnce(&mut drun_core::Session) -> Response,
+    ) -> Response {
+        let session_arc = match sessions.lock().unwrap().get(session_id).cloned() {
+            Some(arc) => arc,
+            None => {
+                return (
+                    StatusCode::NOT_FOUND,
+                    format!("session '{session_id}' not found"),
+                )
+                    .into_response();
+            }
+        };
+        match session_arc.try_lock() {
+            Ok(mut guard) => handler(&mut guard),
+            Err(std::sync::TryLockError::WouldBlock) => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                format!("session '{session_id}' is currently executing; retry shortly"),
+            )
+                .into_response(),
+            Err(std::sync::TryLockError::Poisoned(poisoned)) => handler(
+                &mut crate::handler::DrunHandler::recover_poison(session_id, poisoned),
+            ),
+        }
+    }
+
     fn read_checkpoint_stream(
         sessions: &SessionMap,
         session_id: &str,
@@ -348,18 +495,33 @@ impl WebServer {
 
 #[derive(Clone)]
 struct AppState {
-    sessions: SessionMap,
-    config: ConfigHandle,
+    handler: DrunHandler,
     mcp_port: u16,
     web_port: u16,
     started_at: Instant,
-    live_output: LiveOutputRegistry,
 }
 
 #[derive(Deserialize)]
 struct DiffQueryParams {
     from: Option<usize>,
     to: Option<usize>,
+}
+
+#[derive(Deserialize, Default)]
+struct ForkRequest {
+    checkpoint_id: Option<u64>,
+    checkpoint_label: Option<String>,
+}
+
+#[derive(Deserialize, Default)]
+struct RollbackRequest {
+    checkpoint_id: Option<u64>,
+    checkpoint_label: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct LabelRequest {
+    label: String,
 }
 
 #[derive(Serialize)]
@@ -396,6 +558,7 @@ impl From<Option<LiveEntry>> for LiveOutput {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::live_output::LiveOutputRegistry;
     use axum::body::to_bytes;
     use drun_core::{Config, Session};
     use std::collections::HashMap;
@@ -409,14 +572,20 @@ mod tests {
         Arc::new(Mutex::new(map))
     }
 
+    fn test_handler(sessions: SessionMap, config: Config) -> DrunHandler {
+        DrunHandler {
+            config: config.into(),
+            sessions,
+            live_output: LiveOutputRegistry::default(),
+        }
+    }
+
     fn app_state(sessions: SessionMap) -> AppState {
         AppState {
-            sessions,
-            config: Config::default().into(),
+            handler: test_handler(sessions, Config::default()),
             mcp_port: crate::DEFAULT_MCP_PORT,
             web_port: 7274,
             started_at: Instant::now(),
-            live_output: LiveOutputRegistry::default(),
         }
     }
 
@@ -689,6 +858,152 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn handle_session_fork_creates_a_new_session_branching_from_the_source() {
+        let mut source = Session::new(Config::default().into()).unwrap();
+        source.write_file("a.txt", b"hi".to_vec()).unwrap();
+        let sessions = session_map(vec![("s1", source)]);
+        let state = app_state(sessions.clone());
+
+        let response =
+            WebServer::handle_session_fork(State(state), Path("s1".to_string()), None).await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = body_string(response).await;
+        assert!(body.contains("\"workspace_file_count\":1"));
+        assert_eq!(
+            sessions.lock().unwrap().len(),
+            2,
+            "fork must add a new session, not replace the source"
+        );
+    }
+
+    #[tokio::test]
+    async fn handle_session_fork_returns_404_for_an_unknown_session() {
+        let response = WebServer::handle_session_fork(
+            State(app_state(session_map(vec![]))),
+            Path("missing".to_string()),
+            None,
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn handle_session_fork_returns_429_once_max_sessions_is_reached() {
+        let sessions = session_map(vec![(
+            "s1",
+            Session::new(Config::default().into()).unwrap(),
+        )]);
+        let config = Config {
+            max_sessions: Some(1),
+            ..Config::default()
+        };
+        let state = AppState {
+            handler: test_handler(sessions, config),
+            mcp_port: crate::DEFAULT_MCP_PORT,
+            web_port: 7274,
+            started_at: Instant::now(),
+        };
+
+        let response =
+            WebServer::handle_session_fork(State(state), Path("s1".to_string()), None).await;
+
+        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+    }
+
+    #[tokio::test]
+    async fn handle_session_rollback_moves_the_head_to_the_given_checkpoint() {
+        let mut source = Session::new(Config::default().into()).unwrap();
+        source.write_file("a.txt", b"one".to_vec()).unwrap(); // checkpoint 1
+        source.write_file("a.txt", b"two".to_vec()).unwrap(); // checkpoint 2
+        let sessions = session_map(vec![("s1", source)]);
+        let state = app_state(sessions.clone());
+
+        let response = WebServer::handle_session_rollback(
+            State(state),
+            Path("s1".to_string()),
+            Some(Json(RollbackRequest {
+                checkpoint_id: Some(1),
+                checkpoint_label: None,
+            })),
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let head = sessions.lock().unwrap()["s1"].lock().unwrap().current().id;
+        assert_eq!(head, 1);
+    }
+
+    #[tokio::test]
+    async fn handle_session_rollback_returns_400_without_a_checkpoint_id_or_label() {
+        let sessions = session_map(vec![(
+            "s1",
+            Session::new(Config::default().into()).unwrap(),
+        )]);
+
+        let response = WebServer::handle_session_rollback(
+            State(app_state(sessions)),
+            Path("s1".to_string()),
+            None,
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn handle_session_label_sets_the_session_label() {
+        let sessions = session_map(vec![(
+            "s1",
+            Session::new(Config::default().into()).unwrap(),
+        )]);
+        let state = app_state(sessions.clone());
+
+        let response = WebServer::handle_session_label(
+            State(state),
+            Path("s1".to_string()),
+            Json(LabelRequest {
+                label: "checkpoint-a".to_string(),
+            }),
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            sessions.lock().unwrap()["s1"]
+                .lock()
+                .unwrap()
+                .label
+                .as_deref(),
+            Some("checkpoint-a")
+        );
+    }
+
+    #[tokio::test]
+    async fn handle_session_snapshot_writes_a_drun_file_to_the_default_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut source = Session::new(Config::default().into()).unwrap();
+        source.write_file("a.txt", b"hi".to_vec()).unwrap();
+        let sessions = session_map(vec![("s1", source)]);
+        let config = Config {
+            snapshots_dir: dir.path().to_path_buf(),
+            ..Config::default()
+        };
+        let state = AppState {
+            handler: test_handler(sessions, config),
+            mcp_port: crate::DEFAULT_MCP_PORT,
+            web_port: 7274,
+            started_at: Instant::now(),
+        };
+
+        let response =
+            WebServer::handle_session_snapshot(State(state), Path("s1".to_string())).await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert!(dir.path().join("s1.drun").exists());
+    }
+
+    #[tokio::test]
     async fn handle_live_output_reports_not_running_for_an_idle_session() {
         let sessions = session_map(vec![(
             "s1",
@@ -718,7 +1033,7 @@ mod tests {
             Session::new(Config::default().into()).unwrap(),
         )]);
         let state = app_state(sessions);
-        let guard = state.live_output.start("s1", "echo hi");
+        let guard = state.handler.live_output.start("s1", "echo hi");
         guard.append("hello");
 
         let response = WebServer::handle_live_output(State(state), Path("s1".to_string())).await;

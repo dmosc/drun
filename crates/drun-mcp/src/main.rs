@@ -55,19 +55,7 @@ async fn main() -> SdkResult<()> {
     handler.start_shutdown_handler();
 
     if let Some(web_port) = handler.config.get().web_port.filter(|&p| p != 0) {
-        let web_sessions = std::sync::Arc::clone(&handler.sessions);
-        let web_config = handler.config.clone();
-        let web_live_output = handler.live_output.clone();
-        tokio::spawn(
-            web::WebServer::new(
-                web_sessions,
-                web_port,
-                web_config,
-                started_at,
-                web_live_output,
-            )
-            .serve(),
-        );
+        tokio::spawn(web::WebServer::new(handler.clone(), web_port, started_at).serve());
     }
 
     let mcp_port = mcp_port();
