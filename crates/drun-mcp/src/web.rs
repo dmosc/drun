@@ -106,7 +106,7 @@ impl WebServer {
     }
 
     async fn handle_status(State(app): State<AppState>) -> Response {
-        let sessions = app.handler.sessions.lock().unwrap();
+        let sessions = app.handler.sessions.lock().unwrap().clone();
         let config = app.handler.config.get();
         Self::json_response(&state::DaemonStatus::current(
             &sessions,
@@ -128,7 +128,7 @@ impl WebServer {
     }
 
     async fn handle_session_tree(State(app): State<AppState>) -> Response {
-        let sessions = app.handler.sessions.lock().unwrap();
+        let sessions = app.handler.sessions.lock().unwrap().clone();
         Self::json_response(&state::SessionTreeNode::forest(
             &sessions,
             &app.handler.live_output,
@@ -618,6 +618,45 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         let body = body_string(response).await;
         assert!(body.contains("s1"));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn handle_session_tree_releases_the_global_sessions_lock_before_walking_a_busy_session() {
+        let sessions = session_map(vec![(
+            "busy",
+            Session::new(Config::default().into()).unwrap(),
+        )]);
+        let busy_arc = sessions.lock().unwrap().get("busy").unwrap().clone();
+        let sessions_map = sessions.clone();
+        let app = app_state(sessions);
+
+        // Simulate an in-flight session_bash by holding the busy session's
+        // own lock on a separate OS thread until the test releases it.
+        let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+        let hold_thread = std::thread::spawn(move || {
+            let _guard = busy_arc.lock().unwrap();
+            let _ = release_rx.recv();
+        });
+
+        let tree_task = tokio::spawn(WebServer::handle_session_tree(State(app)));
+
+        // Give the spawned walk time to reach (and block on) the busy
+        // session's own lock inside SessionTreeNode::forest.
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        // The old code held the *global* sessions map lock across the whole
+        // (blocked) walk; every other request needing that lock — a fork, a
+        // delete, another poll — would have queued up behind this one busy
+        // session too. It must already be free once the map is only cloned.
+        assert!(
+            sessions_map.try_lock().is_ok(),
+            "the global sessions lock must be released before walking busy sessions"
+        );
+
+        release_tx.send(()).unwrap();
+        hold_thread.join().unwrap();
+        let response = tree_task.await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
     }
 
     #[tokio::test]
