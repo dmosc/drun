@@ -388,22 +388,6 @@
       margin-bottom: 10px;
     }
 
-    .context-command {
-      font-family: var(--mono);
-      font-size: 12px;
-      color: var(--text);
-      overflow-x: auto;
-      white-space: pre;
-      flex: 1 1 200px;
-      min-width: 0;
-    }
-
-    .context-command::before {
-      content: '$ ';
-      color: var(--accent);
-      font-weight: 700;
-    }
-
     .context-actions {
       display: flex;
       gap: 6px;
@@ -597,6 +581,14 @@
       margin-top: 12px;
     }
 
+    .output-section-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 4px;
+    }
+
     .output-pre {
       font-family: var(--mono);
       font-size: 12px;
@@ -604,6 +596,21 @@
       color: var(--text-dim);
       white-space: pre-wrap;
       word-break: break-all;
+    }
+
+    .output-pre-scroll {
+      max-height: 200px;
+      overflow-y: auto;
+    }
+
+    .output-command {
+      color: var(--text);
+    }
+
+    .output-command::before {
+      content: '$ ';
+      color: var(--accent);
+      font-weight: 700;
     }
 
     .output-empty {
@@ -1258,9 +1265,7 @@
 
       bar.innerHTML = `
         <span class="mono-id">Checkpoint #${cpId}${labelSuffix}</span>
-        ${hist?.command ? `<code class="context-command">${escHtml(hist.command)}</code>` : '<span class="context-command"></span>'}
         <div class="context-actions">
-          ${hist?.command ? `<button class="btn" onclick="copyToClipboard('${escHtml(hist.command)}', this)">Copy command</button>` : ''}
           ${forkButtons}
           <button class="btn" onclick="onForkFromHereClick()">Fork from here</button>
           <button class="btn" id="rollback-here-btn" ${rollbackHidden} onclick="onRollbackHereClick()">Roll back to here</button>
@@ -1269,19 +1274,26 @@
 
     // ── Rendering: output column ──────────────────────────────────────────────
 
-    function renderOutputColumn(cached) {
+    function renderOutputColumn(cached, hist) {
       const body = document.getElementById('output-body');
       if (!cached) { body.innerHTML = '<div class="loading-note">Loading…</div>'; return; }
 
+      const commandHtml = hist?.command ? `
+        <div class="output-section-head">
+          <span class="output-label" style="margin:0">Command</span>
+          <button class="btn btn-link" onclick="copyToClipboard('${escHtml(hist.command)}', this)">Copy command</button>
+        </div>
+        <pre class="output-pre output-command output-pre-scroll">${escHtml(hist.command)}</pre>` : '';
+
       const stdoutHtml = cached.stdout
-        ? `<pre class="output-pre">${escHtml(cached.stdout)}</pre>`
+        ? `<pre class="output-pre output-pre-scroll">${escHtml(cached.stdout)}</pre>`
         : '<span class="output-empty">No output</span>';
 
       const stderrHtml = cached.stderr
-        ? `<div class="output-label" style="color:var(--red)">Stderr</div><pre class="output-pre">${escHtml(cached.stderr)}</pre>`
+        ? `<div class="output-label" style="color:var(--red)">Stderr</div><pre class="output-pre output-pre-scroll">${escHtml(cached.stderr)}</pre>`
         : '';
 
-      body.innerHTML = `<div class="output-label">Stdout</div>${stdoutHtml}${stderrHtml}`;
+      body.innerHTML = `${commandHtml}<div class="output-label">Stdout</div>${stdoutHtml}${stderrHtml}`;
     }
 
     // ── Rendering: files column ───────────────────────────────────────────────
@@ -1443,7 +1455,7 @@
         return;
       }
 
-      renderOutputColumn(cached);
+      renderOutputColumn(cached, hist);
       renderFilesTree(cached, hist);
       renderFilesPreview(cached, viewState.selectedFilePath
         ? viewState.fileCache.get(`${sessionId}:${cpId}:${viewState.selectedFilePath}`)
