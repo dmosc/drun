@@ -372,9 +372,9 @@ impl FileDelta {
             if !previous.contains_key(key) {
                 added.push(key.clone());
             } else {
-                let cur = &current_files[key];
-                let prev = &previous[key];
-                if !Arc::ptr_eq(cur, prev) && cur != prev {
+                let current_bytes = &current_files[key];
+                let previous_bytes = &previous[key];
+                if !Arc::ptr_eq(current_bytes, previous_bytes) && current_bytes != previous_bytes {
                     modified.push(key.clone());
                 }
             }
