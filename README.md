@@ -6,7 +6,7 @@
 
 </div>
 
-## Git for agents with ephemeral runtime
+## Ephemeral runtime harness for agentic workflows
 
 Drun is a platform that allows you to virtualize components of your host into an
 ephemeral runtime to serve as the agent's workspace with git-like primitives
