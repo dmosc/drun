@@ -206,7 +206,10 @@ impl Session {
                 std::os::unix::fs::symlink(host_path, &dest)?;
             }
         }
-        let child = sandbox::sandboxed_sh(command, workspace_dir.path())?
+        let mut read_paths: Vec<PathBuf> = self.overlays.values().cloned().collect();
+        read_paths.extend(self.config.get().mount_allowlist);
+        let child = sandbox::Sandbox::new(workspace_dir.path(), read_paths)
+            .command(command)?
             .current_dir(workspace_dir.path())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
@@ -979,6 +982,81 @@ mod tests {
         let squashed = s.squash_checkpoints(1, 2, None).unwrap();
 
         assert_eq!(squashed.command.as_deref(), Some("echo one && echo two"));
+    }
+
+    // These two exercise the real sandbox-exec profile end to end, so they
+    // (like descendant_pids_finds_a_grandchild_process below) only pass when
+    // `cargo test` itself runs unsandboxed. macOS refuses to apply a second
+    // sandbox-exec profile inside an already-sandboxed process
+    // ("sandbox_apply: Operation not permitted"), so running the suite from
+    // inside another sandbox (e.g. a drun session) fails them both — not a
+    // sign the restriction logic is wrong, just that this nests one sandbox
+    // too deep to self-test.
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn execute_bash_can_still_read_and_write_within_the_workspace() {
+        let mut s = session();
+        s.write_file("greeting.txt", b"hello".to_vec()).unwrap();
+        let cp = s.execute_bash("cat greeting.txt", &mut |_| {}).unwrap();
+        assert_eq!(cp.stdout.trim(), "hello");
+        assert_eq!(cp.stderr, "");
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn execute_bash_cannot_read_a_host_path_outside_the_sandbox_allowlist() {
+        // A tempdir the session never mounted or overlaid — distinct from
+        // the workspace's own tempdir even though both live under the same
+        // OS temp root, since only the workspace's exact subpath is allowed.
+        let secret_dir = tempfile::tempdir().unwrap();
+        let secret_path = secret_dir.path().join("secret.txt");
+        std::fs::write(&secret_path, b"do-not-leak").unwrap();
+
+        let mut s = session();
+        let cp = s
+            .execute_bash(&format!("cat {}", secret_path.display()), &mut |_| {})
+            .unwrap();
+
+        assert!(!cp.stdout.contains("do-not-leak"));
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn execute_bash_read_access_reflects_a_mount_allowlist_edit_without_recreating_the_session() {
+        // Same read-path denial as the test above, but the fix is a
+        // mount_allowlist config edit — no session recreation and no daemon
+        // restart — mirroring
+        // mount_reflects_a_config_file_edit_without_recreating_the_session,
+        // just for session_bash's sandbox instead of session_mount.
+        let extra_dir = tempfile::tempdir().unwrap();
+        let extra_path = extra_dir.path().join("readable.txt");
+        std::fs::write(&extra_path, b"now-readable").unwrap();
+
+        let config_dir = tempfile::tempdir().unwrap();
+        let config_path = config_dir.path().join("config.toml");
+        std::fs::write(&config_path, "mount_allowlist = []\n").unwrap();
+
+        let mut s = Session::new(ConfigHandle::new(
+            Config::load_from(Some(&config_path)),
+            Some(config_path.clone()),
+        ))
+        .unwrap();
+
+        let cat_extra = format!("cat {}", extra_path.display());
+        let cp = s.execute_bash(&cat_extra, &mut |_| {}).unwrap();
+        assert!(!cp.stdout.contains("now-readable"));
+
+        std::fs::write(
+            &config_path,
+            format!(
+                "mount_allowlist = [{:?}]\n",
+                extra_dir.path().to_str().unwrap()
+            ),
+        )
+        .unwrap();
+
+        let cp = s.execute_bash(&cat_extra, &mut |_| {}).unwrap();
+        assert!(cp.stdout.contains("now-readable"));
     }
 
     #[test]

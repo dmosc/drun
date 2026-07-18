@@ -115,21 +115,12 @@ impl Config {
             }
         };
         match toml::from_str::<Config>(&contents) {
-            Ok(config) => config.with_builtin_domains(),
+            Ok(config) => config,
             Err(e) => {
                 eprintln!("drun: failed to parse config at {}: {e}", path.display());
                 Self::default()
             }
         }
-    }
-
-    fn with_builtin_domains(mut self) -> Self {
-        for domain in Self::default().domain_allowlist {
-            if !self.domain_allowlist.contains(&domain) {
-                self.domain_allowlist.push(domain);
-            }
-        }
-        self
     }
 }
 
@@ -310,43 +301,6 @@ mod tests {
     }
 
     #[test]
-    fn with_builtin_domains_keeps_builtins_alongside_user_domains() {
-        let config = Config {
-            domain_allowlist: vec!["custom.example.com".to_string()],
-            ..Config::default()
-        }
-        .with_builtin_domains();
-
-        assert!(
-            config
-                .domain_allowlist
-                .contains(&"custom.example.com".to_string())
-        );
-        for builtin in Config::default().domain_allowlist {
-            assert!(
-                config.domain_allowlist.contains(&builtin),
-                "expected built-in domain '{builtin}' to survive a user-supplied allowlist"
-            );
-        }
-    }
-
-    #[test]
-    fn with_builtin_domains_does_not_duplicate_domains_already_present() {
-        let config = Config {
-            domain_allowlist: vec!["pypi.org".to_string()],
-            ..Config::default()
-        }
-        .with_builtin_domains();
-
-        let occurrences = config
-            .domain_allowlist
-            .iter()
-            .filter(|d| *d == "pypi.org")
-            .count();
-        assert_eq!(occurrences, 1);
-    }
-
-    #[test]
     fn config_handle_without_a_path_stays_fixed() {
         let handle = ConfigHandle::from(Config {
             bash_timeout_ms: 1234,
@@ -394,18 +348,31 @@ mod tests {
     }
 
     #[test]
-    fn load_from_valid_toml_overrides_fields_and_merges_builtin_domains() {
+    fn load_from_valid_toml_overrides_only_the_fields_it_sets() {
         let config =
             load_from_toml("bash_timeout_ms = 5000\ndomain_allowlist = [\"custom.example.com\"]\n");
         assert_eq!(config.bash_timeout_ms, 5000);
         // Untouched fields still come from #[serde(default)] -> Config::default().
         assert_eq!(config.fetch_timeout_ms, Config::default().fetch_timeout_ms);
-        // domain_allowlist is additive, not a replacement (see with_builtin_domains).
-        assert!(
-            config
-                .domain_allowlist
-                .contains(&"custom.example.com".to_string())
+        // An explicit domain_allowlist replaces the default outright — it is
+        // no longer merged with the built-in domains, so an operator can
+        // actually restrict session_fetch below the defaults.
+        assert_eq!(
+            config.domain_allowlist,
+            vec!["custom.example.com".to_string()]
         );
-        assert!(config.domain_allowlist.contains(&"pypi.org".to_string()));
+    }
+
+    #[test]
+    fn load_from_missing_domain_allowlist_key_falls_back_to_builtin_domains() {
+        let config = load_from_toml("bash_timeout_ms = 5000\n");
+        assert_eq!(config.domain_allowlist, Config::default().domain_allowlist);
+    }
+
+    #[test]
+    fn load_from_explicit_empty_domain_allowlist_denies_everything() {
+        let config = load_from_toml("domain_allowlist = []\n");
+        assert!(config.domain_allowlist.is_empty());
+        assert!(!config.domain_allowed("pypi.org"));
     }
 }

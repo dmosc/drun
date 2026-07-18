@@ -14,12 +14,24 @@ important before deploying drun in any sensitive environment.
 
 Every `session_bash` call runs inside a sandboxed child process:
 
-- **macOS** — `sandbox-exec` with a profile that denies everything by default
-  and allows file writes only under the session's tempdir, `/private/tmp`, and
-  `/dev/null`.
-- **Linux** — `bwrap` with `--ro-bind / /` (host filesystem mounted read-only)
-  and a read-write bind only for the session workspace, plus `--unshare-net` to
-  remove network access entirely.
+- **macOS** — `sandbox-exec` with a profile that denies everything by default.
+  Reads are limited to the session workspace, any mounted overlays
+  (`node_modules`, `.venv`, `target`, etc.), the operator's `mount_allowlist`
+  entries, a fixed set of system directories (`/usr`, `/bin`, `/sbin`, `/opt`,
+  `/System`, `/Library`, `/etc`, `/dev`, `/private/tmp`), and every directory on
+  the daemon's own `$PATH` — not the whole host filesystem. Writes are limited
+  to the session's tempdir, `/private/tmp`, and `/dev/null`.
+- **Linux** — `bwrap` with individual `--ro-bind` mounts for the same read set
+  (workspace, overlays, `mount_allowlist`, fixed system directories, `$PATH`
+  entries) instead of binding the whole host root, plus a read-write bind for
+  the session workspace and `--unshare-net` to remove network access entirely.
+
+`mount_allowlist` is read fresh from `config.toml` on every `session_bash` call,
+the same as every other policy field below — an operator edit (e.g. via
+`drun-mcp config add-path`) takes effect on the next call with no daemon
+restart. Unlike its effect on `session_mount`, an _empty_ `mount_allowlist`
+grants no extra sandbox reads — it only relaxes the `session_mount` check below;
+it never falls back to "the whole host is readable."
 
 There is no network access from inside `session_bash` on either platform — not
 even to allowlisted domains. The only outbound network path is `session_fetch`,
@@ -29,14 +41,14 @@ which runs on the host (not in the sandbox) and is gated by `domain_allowlist`.
 
 The server enforces a set of policy restrictions on all sessions:
 
-| Config key               | What it restricts                                                                                                             |
-| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
-| `domain_allowlist`       | Domains reachable via `session_fetch`. Supports exact hostnames and `*.example.com` wildcards, or `["*"]` for all.            |
-| `mount_allowlist`        | Host path prefixes that `session_mount` may read from. Checked against the canonicalized path; empty means all paths allowed. |
-| `export_root`            | Directory that `session_export` and `session_snapshot` may write into.                                                        |
-| `env_allowlist`          | Host environment variable names readable via `session_get_env`.                                                               |
-| `bash_command_denylist`  | Command substrings always rejected by `session_bash` before execution.                                                        |
-| `bash_command_allowlist` | Command substrings permitted by `session_bash`. Empty means all commands allowed (subject to the denylist).                   |
+| Config key               | What it restricts                                                                                                                                                                                                                                                                             |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `domain_allowlist`       | Domains reachable via `session_fetch`. Supports exact hostnames and `*.example.com` wildcards, or `["*"]` for all.                                                                                                                                                                            |
+| `mount_allowlist`        | Host path prefixes that `session_mount` may read from (empty means all paths allowed there) — and, separately, host directories `session_bash`'s sandbox may read from directly, in addition to the workspace, overlays, and fixed system/PATH dirs (empty means no extra directories there). |
+| `export_root`            | Directory that `session_export` and `session_snapshot` may write into.                                                                                                                                                                                                                        |
+| `env_allowlist`          | Host environment variable names readable via `session_get_env`.                                                                                                                                                                                                                               |
+| `bash_command_denylist`  | Command substrings always rejected by `session_bash` before execution.                                                                                                                                                                                                                        |
+| `bash_command_allowlist` | Command substrings permitted by `session_bash`. Empty means all commands allowed (subject to the denylist).                                                                                                                                                                                   |
 
 Agents operate within whatever the operator configured. They cannot expand their
 own permissions at runtime.
@@ -101,6 +113,10 @@ loads its full contents into the session's in-memory workspace.
 
 **drun protects against:**
 
+- AI-generated code reading arbitrary host files — `session_bash` can only read
+  the session workspace, mounted overlays, `mount_allowlist` entries, and a
+  fixed set of system/PATH directories needed to run installed toolchains, not
+  the rest of the host filesystem
 - AI-generated code reading host environment variables not in the allowlist
 - AI-generated code making outbound network connections from `session_bash` (no
   network access in the sandbox at all)
@@ -112,6 +128,11 @@ loads its full contents into the session's in-memory workspace.
 
 **drun does not protect against:**
 
+- The daemon's own `$PATH` pointing at a directory an untrusted party controls —
+  every directory on `$PATH` is readable inside the sandbox so installed
+  toolchains keep working, so a compromised or attacker-writable `$PATH` entry
+  is readable (and, since `process-exec*` is unrestricted, executable) from
+  inside `session_bash`
 - A misconfigured operator allowlist (e.g., `domain_allowlist = ["*"]`)
 - Side-channel attacks between sessions (timing, cache) — all sessions share the
   same OS process
