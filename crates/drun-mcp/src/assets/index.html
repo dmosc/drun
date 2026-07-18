@@ -26,7 +26,7 @@
       --red:         #e0556a;
       --red-bg:      #25090f;
       --mono:        'SF Mono', 'Cascadia Mono', 'Fira Code', Consolas, monospace;
-      --radius:      8px;
+      --radius:      7px;
     }
 
     html, body {
@@ -34,8 +34,8 @@
       background: var(--bg);
       color: var(--text);
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-      font-size: 14px;
-      line-height: 1.5;
+      font-size: 13.5px;
+      line-height: 1.45;
     }
 
     /* ── Header ────────────────────────────────────────────────────────── */
@@ -43,7 +43,7 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 12px 24px;
+      padding: 9px 16px;
       background: var(--s1);
       border-bottom: 1px solid var(--border);
       position: sticky;
@@ -51,30 +51,16 @@
       z-index: 10;
     }
 
-    .header-logo {
-      display: flex;
-      align-items: baseline;
-      gap: 10px;
-    }
-
-    .logo-mark { color: var(--accent); font-size: 18px; }
-
-    .logo-name {
-      font-size: 15px;
-      font-weight: 700;
-      letter-spacing: -0.3px;
-    }
-
-    .logo-tagline {
-      font-size: 12px;
-      color: var(--text-muted);
-    }
+    .header-logo { display: flex; align-items: baseline; gap: 8px; }
+    .logo-mark { color: var(--accent); font-size: 16px; }
+    .logo-name { font-size: 14px; font-weight: 700; letter-spacing: -0.3px; }
+    .logo-tagline { font-size: 11.5px; color: var(--text-muted); }
 
     .header-status {
       display: flex;
       align-items: center;
-      gap: 8px;
-      font-size: 12px;
+      gap: 7px;
+      font-size: 11.5px;
       color: var(--text-dim);
     }
 
@@ -93,18 +79,17 @@
     #status-strip {
       display: flex;
       align-items: center;
-      gap: 8px;
-      padding: 7px 24px;
+      gap: 7px;
+      padding: 5px 16px;
       background: var(--s1);
       border-bottom: 1px solid var(--border);
       font-family: var(--mono);
-      font-size: 11.5px;
+      font-size: 11px;
       color: var(--text-dim);
     }
 
     .stat-item { white-space: nowrap; }
     .stat-sep { color: var(--text-muted); }
-
     .stat-warn   { color: var(--amber); }
     .stat-danger { color: var(--red); }
 
@@ -114,7 +99,7 @@
       border: none;
       color: var(--text-muted);
       font-family: var(--mono);
-      font-size: 11.5px;
+      font-size: 11px;
       cursor: pointer;
       padding: 2px 4px;
     }
@@ -124,7 +109,7 @@
     #daemon-panel {
       background: var(--s1);
       border-bottom: 1px solid var(--border);
-      padding: 12px 24px 16px;
+      padding: 8px 16px 10px;
     }
 
     #daemon-panel.hidden { display: none; }
@@ -132,19 +117,15 @@
     .daemon-row {
       display: flex;
       gap: 10px;
-      padding: 3px 0;
-      font-size: 12px;
-      line-height: 1.6;
+      padding: 2px 0;
+      font-size: 11.5px;
+      line-height: 1.5;
     }
 
     .daemon-row-label {
       flex-shrink: 0;
-      width: 90px;
+      width: 80px;
       color: var(--text-muted);
-      text-transform: uppercase;
-      font-size: 10px;
-      letter-spacing: 0.8px;
-      padding-top: 2px;
     }
 
     .daemon-row-value {
@@ -157,45 +138,24 @@
     #page-body {
       max-width: 1400px;
       margin: 0 auto;
-      padding: 0 24px 64px;
+      padding: 0 16px 40px;
     }
 
-    section { margin-top: 28px; }
+    section { margin-top: 16px; }
     section.hidden { display: none !important; }
 
     .section-label {
-      font-size: 10px;
+      font-size: 11px;
       font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 1.2px;
-      color: var(--text-muted);
-      margin-bottom: 12px;
-    }
-
-    .section-title-row {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      margin-bottom: 14px;
-    }
-
-    .section-title-row .section-label { margin-bottom: 0; }
-
-    .detail-actions {
-      margin-left: auto;
-      display: flex;
-      gap: 6px;
-    }
-
-    .mono-id {
-      font-family: var(--mono);
-      font-size: 13px;
       color: var(--text-dim);
+      margin-bottom: 8px;
     }
+
+    .mono-id { font-family: var(--mono); font-size: 12.5px; color: var(--text-dim); }
 
     .label-badge {
-      font-size: 12px;
-      padding: 1px 8px;
+      font-size: 11.5px;
+      padding: 1px 7px;
       border-radius: 4px;
       background: var(--accent-bg);
       color: var(--accent);
@@ -204,14 +164,14 @@
     /* ── Session cards ─────────────────────────────────────────────────── */
     #sessions-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
-      gap: 10px;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 8px;
     }
 
     .empty-state {
       color: var(--text-muted);
-      font-size: 13px;
-      padding: 32px 0;
+      font-size: 12.5px;
+      padding: 24px 0;
       text-align: center;
       grid-column: 1 / -1;
     }
@@ -220,90 +180,53 @@
       background: var(--s1);
       border: 1px solid var(--border);
       border-radius: var(--radius);
-      padding: 14px 15px;
-      cursor: pointer;
+      overflow: hidden;
       transition: border-color 0.12s, background 0.12s;
-      user-select: none;
-    }
-
-    .session-card:hover  { border-color: var(--border-hi); background: var(--s2); }
-    .session-card.active { border-color: var(--accent); background: var(--accent-bg); }
-
-    .card-header-row {
       display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 6px;
-      margin-bottom: 5px;
+      flex-direction: column;
+      height: 100%;
     }
+
+    .session-card.active { border-color: var(--accent); }
+
+    .session-card-main {
+      padding: 9px 11px;
+      cursor: pointer;
+      user-select: none;
+      flex: 1;
+    }
+
+    .session-card-main:hover { background: var(--s2); }
+    .session-card.active .session-card-main { background: var(--accent-bg); }
 
     .card-session-id {
       font-family: var(--mono);
-      font-size: 11px;
+      font-size: 10.5px;
       color: var(--text-muted);
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
-    }
-
-    .card-actions {
-      display: flex;
-      gap: 2px;
-      flex-shrink: 0;
-    }
-
-    .icon-btn {
-      background: none;
-      border: 1px solid transparent;
-      border-radius: 4px;
-      color: var(--text-muted);
-      font-family: var(--mono);
-      font-size: 11px;
-      line-height: 1;
-      padding: 3px 5px;
-      cursor: pointer;
-      transition: color 0.12s, border-color 0.12s, background 0.12s;
-    }
-
-    .icon-btn:hover {
-      color: var(--text);
-      border-color: var(--border-hi);
-      background: var(--s2);
-    }
-
-    .icon-btn-danger:hover {
-      color: var(--red);
-      border-color: rgba(224, 85, 106, 0.4);
-      background: var(--red-bg);
+      margin-bottom: 4px;
     }
 
     .card-session-label {
-      font-size: 13px;
+      font-size: 12.5px;
       font-weight: 600;
       color: var(--text);
-      margin-bottom: 10px;
-      min-height: 20px;
+      margin-bottom: 8px;
     }
 
-    .card-session-label.unlabeled {
-      font-weight: 400;
-      font-style: italic;
-      color: var(--text-muted);
-    }
+    .card-session-label.unlabeled { font-weight: 400; color: var(--text-muted); }
 
-    .card-badges {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 5px;
-    }
+    .card-badges { display: flex; flex-wrap: wrap; gap: 4px; }
 
     .badge {
       display: inline-flex;
       align-items: center;
       gap: 3px;
-      font-size: 11px;
+      font-size: 10.5px;
       font-family: var(--mono);
-      padding: 2px 7px;
+      padding: 1px 6px;
       border-radius: 4px;
     }
 
@@ -318,386 +241,263 @@
       50%      { opacity: 0.35; }
     }
 
-    .live-indicator-dot {
-      display: inline-block;
-      animation: livePulse 1.4s ease-in-out infinite;
-    }
+    .live-indicator-dot { display: inline-block; animation: livePulse 1.4s ease-in-out infinite; }
 
-    /* ── Timeline ──────────────────────────────────────────────────────── */
-    .timeline-scroll { overflow-x: auto; padding-bottom: 8px; }
-
-    .timeline-track {
+    .card-actions-row {
       display: flex;
-      align-items: flex-start;
-      padding: 4px 0 16px;
-      min-width: max-content;
+      border-top: 1px solid var(--border);
     }
 
-    .timeline-node {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      position: relative;
-      cursor: pointer;
-      user-select: none;
-    }
-
-    .timeline-node + .timeline-node::before {
-      content: '';
-      position: absolute;
-      right: 100%;
-      top: 15px;
-      width: 32px;
-      height: 2px;
-      background: var(--border-hi);
-    }
-
-    .cp-bubble {
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-      border: 2px solid rgba(124, 106, 245, 0.28);
-      background: var(--s1);
-      display: flex;
-      align-items: center;
-      justify-content: center;
+    .card-action {
+      flex: 1;
+      background: none;
+      border: none;
+      border-right: 1px solid var(--border);
+      color: var(--text-dim);
       font-size: 11px;
-      font-weight: 700;
-      font-family: var(--mono);
-      color: rgba(124, 106, 245, 0.42);
-      margin: 0 16px;
-      transition: border-color 0.12s, background 0.12s, color 0.12s, box-shadow 0.12s;
-    }
-
-    .timeline-node:hover:not(.selected):not(.is-head) .cp-bubble {
-      border-color: rgba(124, 106, 245, 0.55);
-      color: rgba(124, 106, 245, 0.65);
-    }
-
-    /* head = latest checkpoint */
-    .timeline-node.is-head:not(.selected) .cp-bubble {
-      border-color: rgba(79, 217, 138, 0.38);
-      background: rgba(11, 34, 24, 0.5);
-      color: rgba(79, 217, 138, 0.5);
-    }
-
-    .timeline-node.is-head:hover:not(.selected) .cp-bubble {
-      border-color: rgba(79, 217, 138, 0.62);
-      color: rgba(79, 217, 138, 0.7);
-    }
-
-    .timeline-node.selected:not(.is-head) .cp-bubble {
-      border-color: var(--accent);
-      background: var(--accent-bg);
-      color: var(--accent);
-      box-shadow: 0 0 0 3px rgba(124, 106, 245, 0.22);
-    }
-
-    /* selected: head → green neon */
-    .timeline-node.selected.is-head .cp-bubble {
-      border-color: var(--green);
-      background: var(--green-bg);
-      color: var(--green);
-      box-shadow: 0 0 0 3px rgba(79, 217, 138, 0.22);
-    }
-
-    .cp-name {
-      margin-top: 6px;
-      font-size: 10px;
-      font-family: var(--mono);
-      color: var(--text-muted);
-      text-align: center;
-      max-width: 72px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .cp-name.labeled { color: var(--accent); }
-
-    .cp-forks {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 3px;
-      margin-top: 5px;
-    }
-
-    .cp-fork-link {
-      font-size: 9px;
-      font-family: var(--mono);
-      color: var(--accent);
-      background: var(--accent-bg);
-      border: 1px solid rgba(124, 106, 245, 0.3);
-      padding: 1px 6px;
-      border-radius: 3px;
+      padding: 6px 2px;
       cursor: pointer;
-      white-space: nowrap;
-      transition: background 0.1s;
+      transition: color 0.12s, background 0.12s;
     }
 
-    .cp-fork-link:hover { background: rgba(124, 106, 245, 0.2); }
+    .card-action:last-child { border-right: none; }
+    .card-action:hover { color: var(--text); background: var(--s2); }
+    .card-action-danger:hover { color: var(--red); background: var(--red-bg); }
 
-
-    /* ── Checkpoint detail ─────────────────────────────────────────────── */
-    .command-row {
+    /* ── Context bar ───────────────────────────────────────────────────── */
+    .context-bar {
       display: flex;
       align-items: center;
-      gap: 10px;
+      flex-wrap: wrap;
+      gap: 8px;
       background: var(--s1);
       border: 1px solid var(--border);
       border-radius: var(--radius);
-      padding: 9px 14px;
-      margin-bottom: 14px;
+      padding: 8px 11px;
+      margin-bottom: 10px;
     }
 
-    .command-prompt {
-      color: var(--accent);
+    .context-command {
       font-family: var(--mono);
-      font-weight: 700;
-      flex-shrink: 0;
-    }
-
-    .command-text {
-      font-family: var(--mono);
-      font-size: 12.5px;
+      font-size: 12px;
       color: var(--text);
       overflow-x: auto;
       white-space: pre;
-      flex: 1;
+      flex: 1 1 200px;
+      min-width: 0;
     }
 
-    .copy-btn {
+    .context-command::before { content: '$ '; color: var(--accent); font-weight: 700; }
+
+    .context-actions { display: flex; gap: 6px; margin-left: auto; flex-shrink: 0; }
+
+    .btn {
       background: none;
       border: 1px solid var(--border-hi);
       border-radius: 4px;
       color: var(--text-dim);
-      font-family: var(--mono);
-      font-size: 10.5px;
-      padding: 2px 7px;
-      cursor: pointer;
-      flex-shrink: 0;
-      transition: color 0.12s, border-color 0.12s;
-    }
-
-    .copy-btn:hover { color: var(--text); border-color: var(--accent); }
-
-    .detail-grid {
-      display: grid;
-      grid-template-columns: 260px 1fr;
-      gap: 14px;
-    }
-
-    @media (max-width: 720px) {
-      .detail-grid { grid-template-columns: 1fr; }
-    }
-
-    .panel {
-      background: var(--s1);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      overflow: hidden;
-      display: flex;
-      flex-direction: column;
-    }
-
-    .panel-head {
-      padding: 9px 14px;
-      border-bottom: 1px solid var(--border);
-      font-size: 10px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.9px;
-      color: var(--text-muted);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      flex-shrink: 0;
-    }
-
-    .panel-head-counts {
       font-size: 11px;
-      font-family: var(--mono);
-      font-weight: 400;
-      text-transform: none;
-      letter-spacing: 0;
+      padding: 4px 9px;
+      cursor: pointer;
+      transition: color 0.12s, border-color 0.12s, background 0.12s;
+      white-space: nowrap;
     }
 
-    .panel-body {
-      overflow-y: auto;
-      flex: 1;
-      max-height: 300px;
+    .btn:hover { color: var(--text); border-color: var(--accent); }
+    .btn-link { border: none; padding: 2px 4px; }
+
+    /* ── Live bar ──────────────────────────────────────────────────────── */
+    .live-bar {
+      background: var(--s1);
+      border: 1px solid rgba(79, 217, 138, 0.3);
+      border-radius: var(--radius);
+      margin-bottom: 10px;
+      overflow: hidden;
     }
 
-    .file-row {
+    .live-bar.hidden { display: none; }
+
+    .live-bar-head {
       display: flex;
       align-items: center;
       gap: 8px;
-      padding: 5px 14px;
+      padding: 6px 11px;
+      border-bottom: 1px solid var(--border);
+      font-family: var(--mono);
+      font-size: 11.5px;
+    }
+
+    .live-bar-command { flex: 1; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* ── Columns ───────────────────────────────────────────────────────── */
+    .columns-grid {
+      display: grid;
+      grid-template-columns: 190px minmax(220px, 1fr) minmax(260px, 1.3fr);
+      gap: 10px;
+      align-items: start;
+    }
+
+    @media (max-width: 900px) {
+      .columns-grid { grid-template-columns: 1fr; }
+    }
+
+    .column {
+      background: var(--s1);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .column-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 6px 10px;
+      border-bottom: 1px solid var(--border);
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-dim);
+      flex-shrink: 0;
+    }
+
+    .column-head-hint { font-size: 10.5px; font-weight: 400; font-family: var(--mono); color: var(--text-muted); }
+
+    .column-body { overflow-y: auto; }
+
+    #checkpoints-list { max-height: 480px; }
+    #output-body { max-height: 480px; padding: 10px; }
+    #files-tree { max-height: 170px; border-bottom: 1px solid var(--border); }
+    #files-preview { max-height: 300px; overflow-y: auto; }
+
+    .empty-column-note {
+      padding: 12px 10px;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    /* ── Checkpoint list ───────────────────────────────────────────────── */
+    .cp-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      cursor: pointer;
+      border-left: 2px solid transparent;
+      font-family: var(--mono);
+      font-size: 11.5px;
+    }
+
+    .cp-row:hover { background: var(--s2); }
+    .cp-row.selected { background: var(--accent-bg); border-left-color: var(--accent); }
+    .cp-row.is-head:not(.selected) { border-left-color: rgba(79, 217, 138, 0.4); }
+    .cp-row.selected.is-head { background: var(--green-bg); border-left-color: var(--green); }
+
+    .cp-row-num { color: var(--text-dim); flex-shrink: 0; }
+
+    .cp-row-label {
+      color: var(--accent);
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .cp-row-delta { flex-shrink: 0; font-size: 10px; display: flex; gap: 4px; }
+
+    /* ── Output column ─────────────────────────────────────────────────── */
+    .output-label {
+      font-size: 10.5px;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+    }
+
+    .output-label:not(:first-child) { margin-top: 12px; }
+
+    .output-pre {
       font-family: var(--mono);
       font-size: 12px;
+      line-height: 1.55;
+      color: var(--text-dim);
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    .output-empty { font-size: 12px; color: var(--text-muted); }
+    .loading-note { padding: 10px; font-size: 12px; color: var(--text-muted); }
+
+    /* ── Files column ──────────────────────────────────────────────────── */
+    .file-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      font-family: var(--mono);
+      font-size: 11.5px;
       cursor: default;
     }
 
-    .file-row.tree-file {
-      cursor: pointer;
-      border-radius: 4px;
-      margin: 0 6px;
-      width: calc(100% - 12px);
-    }
-
+    .file-row.tree-file { cursor: pointer; }
     .file-row.tree-file:hover { background: var(--s2); }
     .file-row.tree-file.active { background: var(--accent-bg); }
     .file-row.tree-file.active .file-path { color: var(--accent); }
 
-    .file-sigil {
-      width: 12px;
-      font-weight: 700;
-      flex-shrink: 0;
-      text-align: center;
-    }
-
+    .file-sigil { width: 10px; font-weight: 700; flex-shrink: 0; text-align: center; }
     .sigil-a { color: var(--green); }
     .sigil-m { color: var(--amber); }
     .sigil-r { color: var(--red); }
 
-    .file-path {
-      color: var(--text-dim);
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      flex: 1;
-    }
-
-    .file-size {
-      color: var(--text-muted);
-      font-size: 10.5px;
-      flex-shrink: 0;
-    }
+    .file-path { color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+    .file-size { color: var(--text-muted); font-size: 10px; flex-shrink: 0; }
 
     .tree-dir { margin: 0; }
 
     .tree-dir-label {
       display: flex;
       align-items: center;
-      gap: 6px;
-      padding: 5px 14px;
+      gap: 5px;
+      padding: 4px 10px;
       font-family: var(--mono);
-      font-size: 12px;
+      font-size: 11.5px;
       color: var(--text-dim);
       cursor: pointer;
       list-style: none;
     }
 
     .tree-dir-label::-webkit-details-marker { display: none; }
-    .tree-dir-label::before { content: '▸'; color: var(--text-muted); font-size: 10px; width: 8px; }
+    .tree-dir-label::before { content: '▸'; color: var(--text-muted); font-size: 9px; width: 8px; }
     .tree-dir[open] > .tree-dir-label::before { content: '▾'; }
+    .tree-dir-body { padding-left: 12px; }
+    .tree-removed { border-top: 1px solid var(--border); margin-top: 2px; padding-top: 2px; }
 
-    .tree-dir-body { padding-left: 14px; }
-
-    .tree-removed { border-top: 1px solid var(--border); margin-top: 4px; padding-top: 4px; }
-
-    .panel-empty {
-      padding: 14px;
-      font-size: 12px;
-      color: var(--text-muted);
-      font-style: italic;
-    }
-
-    .file-pane-head {
+    .file-preview-head {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 10px;
-      padding: 8px 14px;
+      gap: 8px;
+      padding: 6px 10px;
       border-bottom: 1px solid var(--border);
     }
 
-    .file-preview-image {
-      max-width: 100%;
-      border-radius: 4px;
-      display: block;
-    }
+    .file-preview-body { padding: 10px; }
+    .file-preview-image { max-width: 100%; border-radius: 4px; display: block; }
 
-    /* ── Output tabs ───────────────────────────────────────────────────── */
-    .tab-bar {
-      display: flex;
-      border-bottom: 1px solid var(--border);
-      padding: 0 14px;
-      flex-shrink: 0;
-    }
-
-    .tab-btn {
-      background: none;
-      border: none;
-      padding: 9px 12px;
-      font-size: 12px;
-      font-family: var(--mono);
+    .file-preview-diff-label {
+      padding: 8px 10px 0;
+      font-size: 10.5px;
       color: var(--text-muted);
-      cursor: pointer;
-      position: relative;
-      transition: color 0.1s;
-    }
-
-    .tab-btn:hover { color: var(--text-dim); }
-
-    .tab-btn.active {
-      color: var(--accent);
-    }
-
-    .tab-btn.active::after {
-      content: '';
-      position: absolute;
-      bottom: 0; left: 0; right: 0;
-      height: 2px;
-      background: var(--accent);
-    }
-
-    .tab-hint {
-      margin-left: 4px;
-      font-size: 10px;
-      color: var(--text-muted);
-    }
-
-    .tab-pane { display: none; }
-    .tab-pane.active { display: block; }
-
-    .output-scroll {
-      overflow: auto;
-      max-height: 260px;
-      padding: 12px 14px;
-    }
-
-    .output-pre {
-      font-family: var(--mono);
-      font-size: 12px;
-      line-height: 1.6;
-      color: var(--text-dim);
-      white-space: pre-wrap;
-      word-break: break-all;
-    }
-
-    .output-empty {
-      font-size: 12px;
-      color: var(--text-muted);
-      font-style: italic;
+      border-top: 1px solid var(--border);
     }
 
     .diff-block { overflow-x: auto; }
-
-    .diff-line { display: block; font-family: var(--mono); font-size: 12px; line-height: 1.6; white-space: pre; }
+    .diff-line { display: block; font-family: var(--mono); font-size: 11.5px; line-height: 1.55; white-space: pre; }
     .diff-line.added   { color: var(--green); background: var(--green-bg); }
     .diff-line.removed { color: var(--red);   background: var(--red-bg);   }
     .diff-line.meta    { color: var(--text-muted); }
     .diff-line.hunk    { color: var(--accent); }
     .diff-line.context { color: var(--text-muted); }
-
-    .loading-note {
-      padding: 12px 14px;
-      font-size: 12px;
-      color: var(--text-muted);
-      font-style: italic;
-    }
   </style>
 </head>
 <body>
@@ -705,11 +505,11 @@
     <div class="header-logo">
       <span class="logo-mark">◆</span>
       <span class="logo-name">drun</span>
-      <span class="logo-tagline">trajectory viewer</span>
+      <span class="logo-tagline">Trajectory viewer</span>
     </div>
     <div class="header-status">
       <span class="live-dot" id="live-dot"></span>
-      <span id="status-label">connecting…</span>
+      <span id="status-label">Connecting…</span>
     </div>
   </header>
 
@@ -719,90 +519,42 @@
 
   <div id="page-body">
     <section id="sessions-section">
-      <div class="section-label">sessions</div>
+      <div class="section-label">Sessions</div>
       <div id="sessions-grid"></div>
     </section>
 
-    <section id="timeline-section" class="hidden">
-      <div class="section-title-row">
-        <span class="section-label">checkpoints</span>
-        <span class="mono-id" id="timeline-session-id"></span>
-        <span class="label-badge" id="timeline-session-label" style="display:none"></span>
-      </div>
-      <div class="timeline-scroll">
-        <div class="timeline-track" id="timeline-track"></div>
-      </div>
-    </section>
+    <section id="workspace-section" class="hidden">
+      <div class="context-bar" id="context-bar"></div>
 
-    <section id="live-section" class="hidden">
-      <div class="section-title-row">
-        <span class="section-label">live output</span>
-        <span class="mono-id" id="live-session-id"></span>
-      </div>
-      <div class="panel">
-        <div class="panel-head">
-          <span class="command-text" id="live-command"></span>
-          <span class="badge badge-live"><span class="live-indicator-dot">●</span>&nbsp;running</span>
+      <div class="live-bar hidden" id="live-bar">
+        <div class="live-bar-head">
+          <span class="badge badge-live"><span class="live-indicator-dot">●</span>&nbsp;Running</span>
+          <span class="live-bar-command" id="live-command"></span>
         </div>
-        <div class="output-scroll" id="live-output-scroll">
+        <div class="column-body" id="live-output-body" style="max-height:160px; padding:10px">
           <pre class="output-pre" id="live-output-pre"></pre>
         </div>
       </div>
-    </section>
 
-    <section id="detail-section" class="hidden">
-      <div class="section-title-row">
-        <span class="section-label">checkpoint</span>
-        <span class="mono-id" id="detail-heading"></span>
-        <div class="detail-actions">
-          <button class="copy-btn" id="fork-here-btn" onclick="onForkFromHereClick()">fork from here</button>
-          <button class="copy-btn" id="rollback-here-btn" onclick="onRollbackHereClick()">rollback to here</button>
-        </div>
-      </div>
-
-      <div class="command-row" id="command-row" style="display:none">
-        <span class="command-prompt">$</span>
-        <code class="command-text" id="command-text"></code>
-        <button class="copy-btn" id="copy-command-btn">copy</button>
-      </div>
-
-      <div class="detail-grid">
-
-        <div class="panel" id="files-panel">
-          <div class="panel-head">
-            files
-            <span class="panel-head-counts" id="files-counts"></span>
-          </div>
-          <div class="panel-body" id="files-body">
-            <div class="loading-note">select a checkpoint</div>
-          </div>
+      <div class="columns-grid">
+        <div class="column" id="checkpoints-column">
+          <div class="column-head">Checkpoints</div>
+          <div class="column-body" id="checkpoints-list"></div>
         </div>
 
-        <div class="panel" id="output-panel">
-          <div class="tab-bar">
-            <button class="tab-btn active" data-tab="stdout">
-              stdout<span class="tab-hint" id="hint-stdout"></span>
-            </button>
-            <button class="tab-btn" data-tab="stderr">
-              stderr<span class="tab-hint" id="hint-stderr"></span>
-            </button>
-            <button class="tab-btn" data-tab="diff">diff</button>
-            <button class="tab-btn" data-tab="file">file</button>
-          </div>
-          <div id="pane-stdout" class="tab-pane active">
-            <div class="output-scroll"><span class="loading-note">loading…</span></div>
-          </div>
-          <div id="pane-stderr" class="tab-pane">
-            <div class="output-scroll"><span class="loading-note">loading…</span></div>
-          </div>
-          <div id="pane-diff" class="tab-pane">
-            <div class="output-scroll"><span class="loading-note">loading…</span></div>
-          </div>
-          <div id="pane-file" class="tab-pane">
-            <div class="output-scroll"><span class="output-empty">select a file from the tree to preview it</span></div>
-          </div>
+        <div class="column" id="output-column">
+          <div class="column-head">Output</div>
+          <div class="column-body" id="output-body"></div>
         </div>
 
+        <div class="column" id="files-column">
+          <div class="column-head">
+            Files
+            <span class="column-head-hint" id="files-counts"></span>
+          </div>
+          <div class="column-body" id="files-tree"></div>
+          <div class="column-body" id="files-preview"></div>
+        </div>
       </div>
     </section>
   </div>
@@ -821,7 +573,6 @@
       outputCache:        new Map(),
       // `${sessionId}:${cpId}:${path}` → { kind: 'text'|'image'|'binary', content?, url? }
       fileCache:          new Map(),
-      activeTab:          'stdout',
       daemonStatus:       null,
       daemonPanelOpen:    false,
       liveOutput:         null,   // { running, command, output } for the selected session
@@ -861,8 +612,8 @@
       const result = [];
       function walk(node) {
         result.push(node);
-        for (const cp of node.checkpoints)
-          for (const fork of (cp.forks || []))
+        for (const checkpoint of node.checkpoints)
+          for (const fork of (checkpoint.forks || []))
             walk(fork);
       }
       for (const root of tree) walk(root);
@@ -898,6 +649,28 @@
         i++;
       }
       return { added, modified, removed };
+    }
+
+    // Slices a single file's hunks out of a whole-checkpoint unified diff —
+    // the server only exposes a checkpoint-wide diff, so file-scoped diffs
+    // are derived client-side instead of adding a new endpoint for it.
+    function extractFileDiff(diffText, path) {
+      if (!diffText) return '';
+      const lines = diffText.split('\n');
+      for (let i = 0; i < lines.length - 1; i++) {
+        if (!lines[i].startsWith('--- ')) continue;
+        const nextLine = lines[i + 1];
+        if (!nextLine.startsWith('+++ ')) continue;
+        const fromPath = lines[i].slice(4).replace(/^a\//, '');
+        const toPath   = nextLine.slice(4).replace(/^b\//, '');
+        if (fromPath !== path && toPath !== path) continue;
+        let end = lines.length;
+        for (let j = i + 2; j < lines.length; j++) {
+          if (lines[j].startsWith('--- ')) { end = j; break; }
+        }
+        return lines.slice(i, end).join('\n').replace(/\n+$/, '');
+      }
+      return '';
     }
 
     // ── API ──────────────────────────────────────────────────────────────────
@@ -977,7 +750,7 @@
     function flashButton(btn) {
       if (!btn) return;
       const original = btn.textContent;
-      btn.textContent = '✓';
+      btn.textContent = 'Copied';
       setTimeout(() => { btn.textContent = original; }, 1000);
     }
 
@@ -1006,7 +779,7 @@
       strip.innerHTML = items
         .map(item => `<span class="stat-item">${item}</span>`)
         .join('<span class="stat-sep">·</span>')
-        + `<button id="daemon-toggle">${viewState.daemonPanelOpen ? '▾' : '▸'} daemon</button>`;
+        + `<button id="daemon-toggle">${viewState.daemonPanelOpen ? '▾' : '▸'} Daemon</button>`;
     }
 
     function renderDaemonPanel() {
@@ -1016,17 +789,17 @@
       if (!viewState.daemonPanelOpen || !status) return;
 
       const idleTimeout = status.session_idle_timeout_secs != null
-        ? `${fmtDuration(status.session_idle_timeout_secs)} idle timeout` : 'no idle timeout';
+        ? `${fmtDuration(status.session_idle_timeout_secs)} idle timeout` : 'No idle timeout';
       const workspace = status.max_workspace_mb != null
-        ? `${status.max_workspace_mb} MB workspace cap` : 'no workspace cap';
+        ? `${status.max_workspace_mb} MB workspace cap` : 'No workspace cap';
       const checkpoints = status.max_checkpoints != null
-        ? `${status.max_checkpoints} checkpoints/session cap` : 'no checkpoint cap';
+        ? `${status.max_checkpoints} checkpoints per session` : 'No checkpoint cap';
 
       const rows = [
-        ['ports',   `mcp :${status.mcp_port} · web :${status.web_port}`],
-        ['limits',  `${idleTimeout} · ${workspace} · ${checkpoints}`],
-        ['domains', status.domain_allowlist.length ? escHtml(status.domain_allowlist.join(', ')) : 'none allowed'],
-        ['mounts',  status.mount_allowlist.length ? escHtml(status.mount_allowlist.join(', ')) : 'all host paths allowed'],
+        ['Ports',   `MCP :${status.mcp_port} · Web :${status.web_port}`],
+        ['Limits',  `${idleTimeout} · ${workspace} · ${checkpoints}`],
+        ['Domains', status.domain_allowlist.length ? escHtml(status.domain_allowlist.join(', ')) : 'None allowed'],
+        ['Mounts',  status.mount_allowlist.length ? escHtml(status.mount_allowlist.join(', ')) : 'All host paths allowed'],
       ];
 
       panel.innerHTML = rows.map(([label, value]) => `
@@ -1047,7 +820,7 @@
 
     function sessionIdleBadge(session) {
       const idleTimeout = viewState.daemonStatus?.session_idle_timeout_secs;
-      const idleAgo = `idle ${fmtDuration(session.idle_secs)}`;
+      const idleAgo = `Idle ${fmtDuration(session.idle_secs)}`;
       if (idleTimeout == null) {
         return `<span class="badge badge-neutral">${idleAgo}</span>`;
       }
@@ -1071,150 +844,123 @@
       }
 
       grid.innerHTML = sessions.map(s => {
-        const isActive  = s.session_id === viewState.selectedSessionId;
-        const headCpId  = currentCpIdForSession(s);
-        const totalCps  = s.checkpoints.length;
-        const isForked  = !!s.parent_session_id;
+        const isActive = s.session_id === viewState.selectedSessionId;
+        const headCpId = currentCpIdForSession(s);
+        const totalCps = s.checkpoints.length;
+        const isForked = !!s.parent_session_id;
 
         return `
-          <div class="session-card ${isActive ? 'active' : ''}" onclick="onSessionClick('${escHtml(s.session_id)}')" title="created ${fmtDuration(s.age_secs)} ago">
-            <div class="card-header-row">
+          <div class="session-card ${isActive ? 'active' : ''}">
+            <div class="session-card-main" onclick="onSessionClick('${escHtml(s.session_id)}')" title="Created ${fmtDuration(s.age_secs)} ago">
               <div class="card-session-id" title="${escHtml(s.session_id)}">${escHtml(shortId(s.session_id))}</div>
-              <div class="card-actions">
-                <button class="icon-btn" title="copy session id" onclick="event.stopPropagation(); copyToClipboard('${escHtml(s.session_id)}', this)">⧉</button>
-                <button class="icon-btn" title="edit label" onclick="event.stopPropagation(); onEditLabelClick('${escHtml(s.session_id)}')">✎</button>
-                <button class="icon-btn" title="write snapshot to disk" onclick="event.stopPropagation(); onSnapshotClick('${escHtml(s.session_id)}', this)">⇩</button>
-                <button class="icon-btn icon-btn-danger" title="destroy session" onclick="event.stopPropagation(); onDestroySessionClick('${escHtml(s.session_id)}')">✕</button>
+              <div class="card-session-label ${s.label ? '' : 'unlabeled'}">${s.label ? escHtml(s.label) : 'Unlabeled'}</div>
+              <div class="card-badges">
+                <span class="badge badge-neutral">Checkpoint ${headCpId ?? '—'} / ${totalCps - 1}</span>
+                ${s.running ? '<span class="badge badge-live"><span class="live-indicator-dot">●</span>&nbsp;Running</span>' : sessionIdleBadge(s)}
+                ${isForked ? `<span class="badge badge-fork" title="Forked from ${escHtml(s.parent_session_id)} at checkpoint ${s.parent_checkpoint_id}">⑂ ${escHtml(shortId(s.parent_session_id))}</span>` : ''}
               </div>
             </div>
-            <div class="card-session-label ${s.label ? '' : 'unlabeled'}">
-              ${s.label ? escHtml(s.label) : 'unlabeled'}
-            </div>
-            <div class="card-badges">
-              <span class="badge badge-neutral">cp ${headCpId ?? '—'} / ${totalCps - 1}</span>
-              ${s.running ? '<span class="badge badge-live"><span class="live-indicator-dot">●</span>&nbsp;running</span>' : sessionIdleBadge(s)}
-              ${isForked ? `<span class="badge badge-fork" title="forked from ${escHtml(s.parent_session_id)} @ cp${s.parent_checkpoint_id}">⑂ ${escHtml(shortId(s.parent_session_id))}</span>` : ''}
+            <div class="card-actions-row">
+              <button class="card-action" onclick="copyToClipboard('${escHtml(s.session_id)}', this)">Copy</button>
+              <button class="card-action" onclick="onEditLabelClick('${escHtml(s.session_id)}')">Label</button>
+              <button class="card-action" onclick="onSnapshotClick('${escHtml(s.session_id)}', this)">Snapshot</button>
+              <button class="card-action card-action-danger" onclick="onDestroySessionClick('${escHtml(s.session_id)}')">Delete</button>
             </div>
           </div>`;
       }).join('');
     }
 
-    // ── Rendering: timeline ──────────────────────────────────────────────────
+    // ── Rendering: checkpoint list ────────────────────────────────────────────
 
-    function renderTimeline() {
+    function renderCheckpointList() {
       const session = findSession(viewState.selectedSessionId);
       if (!session) return;
 
-      document.getElementById('timeline-section').classList.remove('hidden');
-      document.getElementById('timeline-session-id').textContent = shortId(session.session_id);
+      const list = document.getElementById('checkpoints-list');
+      const byId = new Map(viewState.checkpointHistory.map(h => [h.checkpoint_id, h]));
 
-      const labelEl = document.getElementById('timeline-session-label');
-      if (session.label) {
-        labelEl.textContent = session.label;
-        labelEl.style.display = '';
-      } else {
-        labelEl.style.display = 'none';
-      }
+      list.innerHTML = [...session.checkpoints].reverse().map(checkpoint => {
+        const isHead     = checkpoint.is_current;
+        const isSelected = checkpoint.checkpoint_id === viewState.selectedCpId;
+        const hist       = byId.get(checkpoint.checkpoint_id);
 
-      document.getElementById('timeline-track').innerHTML = [...session.checkpoints].reverse().map(cp => {
-        const isHead     = cp.is_current;
-        const isSelected = cp.checkpoint_id === viewState.selectedCpId;
-        const forks      = cp.forks || [];
-
-        const stateClass = isHead ? 'is-head' : '';
-
-        const forksHtml = forks.length > 0
-          ? `<div class="cp-forks">${forks.map(f =>
-              `<span class="cp-fork-link" onclick="event.stopPropagation();onSessionClick('${escHtml(f.session_id)}')" title="${escHtml(f.session_id)}">↑ ${escHtml(shortId(f.session_id))}</span>`
-            ).join('')}</div>`
-          : '';
+        const delta = hist ? [
+          hist.files_added_count    > 0 ? `<span class="sigil-a">+${hist.files_added_count}</span>` : '',
+          hist.files_modified_count > 0 ? `<span class="sigil-m">~${hist.files_modified_count}</span>` : '',
+          hist.files_removed_count  > 0 ? `<span class="sigil-r">-${hist.files_removed_count}</span>` : '',
+        ].join('') : '';
 
         return `
-          <div class="timeline-node ${stateClass} ${isSelected ? 'selected' : ''}"
-               onclick="onCheckpointClick(${cp.checkpoint_id})">
-            <div class="cp-bubble">${cp.checkpoint_id}</div>
-            <div class="cp-name ${cp.label ? 'labeled' : ''}">${cp.label ? escHtml(cp.label) : ''}&nbsp;</div>
-            ${forksHtml}
+          <div class="cp-row ${isHead ? 'is-head' : ''} ${isSelected ? 'selected' : ''}"
+               onclick="onCheckpointClick(${checkpoint.checkpoint_id})">
+            <span class="cp-row-num">#${checkpoint.checkpoint_id}</span>
+            <span class="cp-row-label">${checkpoint.label ? escHtml(checkpoint.label) : ''}</span>
+            <span class="cp-row-delta">${delta}</span>
           </div>`;
       }).join('');
     }
 
-    // ── Rendering: live output ────────────────────────────────────────────────
+    // ── Rendering: live bar ───────────────────────────────────────────────────
 
-    function renderLiveSection() {
-      const section = document.getElementById('live-section');
+    function renderLiveBar() {
+      const bar = document.getElementById('live-bar');
       const live = viewState.liveOutput;
-      if (!live?.running) { section.classList.add('hidden'); return; }
+      if (!live?.running) { bar.classList.add('hidden'); return; }
 
-      section.classList.remove('hidden');
-      document.getElementById('live-session-id').textContent = shortId(viewState.selectedSessionId);
+      bar.classList.remove('hidden');
       document.getElementById('live-command').textContent = live.command ? `$ ${live.command}` : '';
 
       const pre = document.getElementById('live-output-pre');
-      pre.textContent = live.output || '(no output yet)';
-      const scroll = document.getElementById('live-output-scroll');
-      scroll.scrollTop = scroll.scrollHeight;
+      pre.textContent = live.output || '(No output yet)';
     }
 
-    // ── Rendering: checkpoint detail ─────────────────────────────────────────
+    // ── Rendering: context bar ────────────────────────────────────────────────
 
-    function renderCheckpointDetail() {
+    function renderContextBar() {
       const cpId      = viewState.selectedCpId;
       const sessionId = viewState.selectedSessionId;
-      if (cpId == null) { document.getElementById('detail-section').classList.add('hidden'); return; }
+      const bar       = document.getElementById('context-bar');
+      if (cpId == null || !sessionId) { bar.innerHTML = ''; return; }
 
-      document.getElementById('detail-section').classList.remove('hidden');
-
-      const session  = findSession(sessionId);
-      const treeCp   = session?.checkpoints.find(c => c.checkpoint_id === cpId);
-      const hist     = viewState.checkpointHistory.find(h => h.checkpoint_id === cpId);
-      const cacheKey = `${sessionId}:${cpId}`;
-      const cached   = viewState.outputCache.get(cacheKey);
-
-      // Heading
+      const session = findSession(sessionId);
+      const treeCp  = session?.checkpoints.find(c => c.checkpoint_id === cpId);
+      const hist    = viewState.checkpointHistory.find(h => h.checkpoint_id === cpId);
       const labelSuffix = treeCp?.label ? ` · "${escHtml(treeCp.label)}"` : '';
-      document.getElementById('detail-heading').innerHTML = `#${cpId}${labelSuffix}`;
-      document.getElementById('rollback-here-btn').style.display = treeCp?.is_current ? 'none' : '';
+      const rollbackHidden = treeCp?.is_current ? 'style="display:none"' : '';
 
-      renderCommandRow(hist);
+      const forkButtons = (treeCp?.forks || []).map(f => `
+        <button class="btn" onclick="onSessionClick('${escHtml(f.session_id)}')" title="${escHtml(f.session_id)}">Forked to ${escHtml(shortId(f.session_id))}</button>
+      `).join('');
 
-      // File counts badge
-      if (hist) {
-        const parts = [];
-        if (hist.files_added_count    > 0) parts.push(`<span style="color:var(--green)">+${hist.files_added_count}</span>`);
-        if (hist.files_modified_count > 0) parts.push(`<span style="color:var(--amber)">~${hist.files_modified_count}</span>`);
-        if (hist.files_removed_count  > 0) parts.push(`<span style="color:var(--red)">-${hist.files_removed_count}</span>`);
-        parts.push(`<span style="color:var(--text-muted)">${hist.file_count} total</span>`);
-        document.getElementById('files-counts').innerHTML = parts.join('<span style="color:var(--border-hi)"> · </span>');
-      }
-
-      renderFilesPanel(cached);
-
-      // Stdout / stderr hints
-      if (hist) {
-        document.getElementById('hint-stdout').textContent = hist.stdout_bytes ? ` ${fmtBytes(hist.stdout_bytes)}` : '';
-        document.getElementById('hint-stderr').textContent = hist.stderr_bytes ? ` ${fmtBytes(hist.stderr_bytes)}` : '';
-      }
-
-      // Output panes
-      renderOutputPane('stdout', cached?.stdout);
-      renderOutputPane('stderr', cached?.stderr);
-      renderDiffPane(cached?.diff);
-      renderFilePane(viewState.selectedFilePath
-        ? viewState.fileCache.get(`${sessionId}:${cpId}:${viewState.selectedFilePath}`)
-        : undefined);
+      bar.innerHTML = `
+        <span class="mono-id">Checkpoint #${cpId}${labelSuffix}</span>
+        ${hist?.command ? `<code class="context-command">${escHtml(hist.command)}</code>` : '<span class="context-command"></span>'}
+        <div class="context-actions">
+          ${hist?.command ? `<button class="btn" onclick="copyToClipboard('${escHtml(hist.command)}', this)">Copy command</button>` : ''}
+          ${forkButtons}
+          <button class="btn" onclick="onForkFromHereClick()">Fork from here</button>
+          <button class="btn" id="rollback-here-btn" ${rollbackHidden} onclick="onRollbackHereClick()">Roll back to here</button>
+        </div>`;
     }
 
-    function renderCommandRow(hist) {
-      const row = document.getElementById('command-row');
-      if (!hist?.command) { row.style.display = 'none'; return; }
-      row.style.display = '';
-      document.getElementById('command-text').textContent = hist.command;
-      document.getElementById('copy-command-btn').onclick = () =>
-        copyToClipboard(hist.command, document.getElementById('copy-command-btn'));
+    // ── Rendering: output column ──────────────────────────────────────────────
+
+    function renderOutputColumn(cached) {
+      const body = document.getElementById('output-body');
+      if (!cached) { body.innerHTML = '<div class="loading-note">Loading…</div>'; return; }
+
+      const stdoutHtml = cached.stdout
+        ? `<pre class="output-pre">${escHtml(cached.stdout)}</pre>`
+        : '<span class="output-empty">No output</span>';
+
+      const stderrHtml = cached.stderr
+        ? `<div class="output-label" style="color:var(--red)">Stderr</div><pre class="output-pre">${escHtml(cached.stderr)}</pre>`
+        : '';
+
+      body.innerHTML = `<div class="output-label">Stdout</div>${stdoutHtml}${stderrHtml}`;
     }
 
-    // ── Rendering: file tree ──────────────────────────────────────────────────
+    // ── Rendering: files column ───────────────────────────────────────────────
 
     function buildFileTree(files) {
       const root = { name: '', children: new Map(), file: null };
@@ -1257,9 +1003,12 @@
       }).join('');
     }
 
-    function renderFilesPanel(cached) {
-      const filesBody = document.getElementById('files-body');
-      if (!cached?.files) { filesBody.innerHTML = '<div class="loading-note">loading…</div>'; return; }
+    function renderFilesTree(cached, hist) {
+      const tree = document.getElementById('files-tree');
+      const counts = document.getElementById('files-counts');
+      counts.textContent = hist ? `${hist.file_count} total` : '';
+
+      if (!cached?.files) { tree.innerHTML = '<div class="loading-note">Loading…</div>'; return; }
 
       const deltaByPath = new Map();
       for (const f of cached.fileNames?.added    || []) deltaByPath.set(f, 'added');
@@ -1267,70 +1016,90 @@
       const removed = cached.fileNames?.removed || [];
 
       if (cached.files.length === 0 && removed.length === 0) {
-        filesBody.innerHTML = '<div class="panel-empty">workspace is empty</div>';
+        tree.innerHTML = '<div class="empty-column-note">Workspace is empty</div>';
         return;
       }
 
-      const tree = buildFileTree(cached.files);
-      const treeHtml = renderFileTreeChildren(tree.children, deltaByPath);
+      const built = buildFileTree(cached.files);
+      const treeHtml = renderFileTreeChildren(built.children, deltaByPath);
       const removedHtml = removed.length
         ? `<div class="tree-removed">${removed.map(f => `
             <div class="file-row"><span class="file-sigil sigil-r">-</span><span class="file-path">${escHtml(f)}</span></div>`).join('')}</div>`
         : '';
-      filesBody.innerHTML = treeHtml + removedHtml;
+      tree.innerHTML = treeHtml + removedHtml;
     }
 
-    function renderFilePane(fileState) {
-      const pane = document.getElementById('pane-file');
-      if (!viewState.selectedFilePath) {
-        pane.innerHTML = '<div class="output-scroll"><span class="output-empty">select a file from the tree to preview it</span></div>';
-        return;
-      }
-      const head = `
-        <div class="file-pane-head">
-          <span class="mono-id">${escHtml(viewState.selectedFilePath)}</span>
-          <button class="copy-btn" onclick="copyToClipboard('${escHtml(viewState.selectedFilePath)}', this)">copy path</button>
-        </div>`;
-      if (fileState === undefined) {
-        pane.innerHTML = `${head}<div class="output-scroll"><span class="loading-note">loading…</span></div>`;
-      } else if (fileState.kind === 'image') {
-        pane.innerHTML = `${head}<div class="output-scroll"><img class="file-preview-image" src="${fileState.url}" alt="${escHtml(viewState.selectedFilePath)}"></div>`;
-      } else if (fileState.kind === 'binary') {
-        pane.innerHTML = `${head}<div class="output-scroll"><span class="output-empty">binary file — cannot preview</span></div>`;
-      } else {
-        pane.innerHTML = `${head}<div class="output-scroll"><pre class="output-pre">${escHtml(fileState.content)}</pre></div>`;
-      }
-    }
-
-    function renderOutputPane(stream, content) {
-      const pane = document.getElementById(`pane-${stream}`);
-      if (content === undefined) {
-        pane.innerHTML = '<div class="output-scroll"><span class="loading-note">loading…</span></div>';
-        return;
-      }
-      pane.innerHTML = `<div class="output-scroll">${
-        content ? `<pre class="output-pre">${escHtml(content)}</pre>` : '<span class="output-empty">no output</span>'
-      }</div>`;
-    }
-
-    function renderDiffPane(diffText) {
-      const pane = document.getElementById('pane-diff');
-      if (diffText === undefined) {
-        pane.innerHTML = '<div class="output-scroll"><span class="loading-note">loading…</span></div>';
-        return;
-      }
-      if (!diffText) {
-        pane.innerHTML = '<div class="output-scroll"><span class="output-empty">no changes from previous checkpoint</span></div>';
-        return;
-      }
+    // Renders a diff block, or an empty-state message if there's nothing to
+    // show yet (still loading) or nothing changed. Shared by the no-file-selected
+    // default (whole checkpoint) and the per-file diff under a file's preview.
+    function diffBlockHtml(diffText, emptyMessage) {
+      if (diffText === undefined) return '<div class="loading-note">Loading…</div>';
+      if (!diffText) return `<div class="file-preview-body"><span class="output-empty">${escHtml(emptyMessage)}</span></div>`;
       const lines = diffText.split('\n').map(line => {
         if      (line.startsWith('+++ ') || line.startsWith('--- ')) return `<span class="diff-line meta">${escHtml(line)}</span>`;
-        else if (line.startsWith('+'))   return `<span class="diff-line added">${escHtml(line)}</span>`;
-        else if (line.startsWith('-'))   return `<span class="diff-line removed">${escHtml(line)}</span>`;
+        else if (line.startsWith('+'))  return `<span class="diff-line added">${escHtml(line)}</span>`;
+        else if (line.startsWith('-'))  return `<span class="diff-line removed">${escHtml(line)}</span>`;
         else if (line.startsWith('@@')) return `<span class="diff-line hunk">${escHtml(line)}</span>`;
         else                             return `<span class="diff-line context">${escHtml(line)}</span>`;
       });
-      pane.innerHTML = `<div class="output-scroll"><div class="diff-block">${lines.join('')}</div></div>`;
+      return `<div class="file-preview-body"><div class="diff-block">${lines.join('')}</div></div>`;
+    }
+
+    function renderFilesPreview(cached, fileState) {
+      const preview = document.getElementById('files-preview');
+
+      if (!viewState.selectedFilePath) {
+        preview.innerHTML =
+          `<div class="file-preview-head"><span class="mono-id">Diff from previous checkpoint</span></div>`
+          + diffBlockHtml(cached?.diff, 'No changes from the previous checkpoint');
+        return;
+      }
+
+      const head = `
+        <div class="file-preview-head">
+          <span class="mono-id">${escHtml(viewState.selectedFilePath)}</span>
+          <button class="btn" onclick="copyToClipboard('${escHtml(viewState.selectedFilePath)}', this)">Copy path</button>
+        </div>`;
+
+      let contentHtml;
+      if (fileState === undefined) {
+        contentHtml = '<div class="loading-note">Loading…</div>';
+      } else if (fileState.kind === 'image') {
+        contentHtml = `<div class="file-preview-body"><img class="file-preview-image" src="${fileState.url}" alt="${escHtml(viewState.selectedFilePath)}"></div>`;
+      } else if (fileState.kind === 'binary') {
+        contentHtml = `<div class="file-preview-body"><span class="output-empty">Binary file — cannot preview</span></div>`;
+      } else {
+        contentHtml = `<div class="file-preview-body"><pre class="output-pre">${escHtml(fileState.content)}</pre></div>`;
+      }
+
+      const fileDiff = cached?.diff === undefined ? undefined : extractFileDiff(cached.diff, viewState.selectedFilePath);
+      const diffHtml =
+        `<div class="file-preview-diff-label">Diff from previous checkpoint</div>`
+        + diffBlockHtml(fileDiff, 'No changes from the previous checkpoint');
+
+      preview.innerHTML = head + contentHtml + diffHtml;
+    }
+
+    // ── Rendering: full workspace panel ───────────────────────────────────────
+
+    function renderWorkspacePanel() {
+      const cpId      = viewState.selectedCpId;
+      const sessionId = viewState.selectedSessionId;
+      const section   = document.getElementById('workspace-section');
+      if (cpId == null || !sessionId) { section.classList.add('hidden'); return; }
+
+      section.classList.remove('hidden');
+
+      const cacheKey = `${sessionId}:${cpId}`;
+      const cached   = viewState.outputCache.get(cacheKey);
+      const hist     = viewState.checkpointHistory.find(h => h.checkpoint_id === cpId);
+
+      renderContextBar();
+      renderOutputColumn(cached);
+      renderFilesTree(cached, hist);
+      renderFilesPreview(cached, viewState.selectedFilePath
+        ? viewState.fileCache.get(`${sessionId}:${cpId}:${viewState.selectedFilePath}`)
+        : undefined);
     }
 
     // ── Event handlers ───────────────────────────────────────────────────────
@@ -1344,15 +1113,20 @@
       viewState.liveOutput        = null;
 
       renderSessionGrid();
-      document.getElementById('detail-section').classList.add('hidden');
-      renderTimeline();
-      renderLiveSection();
+      document.getElementById('workspace-section').classList.add('hidden');
+      renderLiveBar();
 
       try {
         viewState.checkpointHistory = await Api.checkpointHistory(sessionId);
-        renderTimeline();
       } catch (e) {
         console.error('Failed to load history:', e);
+      }
+
+      // Select the current (head) checkpoint by default so the panel isn't empty.
+      const session = findSession(sessionId);
+      const headCpId = session ? currentCpIdForSession(session) : null;
+      if (headCpId != null) {
+        await onCheckpointClick(headCpId);
       }
 
       await refreshLiveOutput();
@@ -1360,7 +1134,7 @@
 
     async function refreshLiveOutput() {
       const sessionId = viewState.selectedSessionId;
-      if (!sessionId) { viewState.liveOutput = null; renderLiveSection(); return; }
+      if (!sessionId) { viewState.liveOutput = null; renderLiveBar(); return; }
 
       try {
         viewState.liveOutput = await Api.liveOutput(sessionId);
@@ -1368,7 +1142,7 @@
         console.error('Failed to load live output:', e);
         viewState.liveOutput = null;
       }
-      if (viewState.selectedSessionId === sessionId) renderLiveSection();
+      if (viewState.selectedSessionId === sessionId) renderLiveBar();
     }
 
     async function onCheckpointClick(cpId) {
@@ -1376,9 +1150,8 @@
       viewState.selectedCpId     = cpId;
       viewState.selectedFilePath = null;
 
-      renderTimeline();
-      renderCheckpointDetail();
-      switchTab('stdout');
+      renderCheckpointList();
+      renderWorkspacePanel();
 
       const sessionId = viewState.selectedSessionId;
       const cacheKey  = `${sessionId}:${cpId}`;
@@ -1403,14 +1176,15 @@
         });
       }
 
-      if (viewState.selectedCpId === cpId) renderCheckpointDetail();
+      if (viewState.selectedCpId === cpId) renderWorkspacePanel();
     }
 
     async function onFileClick(path) {
-      viewState.selectedFilePath = path;
-      switchTab('file');
-      renderFilesPanel(viewState.outputCache.get(`${viewState.selectedSessionId}:${viewState.selectedCpId}`));
-      renderFilePane(undefined);
+      // Clicking the already-selected file deselects it, returning to the
+      // whole-checkpoint diff — the only way back once a file is chosen.
+      viewState.selectedFilePath = viewState.selectedFilePath === path ? null : path;
+      renderWorkspacePanel();
+      if (viewState.selectedFilePath === null) return;
 
       const sessionId = viewState.selectedSessionId;
       const cpId      = viewState.selectedCpId;
@@ -1423,7 +1197,7 @@
           viewState.fileCache.set(cacheKey, { kind: 'binary' });
         }
       }
-      if (viewState.selectedFilePath === path) renderFilePane(viewState.fileCache.get(cacheKey));
+      if (viewState.selectedFilePath === path) renderWorkspacePanel();
     }
 
     async function onDestroySessionClick(sessionId) {
@@ -1442,9 +1216,8 @@
         viewState.selectedCpId      = null;
         viewState.selectedFilePath  = null;
         viewState.liveOutput        = null;
-        document.getElementById('timeline-section').classList.add('hidden');
-        document.getElementById('detail-section').classList.add('hidden');
-        renderLiveSection();
+        document.getElementById('workspace-section').classList.add('hidden');
+        renderLiveBar();
       }
       await refresh();
     }
@@ -1506,21 +1279,6 @@
       await refresh();
     }
 
-    function switchTab(tabName) {
-      viewState.activeTab = tabName;
-      document.querySelectorAll('.tab-btn').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.tab === tabName);
-      });
-      document.querySelectorAll('.tab-pane').forEach(pane => {
-        pane.classList.toggle('active', pane.id === `pane-${tabName}`);
-      });
-    }
-
-    document.getElementById('output-panel').addEventListener('click', e => {
-      const btn = e.target.closest('.tab-btn');
-      if (btn) switchTab(btn.dataset.tab);
-    });
-
     // ── Refresh loop ─────────────────────────────────────────────────────────
 
     async function refresh() {
@@ -1534,7 +1292,7 @@
         viewState.daemonStatus  = status;
 
         document.getElementById('live-dot').classList.remove('offline');
-        document.getElementById('status-label').textContent = `updated ${new Date().toLocaleTimeString()}`;
+        document.getElementById('status-label').textContent = `Updated ${new Date().toLocaleTimeString()}`;
 
         renderStatusStrip();
         renderDaemonPanel();
@@ -1544,8 +1302,8 @@
           try {
             viewState.checkpointHistory = await Api.checkpointHistory(viewState.selectedSessionId);
           } catch (_) {}
-          renderTimeline();
-          if (viewState.selectedCpId != null) renderCheckpointDetail();
+          renderCheckpointList();
+          if (viewState.selectedCpId != null) renderWorkspacePanel();
           await refreshLiveOutput();
         } else if (viewState.selectedSessionId) {
           // Selected session no longer exists (destroyed or reaped) — clear the stale detail view.
@@ -1553,13 +1311,12 @@
           viewState.selectedCpId      = null;
           viewState.selectedFilePath  = null;
           viewState.liveOutput        = null;
-          document.getElementById('timeline-section').classList.add('hidden');
-          document.getElementById('detail-section').classList.add('hidden');
-          renderLiveSection();
+          document.getElementById('workspace-section').classList.add('hidden');
+          renderLiveBar();
         }
       } catch (e) {
         document.getElementById('live-dot').classList.add('offline');
-        document.getElementById('status-label').textContent = 'disconnected';
+        document.getElementById('status-label').textContent = 'Disconnected';
       }
     }
 
