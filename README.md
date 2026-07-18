@@ -87,7 +87,7 @@ Run the following commands to upgrade drun's MCP to the latest release:
 curl -fsSL https://raw.githubusercontent.com/dmosc/drun/main/update.sh | bash
 
 # Update to a specific version
-curl -fsSL https://raw.githubusercontent.com/dmosc/drun/main/update.sh | bash -s -- v0.3.8
+curl -fsSL https://raw.githubusercontent.com/dmosc/drun/main/update.sh | bash -s -- v0.3.16
 ```
 
 #### Uninstalling
