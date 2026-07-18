@@ -1,35 +1,43 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>drun · trajectory viewer</title>
   <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-    :root {
-      --bg:          #0b0d13;
-      --s1:          #11141d;
-      --s2:          #181c28;
-      --s3:          #1e2234;
-      --border:      #222638;
-      --border-hi:   #333a5a;
-      --text:        #c6cae6;
-      --text-dim:    #7a82aa;
-      --text-muted:  #444c6e;
-      --accent:      #7c6af5;
-      --accent-bg:   #1a1740;
-      --green:       #4fd98a;
-      --green-bg:    #0b2218;
-      --amber:       #f0982e;
-      --amber-bg:    #261708;
-      --red:         #e0556a;
-      --red-bg:      #25090f;
-      --mono:        'SF Mono', 'Cascadia Mono', 'Fira Code', Consolas, monospace;
-      --radius:      7px;
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
     }
 
-    html, body {
+    :root {
+      --bg: #0b0d13;
+      --s1: #11141d;
+      --s2: #181c28;
+      --s3: #1e2234;
+      --border: #222638;
+      --border-hi: #333a5a;
+      --text: #c6cae6;
+      --text-dim: #7a82aa;
+      --text-muted: #444c6e;
+      --accent: #7c6af5;
+      --accent-bg: #1a1740;
+      --green: #4fd98a;
+      --green-bg: #0b2218;
+      --amber: #f0982e;
+      --amber-bg: #261708;
+      --red: #e0556a;
+      --red-bg: #25090f;
+      --mono: 'SF Mono', 'Cascadia Mono', 'Fira Code', Consolas, monospace;
+      --radius: 7px;
+    }
+
+    html,
+    body {
       height: 100%;
       background: var(--bg);
       color: var(--text);
@@ -51,10 +59,27 @@
       z-index: 10;
     }
 
-    .header-logo { display: flex; align-items: baseline; gap: 8px; }
-    .logo-mark { color: var(--accent); font-size: 16px; }
-    .logo-name { font-size: 14px; font-weight: 700; letter-spacing: -0.3px; }
-    .logo-tagline { font-size: 11.5px; color: var(--text-muted); }
+    .header-logo {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+    }
+
+    .logo-mark {
+      color: var(--accent);
+      font-size: 16px;
+    }
+
+    .logo-name {
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: -0.3px;
+    }
+
+    .logo-tagline {
+      font-size: 11.5px;
+      color: var(--text-muted);
+    }
 
     .header-status {
       display: flex;
@@ -73,7 +98,10 @@
       flex-shrink: 0;
     }
 
-    .live-dot.offline { background: var(--text-muted); box-shadow: none; }
+    .live-dot.offline {
+      background: var(--text-muted);
+      box-shadow: none;
+    }
 
     /* ── Status strip ──────────────────────────────────────────────────── */
     #status-strip {
@@ -88,10 +116,21 @@
       color: var(--text-dim);
     }
 
-    .stat-item { white-space: nowrap; }
-    .stat-sep { color: var(--text-muted); }
-    .stat-warn   { color: var(--amber); }
-    .stat-danger { color: var(--red); }
+    .stat-item {
+      white-space: nowrap;
+    }
+
+    .stat-sep {
+      color: var(--text-muted);
+    }
+
+    .stat-warn {
+      color: var(--amber);
+    }
+
+    .stat-danger {
+      color: var(--red);
+    }
 
     #daemon-toggle {
       margin-left: auto;
@@ -104,7 +143,9 @@
       padding: 2px 4px;
     }
 
-    #daemon-toggle:hover { color: var(--text-dim); }
+    #daemon-toggle:hover {
+      color: var(--text-dim);
+    }
 
     #daemon-panel {
       background: var(--s1);
@@ -112,7 +153,9 @@
       padding: 8px 16px 10px;
     }
 
-    #daemon-panel.hidden { display: none; }
+    #daemon-panel.hidden {
+      display: none;
+    }
 
     .daemon-row {
       display: flex;
@@ -141,8 +184,13 @@
       padding: 0 16px 40px;
     }
 
-    section { margin-top: 16px; }
-    section.hidden { display: none !important; }
+    section {
+      margin-top: 16px;
+    }
+
+    section.hidden {
+      display: none !important;
+    }
 
     .section-label {
       font-size: 11px;
@@ -151,7 +199,11 @@
       margin-bottom: 8px;
     }
 
-    .mono-id { font-family: var(--mono); font-size: 12.5px; color: var(--text-dim); }
+    .mono-id {
+      font-family: var(--mono);
+      font-size: 12.5px;
+      color: var(--text-dim);
+    }
 
     .label-badge {
       font-size: 11.5px;
@@ -187,7 +239,9 @@
       height: 100%;
     }
 
-    .session-card.active { border-color: var(--accent); }
+    .session-card.active {
+      border-color: var(--accent);
+    }
 
     .session-card-main {
       padding: 9px 11px;
@@ -196,8 +250,13 @@
       flex: 1;
     }
 
-    .session-card-main:hover { background: var(--s2); }
-    .session-card.active .session-card-main { background: var(--accent-bg); }
+    .session-card-main:hover {
+      background: var(--s2);
+    }
+
+    .session-card.active .session-card-main {
+      background: var(--accent-bg);
+    }
 
     .card-session-id {
       font-family: var(--mono);
@@ -216,9 +275,16 @@
       margin-bottom: 8px;
     }
 
-    .card-session-label.unlabeled { font-weight: 400; color: var(--text-muted); }
+    .card-session-label.unlabeled {
+      font-weight: 400;
+      color: var(--text-muted);
+    }
 
-    .card-badges { display: flex; flex-wrap: wrap; gap: 4px; }
+    .card-badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
 
     .badge {
       display: inline-flex;
@@ -230,18 +296,53 @@
       border-radius: 4px;
     }
 
-    .badge-neutral { background: var(--s3); color: var(--text-dim); border: 1px solid var(--border); }
-    .badge-fork    { background: var(--s3); color: var(--text-muted); border: 1px solid var(--border); font-size: 10px; }
-    .badge-warn    { background: var(--amber-bg); color: var(--amber); border: 1px solid rgba(240, 152, 46, 0.3); }
-    .badge-danger  { background: var(--red-bg); color: var(--red); border: 1px solid rgba(224, 85, 106, 0.35); }
-    .badge-live    { background: var(--green-bg); color: var(--green); border: 1px solid rgba(79, 217, 138, 0.35); }
-
-    @keyframes livePulse {
-      0%, 100% { opacity: 1; }
-      50%      { opacity: 0.35; }
+    .badge-neutral {
+      background: var(--s3);
+      color: var(--text-dim);
+      border: 1px solid var(--border);
     }
 
-    .live-indicator-dot { display: inline-block; animation: livePulse 1.4s ease-in-out infinite; }
+    .badge-fork {
+      background: var(--s3);
+      color: var(--text-muted);
+      border: 1px solid var(--border);
+      font-size: 10px;
+    }
+
+    .badge-warn {
+      background: var(--amber-bg);
+      color: var(--amber);
+      border: 1px solid rgba(240, 152, 46, 0.3);
+    }
+
+    .badge-danger {
+      background: var(--red-bg);
+      color: var(--red);
+      border: 1px solid rgba(224, 85, 106, 0.35);
+    }
+
+    .badge-live {
+      background: var(--green-bg);
+      color: var(--green);
+      border: 1px solid rgba(79, 217, 138, 0.35);
+    }
+
+    @keyframes livePulse {
+
+      0%,
+      100% {
+        opacity: 1;
+      }
+
+      50% {
+        opacity: 0.35;
+      }
+    }
+
+    .live-indicator-dot {
+      display: inline-block;
+      animation: livePulse 1.4s ease-in-out infinite;
+    }
 
     .card-actions-row {
       display: flex;
@@ -260,9 +361,19 @@
       transition: color 0.12s, background 0.12s;
     }
 
-    .card-action:last-child { border-right: none; }
-    .card-action:hover { color: var(--text); background: var(--s2); }
-    .card-action-danger:hover { color: var(--red); background: var(--red-bg); }
+    .card-action:last-child {
+      border-right: none;
+    }
+
+    .card-action:hover {
+      color: var(--text);
+      background: var(--s2);
+    }
+
+    .card-action-danger:hover {
+      color: var(--red);
+      background: var(--red-bg);
+    }
 
     /* ── Context bar ───────────────────────────────────────────────────── */
     .context-bar {
@@ -287,9 +398,18 @@
       min-width: 0;
     }
 
-    .context-command::before { content: '$ '; color: var(--accent); font-weight: 700; }
+    .context-command::before {
+      content: '$ ';
+      color: var(--accent);
+      font-weight: 700;
+    }
 
-    .context-actions { display: flex; gap: 6px; margin-left: auto; flex-shrink: 0; }
+    .context-actions {
+      display: flex;
+      gap: 6px;
+      margin-left: auto;
+      flex-shrink: 0;
+    }
 
     .btn {
       background: none;
@@ -303,8 +423,15 @@
       white-space: nowrap;
     }
 
-    .btn:hover { color: var(--text); border-color: var(--accent); }
-    .btn-link { border: none; padding: 2px 4px; }
+    .btn:hover {
+      color: var(--text);
+      border-color: var(--accent);
+    }
+
+    .btn-link {
+      border: none;
+      padding: 2px 4px;
+    }
 
     /* ── Live bar ──────────────────────────────────────────────────────── */
     .live-bar {
@@ -315,7 +442,9 @@
       overflow: hidden;
     }
 
-    .live-bar.hidden { display: none; }
+    .live-bar.hidden {
+      display: none;
+    }
 
     .live-bar-head {
       display: flex;
@@ -327,7 +456,13 @@
       font-size: 11.5px;
     }
 
-    .live-bar-command { flex: 1; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .live-bar-command {
+      flex: 1;
+      color: var(--text-dim);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
 
     /* ── Columns ───────────────────────────────────────────────────────── */
     .columns-grid {
@@ -338,7 +473,9 @@
     }
 
     @media (max-width: 900px) {
-      .columns-grid { grid-template-columns: 1fr; }
+      .columns-grid {
+        grid-template-columns: 1fr;
+      }
     }
 
     .column {
@@ -363,14 +500,35 @@
       flex-shrink: 0;
     }
 
-    .column-head-hint { font-size: 10.5px; font-weight: 400; font-family: var(--mono); color: var(--text-muted); }
+    .column-head-hint {
+      font-size: 10.5px;
+      font-weight: 400;
+      font-family: var(--mono);
+      color: var(--text-muted);
+    }
 
-    .column-body { overflow-y: auto; }
+    .column-body {
+      overflow-y: auto;
+    }
 
-    #checkpoints-list { max-height: 480px; }
-    #output-body { max-height: 480px; padding: 10px; }
-    #files-tree { max-height: 170px; border-bottom: 1px solid var(--border); }
-    #files-preview { max-height: 300px; overflow-y: auto; }
+    #checkpoints-list {
+      max-height: 480px;
+    }
+
+    #output-body {
+      max-height: 480px;
+      padding: 10px;
+    }
+
+    #files-tree {
+      max-height: 170px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    #files-preview {
+      max-height: 300px;
+      overflow-y: auto;
+    }
 
     .empty-column-note {
       padding: 12px 10px;
@@ -390,12 +548,28 @@
       font-size: 11.5px;
     }
 
-    .cp-row:hover { background: var(--s2); }
-    .cp-row.selected { background: var(--accent-bg); border-left-color: var(--accent); }
-    .cp-row.is-head:not(.selected) { border-left-color: rgba(79, 217, 138, 0.4); }
-    .cp-row.selected.is-head { background: var(--green-bg); border-left-color: var(--green); }
+    .cp-row:hover {
+      background: var(--s2);
+    }
 
-    .cp-row-num { color: var(--text-dim); flex-shrink: 0; }
+    .cp-row.selected {
+      background: var(--accent-bg);
+      border-left-color: var(--accent);
+    }
+
+    .cp-row.is-head:not(.selected) {
+      border-left-color: rgba(79, 217, 138, 0.4);
+    }
+
+    .cp-row.selected.is-head {
+      background: var(--green-bg);
+      border-left-color: var(--green);
+    }
+
+    .cp-row-num {
+      color: var(--text-dim);
+      flex-shrink: 0;
+    }
 
     .cp-row-label {
       color: var(--accent);
@@ -405,7 +579,12 @@
       white-space: nowrap;
     }
 
-    .cp-row-delta { flex-shrink: 0; font-size: 10px; display: flex; gap: 4px; }
+    .cp-row-delta {
+      flex-shrink: 0;
+      font-size: 10px;
+      display: flex;
+      gap: 4px;
+    }
 
     /* ── Output column ─────────────────────────────────────────────────── */
     .output-label {
@@ -414,7 +593,9 @@
       margin-bottom: 4px;
     }
 
-    .output-label:not(:first-child) { margin-top: 12px; }
+    .output-label:not(:first-child) {
+      margin-top: 12px;
+    }
 
     .output-pre {
       font-family: var(--mono);
@@ -425,8 +606,16 @@
       word-break: break-all;
     }
 
-    .output-empty { font-size: 12px; color: var(--text-muted); }
-    .loading-note { padding: 10px; font-size: 12px; color: var(--text-muted); }
+    .output-empty {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .loading-note {
+      padding: 10px;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
 
     /* ── Files column ──────────────────────────────────────────────────── */
     .file-row {
@@ -439,20 +628,86 @@
       cursor: default;
     }
 
-    .file-row.tree-file { cursor: pointer; }
-    .file-row.tree-file:hover { background: var(--s2); }
-    .file-row.tree-file.active { background: var(--accent-bg); }
-    .file-row.tree-file.active .file-path { color: var(--accent); }
+    .file-row.tree-file:hover {
+      background: var(--s2);
+    }
 
-    .file-sigil { width: 10px; font-weight: 700; flex-shrink: 0; text-align: center; }
-    .sigil-a { color: var(--green); }
-    .sigil-m { color: var(--amber); }
-    .sigil-r { color: var(--red); }
+    .file-row.tree-file.active {
+      background: var(--accent-bg);
+    }
 
-    .file-path { color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
-    .file-size { color: var(--text-muted); font-size: 10px; flex-shrink: 0; }
+    .file-row.tree-file.active .file-path {
+      color: var(--accent);
+    }
 
-    .tree-dir { margin: 0; }
+    .file-sigil {
+      width: 10px;
+      font-weight: 700;
+      flex-shrink: 0;
+      text-align: center;
+    }
+
+    .sigil-a {
+      color: var(--green);
+    }
+
+    .sigil-m {
+      color: var(--amber);
+    }
+
+    .sigil-r {
+      color: var(--red);
+    }
+
+    .file-sigil.sigil-m {
+      cursor: pointer;
+    }
+
+    .file-path {
+      color: var(--text-dim);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      flex: 1;
+    }
+
+    .file-size {
+      color: var(--text-muted);
+      font-size: 10px;
+      flex-shrink: 0;
+    }
+
+    .file-row-actions {
+      display: flex;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+
+    .file-action-btn {
+      background: none;
+      border: 1px solid var(--border-hi);
+      border-radius: 3px;
+      color: var(--text-muted);
+      font-size: 10px;
+      padding: 1px 6px;
+      cursor: pointer;
+      transition: color 0.12s, border-color 0.12s, background 0.12s;
+    }
+
+    .file-action-btn:hover {
+      color: var(--text);
+      border-color: var(--accent);
+    }
+
+    .file-action-btn.active {
+      color: var(--accent);
+      border-color: var(--accent);
+      background: var(--accent-bg);
+    }
+
+    .tree-dir {
+      margin: 0;
+    }
 
     .tree-dir-label {
       display: flex;
@@ -466,11 +721,30 @@
       list-style: none;
     }
 
-    .tree-dir-label::-webkit-details-marker { display: none; }
-    .tree-dir-label::before { content: '▸'; color: var(--text-muted); font-size: 9px; width: 8px; }
-    .tree-dir[open] > .tree-dir-label::before { content: '▾'; }
-    .tree-dir-body { padding-left: 12px; }
-    .tree-removed { border-top: 1px solid var(--border); margin-top: 2px; padding-top: 2px; }
+    .tree-dir-label::-webkit-details-marker {
+      display: none;
+    }
+
+    .tree-dir-label::before {
+      content: '▸';
+      color: var(--text-muted);
+      font-size: 9px;
+      width: 8px;
+    }
+
+    .tree-dir[open]>.tree-dir-label::before {
+      content: '▾';
+    }
+
+    .tree-dir-body {
+      padding-left: 12px;
+    }
+
+    .tree-removed {
+      border-top: 1px solid var(--border);
+      margin-top: 2px;
+      padding-top: 2px;
+    }
 
     .file-preview-head {
       display: flex;
@@ -481,8 +755,15 @@
       border-bottom: 1px solid var(--border);
     }
 
-    .file-preview-body { padding: 10px; }
-    .file-preview-image { max-width: 100%; border-radius: 4px; display: block; }
+    .file-preview-body {
+      padding: 10px;
+    }
+
+    .file-preview-image {
+      max-width: 100%;
+      border-radius: 4px;
+      display: block;
+    }
 
     .file-preview-diff-label {
       padding: 8px 10px 0;
@@ -491,15 +772,42 @@
       border-top: 1px solid var(--border);
     }
 
-    .diff-block { overflow-x: auto; }
-    .diff-line { display: block; font-family: var(--mono); font-size: 11.5px; line-height: 1.55; white-space: pre; }
-    .diff-line.added   { color: var(--green); background: var(--green-bg); }
-    .diff-line.removed { color: var(--red);   background: var(--red-bg);   }
-    .diff-line.meta    { color: var(--text-muted); }
-    .diff-line.hunk    { color: var(--accent); }
-    .diff-line.context { color: var(--text-muted); }
+    .diff-block {
+      overflow-x: auto;
+    }
+
+    .diff-line {
+      display: block;
+      font-family: var(--mono);
+      font-size: 11.5px;
+      line-height: 1.55;
+      white-space: pre;
+    }
+
+    .diff-line.added {
+      color: var(--green);
+      background: var(--green-bg);
+    }
+
+    .diff-line.removed {
+      color: var(--red);
+      background: var(--red-bg);
+    }
+
+    .diff-line.meta {
+      color: var(--text-muted);
+    }
+
+    .diff-line.hunk {
+      color: var(--accent);
+    }
+
+    .diff-line.context {
+      color: var(--text-muted);
+    }
   </style>
 </head>
+
 <body>
   <header id="page-header">
     <div class="header-logo">
@@ -563,19 +871,23 @@
     // ── State ────────────────────────────────────────────────────────────────
 
     const viewState = {
-      sessionTree:        [],
-      flatSessions:       [],
-      selectedSessionId:  null,
-      checkpointHistory:  [],
-      selectedCpId:       null,
-      selectedFilePath:   null,
+      sessionTree: [],
+      flatSessions: [],
+      selectedSessionId: null,
+      checkpointHistory: [],
+      selectedCpId: null,
+      selectedFilePath: null,
+      // 'content' | 'diff' — which view the selected file is showing.
+      filePreviewMode: 'content',
       // `${sessionId}:${cpId}` → { stdout, stderr, diff, fileNames, files }
-      outputCache:        new Map(),
+      outputCache: new Map(),
+      // cacheKey of the checkpoint whose fetch most recently failed, or null.
+      failedCheckpointKey: null,
       // `${sessionId}:${cpId}:${path}` → { kind: 'text'|'image'|'binary', content?, url? }
-      fileCache:          new Map(),
-      daemonStatus:       null,
-      daemonPanelOpen:    false,
-      liveOutput:         null,   // { running, command, output } for the selected session
+      fileCache: new Map(),
+      daemonStatus: null,
+      daemonPanelOpen: false,
+      liveOutput: null,   // { running, command, output } for the selected session
     };
 
     // ── Helpers ──────────────────────────────────────────────────────────────
@@ -638,7 +950,7 @@
         const nextLine = lines[i + 1];
         if (!nextLine.startsWith('+++ ')) continue;
         const fromPath = line.slice(4).replace(/^a\//, '');
-        const toPath   = nextLine.slice(4).replace(/^b\//, '');
+        const toPath = nextLine.slice(4).replace(/^b\//, '');
         if (fromPath === '/dev/null') {
           added.push(toPath);
         } else if (toPath === '/dev/null') {
@@ -662,7 +974,7 @@
         const nextLine = lines[i + 1];
         if (!nextLine.startsWith('+++ ')) continue;
         const fromPath = lines[i].slice(4).replace(/^a\//, '');
-        const toPath   = nextLine.slice(4).replace(/^b\//, '');
+        const toPath = nextLine.slice(4).replace(/^b\//, '');
         if (fromPath !== path && toPath !== path) continue;
         let end = lines.length;
         for (let j = i + 2; j < lines.length; j++) {
@@ -677,16 +989,28 @@
     // Every server endpoint the UI talks to is called through here — no other
     // function builds a `/api/...` URL by hand.
 
-    async function fetchJson(url) {
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`${res.status} ${url}`);
-      return res.json();
+    // The session lock is briefly held per request, so a handful of reads
+    // fired at once (e.g. the four checkpoint fetches below, or a live-output
+    // poll landing mid-click) can transiently 503 on `try_lock` contention
+    // even though nothing is actually busy. A couple of short retries absorb
+    // that without surfacing a false "empty" state to the user.
+    async function fetchWithRetry(url, read, attempts = 3, delayMs = 120) {
+      for (let attempt = 1; ; attempt++) {
+        const res = await fetch(url);
+        if (res.ok) return read(res);
+        if (res.status !== 503 || attempt >= attempts) {
+          throw new Error(`${res.status} ${url}`);
+        }
+        await new Promise(r => setTimeout(r, delayMs));
+      }
     }
 
-    async function fetchText(url) {
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`${res.status} ${url}`);
-      return res.text();
+    function fetchJson(url) {
+      return fetchWithRetry(url, res => res.json());
+    }
+
+    function fetchText(url) {
+      return fetchWithRetry(url, res => res.text());
     }
 
     async function postJson(url, body) {
@@ -700,18 +1024,18 @@
     }
 
     const Api = {
-      status:            () => fetchJson('/api/status'),
-      sessionsTree:       () => fetchJson('/api/sessions/tree'),
-      liveOutput:        sessionId => fetchJson(`/api/sessions/${sessionId}/live`),
+      status: () => fetchJson('/api/status'),
+      sessionsTree: () => fetchJson('/api/sessions/tree'),
+      liveOutput: sessionId => fetchJson(`/api/sessions/${sessionId}/live`),
       checkpointHistory: sessionId => fetchJson(`/api/sessions/${sessionId}/history`),
-      checkpointFiles:   (sessionId, cpId) => fetchJson(`/api/sessions/${sessionId}/checkpoints/${cpId}/files`),
-      stdout:            (sessionId, cpId) => fetchText(`/api/sessions/${sessionId}/checkpoints/${cpId}/stdout`),
-      stderr:            (sessionId, cpId) => fetchText(`/api/sessions/${sessionId}/checkpoints/${cpId}/stderr`),
-      diff:              (sessionId, fromId, toId) => fetchText(`/api/sessions/${sessionId}/diff?from=${fromId}&to=${toId}`),
-      fork:              (sessionId, checkpointId) => postJson(`/api/sessions/${sessionId}/fork`, { checkpoint_id: checkpointId }),
-      rollback:          (sessionId, checkpointId) => postJson(`/api/sessions/${sessionId}/rollback`, { checkpoint_id: checkpointId }),
-      setLabel:          (sessionId, label) => postJson(`/api/sessions/${sessionId}/label`, { label }),
-      snapshot:          sessionId => postJson(`/api/sessions/${sessionId}/snapshot`, undefined),
+      checkpointFiles: (sessionId, cpId) => fetchJson(`/api/sessions/${sessionId}/checkpoints/${cpId}/files`),
+      stdout: (sessionId, cpId) => fetchText(`/api/sessions/${sessionId}/checkpoints/${cpId}/stdout`),
+      stderr: (sessionId, cpId) => fetchText(`/api/sessions/${sessionId}/checkpoints/${cpId}/stderr`),
+      diff: (sessionId, fromId, toId) => fetchText(`/api/sessions/${sessionId}/diff?from=${fromId}&to=${toId}`),
+      fork: (sessionId, checkpointId) => postJson(`/api/sessions/${sessionId}/fork`, { checkpoint_id: checkpointId }),
+      rollback: (sessionId, checkpointId) => postJson(`/api/sessions/${sessionId}/rollback`, { checkpoint_id: checkpointId }),
+      setLabel: (sessionId, label) => postJson(`/api/sessions/${sessionId}/label`, { label }),
+      snapshot: sessionId => postJson(`/api/sessions/${sessionId}/snapshot`, undefined),
 
       async fileContent(sessionId, cpId, path) {
         const url = `/api/sessions/${sessionId}/checkpoints/${cpId}/files/${path.split('/').map(encodeURIComponent).join('/')}`;
@@ -758,7 +1082,7 @@
 
     function renderStatusStrip() {
       const status = viewState.daemonStatus;
-      const strip  = document.getElementById('status-strip');
+      const strip = document.getElementById('status-strip');
       if (!status) { strip.innerHTML = ''; return; }
 
       const capacity = status.max_sessions
@@ -766,7 +1090,7 @@
         : `${status.session_count} sessions`;
       const capacityClass = status.max_sessions && status.session_count / status.max_sessions >= 0.9
         ? 'stat-danger' : status.max_sessions && status.session_count / status.max_sessions >= 0.7
-        ? 'stat-warn' : '';
+          ? 'stat-warn' : '';
 
       const items = [
         `v${escHtml(status.version)}`,
@@ -783,7 +1107,7 @@
     }
 
     function renderDaemonPanel() {
-      const panel  = document.getElementById('daemon-panel');
+      const panel = document.getElementById('daemon-panel');
       const status = viewState.daemonStatus;
       panel.classList.toggle('hidden', !viewState.daemonPanelOpen || !status);
       if (!viewState.daemonPanelOpen || !status) return;
@@ -796,10 +1120,10 @@
         ? `${status.max_checkpoints} checkpoints per session` : 'No checkpoint cap';
 
       const rows = [
-        ['Ports',   `MCP :${status.mcp_port} · Web :${status.web_port}`],
-        ['Limits',  `${idleTimeout} · ${workspace} · ${checkpoints}`],
+        ['Ports', `MCP :${status.mcp_port} · Web :${status.web_port}`],
+        ['Limits', `${idleTimeout} · ${workspace} · ${checkpoints}`],
         ['Domains', status.domain_allowlist.length ? escHtml(status.domain_allowlist.join(', ')) : 'None allowed'],
-        ['Mounts',  status.mount_allowlist.length ? escHtml(status.mount_allowlist.join(', ')) : 'All host paths allowed'],
+        ['Mounts', status.mount_allowlist.length ? escHtml(status.mount_allowlist.join(', ')) : 'All host paths allowed'],
       ];
 
       panel.innerHTML = rows.map(([label, value]) => `
@@ -829,7 +1153,7 @@
         return `<span class="badge badge-neutral">${idleAgo}</span>`;
       }
       const remaining = Math.max(idleTimeout - session.idle_secs, 0);
-      const cls  = frac >= 0.9 ? 'badge-danger' : 'badge-warn';
+      const cls = frac >= 0.9 ? 'badge-danger' : 'badge-warn';
       const text = frac >= 1 ? `${idleAgo} · reaping soon` : `${idleAgo} · reaps in ${fmtDuration(remaining)}`;
       return `<span class="badge ${cls}">${text}</span>`;
     }
@@ -880,14 +1204,14 @@
       const byId = new Map(viewState.checkpointHistory.map(h => [h.checkpoint_id, h]));
 
       list.innerHTML = [...session.checkpoints].reverse().map(checkpoint => {
-        const isHead     = checkpoint.is_current;
+        const isHead = checkpoint.is_current;
         const isSelected = checkpoint.checkpoint_id === viewState.selectedCpId;
-        const hist       = byId.get(checkpoint.checkpoint_id);
+        const hist = byId.get(checkpoint.checkpoint_id);
 
         const delta = hist ? [
-          hist.files_added_count    > 0 ? `<span class="sigil-a">+${hist.files_added_count}</span>` : '',
+          hist.files_added_count > 0 ? `<span class="sigil-a">+${hist.files_added_count}</span>` : '',
           hist.files_modified_count > 0 ? `<span class="sigil-m">~${hist.files_modified_count}</span>` : '',
-          hist.files_removed_count  > 0 ? `<span class="sigil-r">-${hist.files_removed_count}</span>` : '',
+          hist.files_removed_count > 0 ? `<span class="sigil-r">-${hist.files_removed_count}</span>` : '',
         ].join('') : '';
 
         return `
@@ -917,14 +1241,14 @@
     // ── Rendering: context bar ────────────────────────────────────────────────
 
     function renderContextBar() {
-      const cpId      = viewState.selectedCpId;
+      const cpId = viewState.selectedCpId;
       const sessionId = viewState.selectedSessionId;
-      const bar       = document.getElementById('context-bar');
+      const bar = document.getElementById('context-bar');
       if (cpId == null || !sessionId) { bar.innerHTML = ''; return; }
 
       const session = findSession(sessionId);
-      const treeCp  = session?.checkpoints.find(c => c.checkpoint_id === cpId);
-      const hist    = viewState.checkpointHistory.find(h => h.checkpoint_id === cpId);
+      const treeCp = session?.checkpoints.find(c => c.checkpoint_id === cpId);
+      const hist = viewState.checkpointHistory.find(h => h.checkpoint_id === cpId);
       const labelSuffix = treeCp?.label ? ` · "${escHtml(treeCp.label)}"` : '';
       const rollbackHidden = treeCp?.is_current ? 'style="display:none"' : '';
 
@@ -990,15 +1314,26 @@
               <div class="tree-dir-body">${renderFileTreeChildren(node.children, deltaByPath)}</div>
             </details>`;
         }
-        const path      = node.file.path;
-        const delta     = deltaByPath.get(path);
-        const sigil     = delta === 'added'    ? '<span class="file-sigil sigil-a">+</span>'
-                        : delta === 'modified' ? '<span class="file-sigil sigil-m">~</span>'
-                        : '<span class="file-sigil"></span>';
-        const isActive  = path === viewState.selectedFilePath;
+        const path = node.file.path;
+        const delta = deltaByPath.get(path);
+        const isModified = delta === 'modified';
+        const escPath = escHtml(path);
+        const sigil = delta === 'added' ? '<span class="file-sigil sigil-a">+</span>'
+          : isModified ? `<span class="file-sigil sigil-m" onclick="onFileClick('${escPath}', 'diff')" title="Show diff from previous checkpoint">~</span>`
+            : '<span class="file-sigil"></span>';
+        const isActive = path === viewState.selectedFilePath;
+        const viewActive = isActive && viewState.filePreviewMode === 'content';
+        const diffActive = isActive && viewState.filePreviewMode === 'diff';
+        const diffBtn = isModified
+          ? `<button class="file-action-btn ${diffActive ? 'active' : ''}" onclick="onFileClick('${escPath}', 'diff')">diff</button>`
+          : '';
         return `
-          <div class="file-row tree-file ${isActive ? 'active' : ''}" onclick="onFileClick('${escHtml(path)}')" title="${escHtml(path)}">
+          <div class="file-row tree-file ${isActive ? 'active' : ''}" title="${escPath}">
             ${sigil}<span class="file-path">${escHtml(node.name)}</span><span class="file-size">${fmtBytes(node.file.size_bytes)}</span>
+            <span class="file-row-actions">
+              <button class="file-action-btn ${viewActive ? 'active' : ''}" onclick="onFileClick('${escPath}', 'content')">view</button>
+              ${diffBtn}
+            </span>
           </div>`;
       }).join('');
     }
@@ -1011,7 +1346,7 @@
       if (!cached?.files) { tree.innerHTML = '<div class="loading-note">Loading…</div>'; return; }
 
       const deltaByPath = new Map();
-      for (const f of cached.fileNames?.added    || []) deltaByPath.set(f, 'added');
+      for (const f of cached.fileNames?.added || []) deltaByPath.set(f, 'added');
       for (const f of cached.fileNames?.modified || []) deltaByPath.set(f, 'modified');
       const removed = cached.fileNames?.removed || [];
 
@@ -1036,11 +1371,11 @@
       if (diffText === undefined) return '<div class="loading-note">Loading…</div>';
       if (!diffText) return `<div class="file-preview-body"><span class="output-empty">${escHtml(emptyMessage)}</span></div>`;
       const lines = diffText.split('\n').map(line => {
-        if      (line.startsWith('+++ ') || line.startsWith('--- ')) return `<span class="diff-line meta">${escHtml(line)}</span>`;
-        else if (line.startsWith('+'))  return `<span class="diff-line added">${escHtml(line)}</span>`;
-        else if (line.startsWith('-'))  return `<span class="diff-line removed">${escHtml(line)}</span>`;
+        if (line.startsWith('+++ ') || line.startsWith('--- ')) return `<span class="diff-line meta">${escHtml(line)}</span>`;
+        else if (line.startsWith('+')) return `<span class="diff-line added">${escHtml(line)}</span>`;
+        else if (line.startsWith('-')) return `<span class="diff-line removed">${escHtml(line)}</span>`;
         else if (line.startsWith('@@')) return `<span class="diff-line hunk">${escHtml(line)}</span>`;
-        else                             return `<span class="diff-line context">${escHtml(line)}</span>`;
+        else return `<span class="diff-line context">${escHtml(line)}</span>`;
       });
       return `<div class="file-preview-body"><div class="diff-block">${lines.join('')}</div></div>`;
     }
@@ -1061,40 +1396,53 @@
           <button class="btn" onclick="copyToClipboard('${escHtml(viewState.selectedFilePath)}', this)">Copy path</button>
         </div>`;
 
-      let contentHtml;
-      if (fileState === undefined) {
-        contentHtml = '<div class="loading-note">Loading…</div>';
+      let bodyHtml;
+      if (viewState.filePreviewMode === 'diff') {
+        const fileDiff = cached?.diff === undefined ? undefined : extractFileDiff(cached.diff, viewState.selectedFilePath);
+        bodyHtml =
+          `<div class="file-preview-diff-label">Diff from previous checkpoint</div>`
+          + diffBlockHtml(fileDiff, 'No changes from the previous checkpoint');
+      } else if (fileState === undefined) {
+        bodyHtml = '<div class="loading-note">Loading…</div>';
       } else if (fileState.kind === 'image') {
-        contentHtml = `<div class="file-preview-body"><img class="file-preview-image" src="${fileState.url}" alt="${escHtml(viewState.selectedFilePath)}"></div>`;
+        bodyHtml = `<div class="file-preview-body"><img class="file-preview-image" src="${fileState.url}" alt="${escHtml(viewState.selectedFilePath)}"></div>`;
       } else if (fileState.kind === 'binary') {
-        contentHtml = `<div class="file-preview-body"><span class="output-empty">Binary file — cannot preview</span></div>`;
+        bodyHtml = `<div class="file-preview-body"><span class="output-empty">Binary file — cannot preview</span></div>`;
       } else {
-        contentHtml = `<div class="file-preview-body"><pre class="output-pre">${escHtml(fileState.content)}</pre></div>`;
+        bodyHtml = `<div class="file-preview-body"><pre class="output-pre">${escHtml(fileState.content)}</pre></div>`;
       }
 
-      const fileDiff = cached?.diff === undefined ? undefined : extractFileDiff(cached.diff, viewState.selectedFilePath);
-      const diffHtml =
-        `<div class="file-preview-diff-label">Diff from previous checkpoint</div>`
-        + diffBlockHtml(fileDiff, 'No changes from the previous checkpoint');
-
-      preview.innerHTML = head + contentHtml + diffHtml;
+      preview.innerHTML = head + bodyHtml;
     }
 
     // ── Rendering: full workspace panel ───────────────────────────────────────
 
     function renderWorkspacePanel() {
-      const cpId      = viewState.selectedCpId;
+      const cpId = viewState.selectedCpId;
       const sessionId = viewState.selectedSessionId;
-      const section   = document.getElementById('workspace-section');
+      const section = document.getElementById('workspace-section');
       if (cpId == null || !sessionId) { section.classList.add('hidden'); return; }
 
       section.classList.remove('hidden');
 
       const cacheKey = `${sessionId}:${cpId}`;
-      const cached   = viewState.outputCache.get(cacheKey);
-      const hist     = viewState.checkpointHistory.find(h => h.checkpoint_id === cpId);
+      const cached = viewState.outputCache.get(cacheKey);
+      const hist = viewState.checkpointHistory.find(h => h.checkpoint_id === cpId);
 
       renderContextBar();
+
+      if (viewState.failedCheckpointKey === cacheKey) {
+        const errorHtml = `
+          <div class="empty-column-note">
+            Failed to load checkpoint data.
+            <button class="btn" onclick="onRetryCheckpointLoad()">Retry</button>
+          </div>`;
+        document.getElementById('output-body').innerHTML = errorHtml;
+        document.getElementById('files-tree').innerHTML = errorHtml;
+        document.getElementById('files-preview').innerHTML = '';
+        return;
+      }
+
       renderOutputColumn(cached);
       renderFilesTree(cached, hist);
       renderFilesPreview(cached, viewState.selectedFilePath
@@ -1107,10 +1455,11 @@
     async function onSessionClick(sessionId) {
       if (viewState.selectedSessionId === sessionId) return;
       viewState.selectedSessionId = sessionId;
-      viewState.selectedCpId      = null;
-      viewState.selectedFilePath  = null;
+      viewState.selectedCpId = null;
+      viewState.selectedFilePath = null;
+      viewState.filePreviewMode = 'content';
       viewState.checkpointHistory = [];
-      viewState.liveOutput        = null;
+      viewState.liveOutput = null;
 
       renderSessionGrid();
       document.getElementById('workspace-section').classList.add('hidden');
@@ -1147,15 +1496,24 @@
 
     async function onCheckpointClick(cpId) {
       if (viewState.selectedCpId === cpId) return;
-      viewState.selectedCpId     = cpId;
+      viewState.selectedCpId = cpId;
       viewState.selectedFilePath = null;
+      viewState.filePreviewMode = 'content';
 
       renderCheckpointList();
       renderWorkspacePanel();
 
       const sessionId = viewState.selectedSessionId;
-      const cacheKey  = `${sessionId}:${cpId}`;
+      const cacheKey = `${sessionId}:${cpId}`;
       if (viewState.outputCache.has(cacheKey)) return;
+      await loadCheckpointData(sessionId, cpId);
+    }
+
+    // Split out of onCheckpointClick so the retry button below can re-run it
+    // without tripping the "already selected" guard that skips re-fetching.
+    async function loadCheckpointData(sessionId, cpId) {
+      const cacheKey = `${sessionId}:${cpId}`;
+      viewState.failedCheckpointKey = null;
 
       try {
         const [stdout, stderr, diff, files] = await Promise.all([
@@ -1169,26 +1527,33 @@
         viewState.outputCache.set(cacheKey, { stdout, stderr, diff, fileNames, files });
       } catch (e) {
         console.error('Failed to load checkpoint output:', e);
-        viewState.outputCache.set(cacheKey, {
-          stdout: '', stderr: '', diff: '',
-          fileNames: { added: [], modified: [], removed: [] },
-          files: [],
-        });
+        viewState.outputCache.delete(cacheKey);
+        viewState.failedCheckpointKey = cacheKey;
       }
 
-      if (viewState.selectedCpId === cpId) renderWorkspacePanel();
+      if (`${viewState.selectedSessionId}:${viewState.selectedCpId}` === cacheKey) renderWorkspacePanel();
     }
 
-    async function onFileClick(path) {
-      // Clicking the already-selected file deselects it, returning to the
-      // whole-checkpoint diff — the only way back once a file is chosen.
-      viewState.selectedFilePath = viewState.selectedFilePath === path ? null : path;
+    function onRetryCheckpointLoad() {
+      const sessionId = viewState.selectedSessionId;
+      const cpId = viewState.selectedCpId;
+      if (sessionId == null || cpId == null) return;
+      loadCheckpointData(sessionId, cpId);
+    }
+
+    async function onFileClick(path, mode) {
+      // Re-clicking the active view/diff button for the already-selected file
+      // deselects it, returning to the whole-checkpoint diff — the only way
+      // back once a file is chosen.
+      const alreadyShowing = viewState.selectedFilePath === path && viewState.filePreviewMode === mode;
+      viewState.selectedFilePath = alreadyShowing ? null : path;
+      viewState.filePreviewMode = mode;
       renderWorkspacePanel();
-      if (viewState.selectedFilePath === null) return;
+      if (viewState.selectedFilePath === null || mode !== 'content') return;
 
       const sessionId = viewState.selectedSessionId;
-      const cpId      = viewState.selectedCpId;
-      const cacheKey  = `${sessionId}:${cpId}:${path}`;
+      const cpId = viewState.selectedCpId;
+      const cacheKey = `${sessionId}:${cpId}:${path}`;
       if (!viewState.fileCache.has(cacheKey)) {
         try {
           viewState.fileCache.set(cacheKey, await Api.fileContent(sessionId, cpId, path));
@@ -1213,9 +1578,10 @@
       }
       if (viewState.selectedSessionId === sessionId) {
         viewState.selectedSessionId = null;
-        viewState.selectedCpId      = null;
-        viewState.selectedFilePath  = null;
-        viewState.liveOutput        = null;
+        viewState.selectedCpId = null;
+        viewState.selectedFilePath = null;
+        viewState.filePreviewMode = 'content';
+        viewState.liveOutput = null;
         document.getElementById('workspace-section').classList.add('hidden');
         renderLiveBar();
       }
@@ -1248,7 +1614,7 @@
 
     async function onForkFromHereClick() {
       const sessionId = viewState.selectedSessionId;
-      const cpId      = viewState.selectedCpId;
+      const cpId = viewState.selectedCpId;
       if (sessionId == null || cpId == null) return;
       let forked;
       try {
@@ -1264,7 +1630,7 @@
 
     async function onRollbackHereClick() {
       const sessionId = viewState.selectedSessionId;
-      const cpId      = viewState.selectedCpId;
+      const cpId = viewState.selectedCpId;
       if (sessionId == null || cpId == null) return;
       if (!confirm(`Roll back session ${shortId(sessionId)} to checkpoint #${cpId}?\n\nEvery checkpoint after this point is permanently discarded on the next write — it cannot be undone.`)) {
         return;
@@ -1287,9 +1653,9 @@
           Api.sessionsTree(),
           Api.status(),
         ]);
-        viewState.sessionTree   = tree;
-        viewState.flatSessions  = flattenTree(tree);
-        viewState.daemonStatus  = status;
+        viewState.sessionTree = tree;
+        viewState.flatSessions = flattenTree(tree);
+        viewState.daemonStatus = status;
 
         document.getElementById('live-dot').classList.remove('offline');
         document.getElementById('status-label').textContent = `Updated ${new Date().toLocaleTimeString()}`;
@@ -1301,16 +1667,17 @@
         if (viewState.selectedSessionId && findSession(viewState.selectedSessionId)) {
           try {
             viewState.checkpointHistory = await Api.checkpointHistory(viewState.selectedSessionId);
-          } catch (_) {}
+          } catch (_) { }
           renderCheckpointList();
           if (viewState.selectedCpId != null) renderWorkspacePanel();
           await refreshLiveOutput();
         } else if (viewState.selectedSessionId) {
           // Selected session no longer exists (destroyed or reaped) — clear the stale detail view.
           viewState.selectedSessionId = null;
-          viewState.selectedCpId      = null;
-          viewState.selectedFilePath  = null;
-          viewState.liveOutput        = null;
+          viewState.selectedCpId = null;
+          viewState.selectedFilePath = null;
+          viewState.filePreviewMode = 'content';
+          viewState.liveOutput = null;
           document.getElementById('workspace-section').classList.add('hidden');
           renderLiveBar();
         }
@@ -1324,4 +1691,5 @@
     setInterval(refresh, 2000);
   </script>
 </body>
+
 </html>
