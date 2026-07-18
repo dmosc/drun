@@ -1,6 +1,5 @@
 use crate::errors::DrunError;
 use crate::live_output::LiveOutputRegistry;
-use crate::reaper::{self, SessionMap};
 #[cfg(test)]
 use drun_core::Config;
 use drun_core::{ConfigHandle, Session};
@@ -8,7 +7,10 @@ use rust_mcp_sdk::schema::{CallToolResult, schema_utils::CallToolError};
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
+    time::Duration,
 };
+
+pub(crate) type SessionMap = Arc<Mutex<HashMap<String, Arc<Mutex<Session>>>>>;
 
 pub(crate) enum CloseSessionError {
     NotFound,
@@ -41,9 +43,32 @@ impl DrunHandler {
     }
 
     pub fn start_idle_reaper(&self) {
-        if let Some(timeout_secs) = self.config.get().session_idle_timeout_secs {
-            reaper::spawn(Arc::clone(&self.sessions), timeout_secs);
-        }
+        let Some(timeout_secs) = self.config.get().session_idle_timeout_secs else {
+            return;
+        };
+        let sessions = Arc::clone(&self.sessions);
+        let check_every = Duration::from_secs((timeout_secs / 2).max(30));
+        tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(check_every);
+            // Skip the immediate first tick.
+            ticker.tick().await;
+            loop {
+                ticker.tick().await;
+                Self::evict_idle_sessions(&sessions, timeout_secs);
+            }
+        });
+    }
+
+    fn evict_idle_sessions(sessions: &SessionMap, timeout_secs: u64) {
+        sessions.lock().unwrap().retain(|_, arc| {
+            let is_idle =
+                |session: &Session| session.last_activity.elapsed().as_secs() <= timeout_secs;
+            match arc.try_lock() {
+                Ok(session) => is_idle(&session),
+                Err(std::sync::TryLockError::WouldBlock) => true,
+                Err(std::sync::TryLockError::Poisoned(poisoned)) => is_idle(&poisoned.into_inner()),
+            }
+        });
     }
 
     pub fn start_shutdown_handler(&self) {
@@ -188,6 +213,75 @@ impl DrunHandler {
 mod tests {
     use super::*;
     use crate::response::text;
+
+    fn session_map(entries: Vec<(&str, Session)>) -> SessionMap {
+        let mut map = HashMap::new();
+        for (id, session) in entries {
+            map.insert(id.to_string(), Arc::new(Mutex::new(session)));
+        }
+        Arc::new(Mutex::new(map))
+    }
+
+    fn session_idle_for(secs: u64) -> Session {
+        let mut session = Session::new(Config::default().into()).unwrap();
+        session.last_activity = Instant::now() - Duration::from_secs(secs);
+        session
+    }
+
+    #[test]
+    fn evict_idle_sessions_removes_sessions_past_the_timeout() {
+        let sessions = session_map(vec![("stale", session_idle_for(120))]);
+        DrunHandler::evict_idle_sessions(&sessions, 60);
+        assert!(sessions.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn evict_idle_sessions_keeps_sessions_within_the_idle_window() {
+        let sessions = session_map(vec![("fresh", session_idle_for(10))]);
+        DrunHandler::evict_idle_sessions(&sessions, 60);
+        assert!(sessions.lock().unwrap().contains_key("fresh"));
+    }
+
+    #[test]
+    fn evict_idle_sessions_keeps_a_session_that_is_currently_locked_even_if_stale() {
+        let sessions = session_map(vec![("busy", session_idle_for(120))]);
+        let session_arc = sessions.lock().unwrap().get("busy").unwrap().clone();
+        let _guard = session_arc.lock().unwrap(); // simulate an in-flight call
+
+        DrunHandler::evict_idle_sessions(&sessions, 60);
+        assert!(sessions.lock().unwrap().contains_key("busy"));
+    }
+
+    #[test]
+    fn evict_idle_sessions_removes_a_poisoned_session_past_the_timeout() {
+        let sessions = session_map(vec![("poisoned", session_idle_for(120))]);
+        let session_arc = sessions.lock().unwrap().get("poisoned").unwrap().clone();
+        let arc_for_panic = session_arc.clone();
+        let _ = std::thread::spawn(move || {
+            let _guard = arc_for_panic.lock().unwrap();
+            panic!("simulated panic while holding the session lock");
+        })
+        .join();
+        assert!(session_arc.is_poisoned());
+
+        DrunHandler::evict_idle_sessions(&sessions, 60);
+        assert!(
+            !sessions.lock().unwrap().contains_key("poisoned"),
+            "a poisoned-but-idle session must still be reclaimed, not kept forever"
+        );
+    }
+
+    #[test]
+    fn evict_idle_sessions_only_removes_the_stale_sessions_from_a_mixed_map() {
+        let sessions = session_map(vec![
+            ("stale", session_idle_for(120)),
+            ("fresh", session_idle_for(10)),
+        ]);
+        DrunHandler::evict_idle_sessions(&sessions, 60);
+        let remaining = sessions.lock().unwrap();
+        assert!(!remaining.contains_key("stale"));
+        assert!(remaining.contains_key("fresh"));
+    }
     use std::time::{Duration, Instant};
 
     fn handler_with_session() -> (DrunHandler, String) {

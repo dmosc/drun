@@ -3,7 +3,6 @@ mod errors;
 mod handler;
 mod init;
 mod live_output;
-mod reaper;
 mod response;
 mod server;
 mod state;

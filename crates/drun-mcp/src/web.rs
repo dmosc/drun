@@ -1,6 +1,5 @@
-use crate::handler::{CloseSessionError, DrunHandler};
+use crate::handler::{CloseSessionError, DrunHandler, SessionMap};
 use crate::live_output::LiveEntry;
-use crate::reaper::SessionMap;
 use crate::response::mime_type_for_extension;
 use crate::state;
 use axum::{
@@ -189,18 +188,24 @@ impl WebServer {
         State(app): State<AppState>,
         Path((session_id, checkpoint_id)): Path<(String, usize)>,
     ) -> Response {
-        Self::read_checkpoint_stream(&app.handler.sessions, &session_id, checkpoint_id, |cp| {
-            cp.stdout.clone()
-        })
+        Self::read_checkpoint_stream(
+            &app.handler.sessions,
+            &session_id,
+            checkpoint_id,
+            |checkpoint| checkpoint.stdout.clone(),
+        )
     }
 
     async fn handle_checkpoint_stderr(
         State(app): State<AppState>,
         Path((session_id, checkpoint_id)): Path<(String, usize)>,
     ) -> Response {
-        Self::read_checkpoint_stream(&app.handler.sessions, &session_id, checkpoint_id, |cp| {
-            cp.stderr.clone()
-        })
+        Self::read_checkpoint_stream(
+            &app.handler.sessions,
+            &session_id,
+            checkpoint_id,
+            |checkpoint| checkpoint.stderr.clone(),
+        )
     }
 
     async fn handle_checkpoint_files(

@@ -1,7 +1,6 @@
-use std::{
-    io::Write,
-    path::{Path, PathBuf},
-};
+#[cfg(test)]
+use std::path::Path;
+use std::{io::Write, path::PathBuf};
 
 use serde_json::{Map, Value, json};
 
@@ -37,70 +36,114 @@ fn rendered_default_settings() -> String {
 }
 
 pub fn run() {
-    let cwd = std::env::current_dir().expect("cannot read current directory");
-    let drun_home = drun_home();
+    let project = ProjectInit {
+        project_dir: std::env::current_dir().expect("cannot read current directory"),
+        drun_home: drun_home(),
+    };
 
-    write_settings(&cwd);
-    write_claude_md(&cwd);
-    register_project(&drun_home, &cwd);
-    allow_mount_path(&drun_home, &cwd);
+    project.write_settings();
+    project.write_claude_md();
+    project.register_project();
+    project.allow_mount_path();
 
-    eprintln!("drun: initialized for {}", cwd.display());
-}
-
-fn allow_mount_path(drun_home: &Path, project_dir: &Path) {
-    let config_path = drun_home.join("config.toml");
-    if !config_path.exists() {
-        return;
-    }
-    match crate::config_cmd::add_path_to(&config_path, project_dir) {
-        Ok(true) => eprintln!("drun: added '{}' to mount_allowlist", project_dir.display()),
-        Ok(false) => {}
-        Err(e) => eprintln!(
-            "drun: could not update mount_allowlist ({e}) — add it manually with \
-             `drun-mcp config add-path {}`",
-            project_dir.display()
-        ),
-    }
+    eprintln!("drun: initialized for {}", project.project_dir.display());
 }
 
 pub(crate) fn drun_home() -> PathBuf {
     PathBuf::from(std::env::var("HOME").expect("HOME not set")).join(".drun")
 }
 
-fn write_settings(project_dir: &Path) {
-    let settings_dir = project_dir.join(".claude");
-    let settings_file = settings_dir.join("settings.json");
+struct ProjectInit {
+    project_dir: PathBuf,
+    drun_home: PathBuf,
+}
 
-    std::fs::create_dir_all(&settings_dir).expect("cannot create .claude/");
-
-    if !settings_file.exists() {
-        std::fs::write(&settings_file, rendered_default_settings())
-            .expect("cannot write settings.json");
-        eprintln!("drun: created .claude/settings.json");
-        return;
+impl ProjectInit {
+    fn allow_mount_path(&self) {
+        let config_path = self.drun_home.join("config.toml");
+        if !config_path.exists() {
+            return;
+        }
+        match crate::config_cmd::add_path_to(&config_path, &self.project_dir) {
+            Ok(true) => eprintln!(
+                "drun: added '{}' to mount_allowlist",
+                self.project_dir.display()
+            ),
+            Ok(false) => {}
+            Err(e) => eprintln!(
+                "drun: could not update mount_allowlist ({e}) — add it manually with \
+                 `drun-mcp config add-path {}`",
+                self.project_dir.display()
+            ),
+        }
     }
 
-    let existing =
-        std::fs::read_to_string(&settings_file).expect("cannot read existing settings.json");
-    match merge_settings(&existing) {
-        Ok(Some(merged)) => {
-            std::fs::write(&settings_file, merged).expect("cannot write settings.json");
-            eprintln!(
-                "drun: updated .claude/settings.json — merged in drun's required permissions \
-                 (native tools are now blocked for this project)"
-            );
+    fn write_settings(&self) {
+        let settings_dir = self.project_dir.join(".claude");
+        let settings_file = settings_dir.join("settings.json");
+
+        std::fs::create_dir_all(&settings_dir).expect("cannot create .claude/");
+
+        if !settings_file.exists() {
+            std::fs::write(&settings_file, rendered_default_settings())
+                .expect("cannot write settings.json");
+            eprintln!("drun: created .claude/settings.json");
+            return;
         }
-        Ok(None) => {
-            eprintln!("drun: .claude/settings.json already configured for drun, skipping");
+
+        let existing =
+            std::fs::read_to_string(&settings_file).expect("cannot read existing settings.json");
+        match merge_settings(&existing) {
+            Ok(Some(merged)) => {
+                std::fs::write(&settings_file, merged).expect("cannot write settings.json");
+                eprintln!(
+                    "drun: updated .claude/settings.json — merged in drun's required permissions \
+                     (native tools are now blocked for this project)"
+                );
+            }
+            Ok(None) => {
+                eprintln!("drun: .claude/settings.json already configured for drun, skipping");
+            }
+            Err(e) => {
+                eprintln!(
+                    "drun: could not merge into existing .claude/settings.json ({e}) — leaving \
+                     it untouched. Native tools are NOT blocked until you add this yourself:\n{}",
+                    rendered_default_settings()
+                );
+            }
         }
-        Err(e) => {
-            eprintln!(
-                "drun: could not merge into existing .claude/settings.json ({e}) — leaving it \
-                 untouched. Native tools are NOT blocked until you add this yourself:\n{}",
-                rendered_default_settings()
-            );
+    }
+
+    fn write_claude_md(&self) {
+        let claude_md = self.project_dir.join("CLAUDE.md");
+
+        if claude_md.exists() {
+            eprintln!("drun: CLAUDE.md already exists, skipping");
+            return;
         }
+
+        let project_path = self.project_dir.to_str().expect("non-UTF-8 project path");
+        std::fs::write(&claude_md, claude_md_content(project_path))
+            .expect("cannot write CLAUDE.md");
+        eprintln!("drun: created CLAUDE.md");
+    }
+
+    fn register_project(&self) {
+        std::fs::create_dir_all(&self.drun_home).expect("cannot create ~/.drun");
+        let registry = self.drun_home.join("projects");
+        let project_path = self.project_dir.to_str().expect("non-UTF-8 project path");
+
+        let existing = std::fs::read_to_string(&registry).unwrap_or_default();
+        if existing.lines().any(|l| l == project_path) {
+            return;
+        }
+
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&registry)
+            .expect("cannot open ~/.drun/projects");
+        writeln!(file, "{project_path}").expect("cannot write to project registry");
     }
 }
 
@@ -144,37 +187,6 @@ fn merge_string_array(
         }
     }
     Ok(changed)
-}
-
-fn write_claude_md(project_dir: &Path) {
-    let claude_md = project_dir.join("CLAUDE.md");
-
-    if claude_md.exists() {
-        eprintln!("drun: CLAUDE.md already exists, skipping");
-        return;
-    }
-
-    let project_path = project_dir.to_str().expect("non-UTF-8 project path");
-    std::fs::write(&claude_md, claude_md_content(project_path)).expect("cannot write CLAUDE.md");
-    eprintln!("drun: created CLAUDE.md");
-}
-
-fn register_project(drun_home: &Path, project_dir: &Path) {
-    std::fs::create_dir_all(drun_home).expect("cannot create ~/.drun");
-    let registry = drun_home.join("projects");
-    let project_path = project_dir.to_str().expect("non-UTF-8 project path");
-
-    let existing = std::fs::read_to_string(&registry).unwrap_or_default();
-    if existing.lines().any(|l| l == project_path) {
-        return;
-    }
-
-    let mut file = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&registry)
-        .expect("cannot open ~/.drun/projects");
-    writeln!(file, "{project_path}").expect("cannot write to project registry");
 }
 
 fn claude_md_content(project_path: &str) -> String {
@@ -231,6 +243,13 @@ the change is visible on your very next tool call in this same session.
 mod tests {
     use super::*;
 
+    fn project_init(drun_home: &Path, project_dir: &Path) -> ProjectInit {
+        ProjectInit {
+            drun_home: drun_home.to_path_buf(),
+            project_dir: project_dir.to_path_buf(),
+        }
+    }
+
     #[test]
     fn claude_md_content_includes_the_project_path() {
         let content = claude_md_content("/home/user/myproject");
@@ -247,7 +266,7 @@ mod tests {
     #[test]
     fn write_settings_creates_claude_settings_json() {
         let dir = tempfile::tempdir().unwrap();
-        write_settings(dir.path());
+        project_init(dir.path(), dir.path()).write_settings();
         let settings_path = dir.path().join(".claude/settings.json");
         assert!(settings_path.exists());
         let content = std::fs::read_to_string(&settings_path).unwrap();
@@ -262,7 +281,7 @@ mod tests {
         let settings_path = settings_dir.join("settings.json");
         std::fs::write(&settings_path, "custom content").unwrap();
 
-        write_settings(dir.path());
+        project_init(dir.path(), dir.path()).write_settings();
 
         assert_eq!(
             std::fs::read_to_string(&settings_path).unwrap(),
@@ -278,7 +297,7 @@ mod tests {
         let settings_path = settings_dir.join("settings.json");
         std::fs::write(&settings_path, r#"{"env": {"FOO": "bar"}}"#).unwrap();
 
-        write_settings(dir.path());
+        project_init(dir.path(), dir.path()).write_settings();
 
         let content = std::fs::read_to_string(&settings_path).unwrap();
         let value: serde_json::Value = serde_json::from_str(&content).unwrap();
@@ -305,7 +324,7 @@ mod tests {
         )
         .unwrap();
 
-        write_settings(dir.path());
+        project_init(dir.path(), dir.path()).write_settings();
 
         let content = std::fs::read_to_string(&settings_path).unwrap();
         let value: serde_json::Value = serde_json::from_str(&content).unwrap();
@@ -321,11 +340,11 @@ mod tests {
     #[test]
     fn write_settings_is_idempotent_once_fully_merged() {
         let dir = tempfile::tempdir().unwrap();
-        write_settings(dir.path());
+        project_init(dir.path(), dir.path()).write_settings();
         let settings_path = dir.path().join(".claude/settings.json");
         let first = std::fs::read_to_string(&settings_path).unwrap();
 
-        write_settings(dir.path());
+        project_init(dir.path(), dir.path()).write_settings();
 
         let second = std::fs::read_to_string(&settings_path).unwrap();
         assert_eq!(first, second);
@@ -346,7 +365,7 @@ mod tests {
     #[test]
     fn write_claude_md_creates_the_file_with_project_path() {
         let dir = tempfile::tempdir().unwrap();
-        write_claude_md(dir.path());
+        project_init(dir.path(), dir.path()).write_claude_md();
         let path = dir.path().join("CLAUDE.md");
         assert!(path.exists());
         let content = std::fs::read_to_string(&path).unwrap();
@@ -358,7 +377,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("CLAUDE.md"), "custom").unwrap();
 
-        write_claude_md(dir.path());
+        project_init(dir.path(), dir.path()).write_claude_md();
 
         assert_eq!(
             std::fs::read_to_string(dir.path().join("CLAUDE.md")).unwrap(),
@@ -376,7 +395,7 @@ mod tests {
         )
         .unwrap();
 
-        allow_mount_path(drun_home.path(), project_dir.path());
+        project_init(drun_home.path(), project_dir.path()).allow_mount_path();
 
         let config = drun_core::Config::load_from(Some(&drun_home.path().join("config.toml")));
         assert!(
@@ -391,7 +410,7 @@ mod tests {
         let drun_home = tempfile::tempdir().unwrap();
         let project_dir = tempfile::tempdir().unwrap();
 
-        allow_mount_path(drun_home.path(), project_dir.path());
+        project_init(drun_home.path(), project_dir.path()).allow_mount_path();
 
         assert!(!drun_home.path().join("config.toml").exists());
     }
@@ -401,7 +420,7 @@ mod tests {
         let drun_home = tempfile::tempdir().unwrap();
         let project_dir = tempfile::tempdir().unwrap();
 
-        register_project(drun_home.path(), project_dir.path());
+        project_init(drun_home.path(), project_dir.path()).register_project();
 
         let registry = std::fs::read_to_string(drun_home.path().join("projects")).unwrap();
         assert!(
@@ -416,8 +435,8 @@ mod tests {
         let drun_home = tempfile::tempdir().unwrap();
         let project_dir = tempfile::tempdir().unwrap();
 
-        register_project(drun_home.path(), project_dir.path());
-        register_project(drun_home.path(), project_dir.path());
+        project_init(drun_home.path(), project_dir.path()).register_project();
+        project_init(drun_home.path(), project_dir.path()).register_project();
 
         let registry = std::fs::read_to_string(drun_home.path().join("projects")).unwrap();
         let occurrences = registry

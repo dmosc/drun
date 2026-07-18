@@ -248,11 +248,11 @@ impl Session {
         checkpoint_id: usize,
         label: String,
     ) -> anyhow::Result<()> {
-        let cp = self
+        let checkpoint = self
             .checkpoints
             .get_mut(checkpoint_id)
             .ok_or_else(|| RunnerError::checkpoint_not_found(checkpoint_id))?;
-        cp.label = if label.is_empty() { None } else { Some(label) };
+        checkpoint.label = if label.is_empty() { None } else { Some(label) };
         Ok(())
     }
 
@@ -326,8 +326,8 @@ impl Session {
         let removed_count = to_id - from_id;
         self.checkpoints
             .splice(from_id..=to_id, std::iter::once(squashed));
-        for (i, cp) in self.checkpoints.iter_mut().enumerate() {
-            cp.id = i;
+        for (i, checkpoint) in self.checkpoints.iter_mut().enumerate() {
+            checkpoint.id = i;
         }
         if self.checkpoint_idx >= from_id && self.checkpoint_idx <= to_id {
             self.checkpoint_idx = from_id;
@@ -359,8 +359,8 @@ impl Session {
         );
         let removed_count = to_id - from_id + 1;
         self.checkpoints.drain(from_id..=to_id);
-        for (i, cp) in self.checkpoints.iter_mut().enumerate() {
-            cp.id = i;
+        for (i, checkpoint) in self.checkpoints.iter_mut().enumerate() {
+            checkpoint.id = i;
         }
         if self.checkpoint_idx > to_id {
             self.checkpoint_idx -= removed_count;
@@ -500,8 +500,8 @@ impl Session {
         let checkpoint_records = self
             .checkpoints
             .iter()
-            .map(|cp| {
-                let files = cp
+            .map(|checkpoint| {
+                let files = checkpoint
                     .files
                     .iter()
                     .map(|(key, arc)| {
@@ -515,11 +515,11 @@ impl Session {
                     })
                     .collect();
                 CheckpointRecord {
-                    id: cp.id,
-                    stdout: cp.stdout.clone(),
-                    stderr: cp.stderr.clone(),
-                    label: cp.label.clone(),
-                    command: cp.command.clone(),
+                    id: checkpoint.id,
+                    stdout: checkpoint.stdout.clone(),
+                    stderr: checkpoint.stderr.clone(),
+                    label: checkpoint.label.clone(),
+                    command: checkpoint.command.clone(),
                     files,
                 }
             })
@@ -559,8 +559,8 @@ impl Session {
             .collect();
 
         let mut intern_table: HashMap<u64, Weak<Vec<u8>>> = HashMap::new();
-        for cp in &checkpoints {
-            for arc in cp.files.values() {
+        for checkpoint in &checkpoints {
+            for arc in checkpoint.files.values() {
                 let hash = Self::file_content_hash(arc);
                 intern_table
                     .entry(hash)
@@ -1017,10 +1017,10 @@ mod tests {
     #[test]
     fn execute_bash_records_the_command_on_the_new_checkpoint() {
         let mut s = session();
-        let cp = s
+        let checkpoint = s
             .record_bash_checkpoint("echo hi", FileMap::new(), "hi\n".to_string(), String::new())
             .unwrap();
-        assert_eq!(cp.command.as_deref(), Some("echo hi"));
+        assert_eq!(checkpoint.command.as_deref(), Some("echo hi"));
     }
 
     #[test]
@@ -1058,9 +1058,9 @@ mod tests {
     fn execute_bash_can_still_read_and_write_within_the_workspace() {
         let mut s = session();
         s.write_file("greeting.txt", b"hello".to_vec()).unwrap();
-        let cp = s.execute_bash("cat greeting.txt", &mut |_| {}).unwrap();
-        assert_eq!(cp.stdout.trim(), "hello");
-        assert_eq!(cp.stderr, "");
+        let checkpoint = s.execute_bash("cat greeting.txt", &mut |_| {}).unwrap();
+        assert_eq!(checkpoint.stdout.trim(), "hello");
+        assert_eq!(checkpoint.stderr, "");
     }
 
     #[test]
@@ -1074,11 +1074,11 @@ mod tests {
         std::fs::write(&secret_path, b"do-not-leak").unwrap();
 
         let mut s = session();
-        let cp = s
+        let checkpoint = s
             .execute_bash(&format!("cat {}", secret_path.display()), &mut |_| {})
             .unwrap();
 
-        assert!(!cp.stdout.contains("do-not-leak"));
+        assert!(!checkpoint.stdout.contains("do-not-leak"));
     }
 
     #[test]
@@ -1104,8 +1104,8 @@ mod tests {
         .unwrap();
 
         let cat_extra = format!("cat {}", extra_path.display());
-        let cp = s.execute_bash(&cat_extra, &mut |_| {}).unwrap();
-        assert!(!cp.stdout.contains("now-readable"));
+        let checkpoint = s.execute_bash(&cat_extra, &mut |_| {}).unwrap();
+        assert!(!checkpoint.stdout.contains("now-readable"));
 
         std::fs::write(
             &config_path,
@@ -1116,8 +1116,8 @@ mod tests {
         )
         .unwrap();
 
-        let cp = s.execute_bash(&cat_extra, &mut |_| {}).unwrap();
-        assert!(cp.stdout.contains("now-readable"));
+        let checkpoint = s.execute_bash(&cat_extra, &mut |_| {}).unwrap();
+        assert!(checkpoint.stdout.contains("now-readable"));
     }
 
     #[test]

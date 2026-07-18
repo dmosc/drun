@@ -188,9 +188,9 @@ impl SessionTreeNode {
         let checkpoints = session
             .history()
             .iter()
-            .map(|cp| {
+            .map(|checkpoint| {
                 let forks = children
-                    .get(&(session_id.to_string(), cp.id))
+                    .get(&(session_id.to_string(), checkpoint.id))
                     .map(|kids| {
                         kids.iter()
                             .map(|(id, s)| {
@@ -200,12 +200,12 @@ impl SessionTreeNode {
                     })
                     .unwrap_or_default();
                 CheckpointTreeNode {
-                    checkpoint_id: cp.id,
-                    is_current: cp.id == current_id,
-                    label: cp.label.clone(),
-                    stdout_bytes: cp.stdout.len(),
-                    stderr_bytes: cp.stderr.len(),
-                    file_count: cp.files.len(),
+                    checkpoint_id: checkpoint.id,
+                    is_current: checkpoint.id == current_id,
+                    label: checkpoint.label.clone(),
+                    stdout_bytes: checkpoint.stdout.len(),
+                    stderr_bytes: checkpoint.stderr.len(),
+                    file_count: checkpoint.files.len(),
                     forks,
                 }
             })
