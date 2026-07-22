@@ -6,6 +6,35 @@ All notable changes to drun are documented here.
 
 ## Unreleased
 
+### Hermes bridge + `drun-mcp` provider subcommands
+
+- Added a **Hermes** bridge, alongside the existing Claude Code one, for wiring
+  drun into [Hermes](https://github.com/NousResearch/hermes-agent) (a harness
+  for running local models). New `drun-mcp hermes init` registers drun in
+  `~/.hermes/config.yaml` (`mcp_servers.drun`, streamable-HTTP endpoint) and
+  disables Hermes's native `terminal`/`file`/`web`/`search`/ `delegation`
+  toolsets via `agent.disabled_toolsets` — machine-wide, since Hermes has no
+  per-project scoping, unlike Claude Code's `.claude/settings.json`.
+  `drun-mcp hermes deregister` undoes both. Config edits are targeted line
+  surgery rather than a full YAML parse/reserialize, so existing comments and
+  formatting in the user's config survive untouched.
+- **Provider setup moved out of the bash installer and into the `drun-mcp`
+  binary**, namespaced by bridge: `drun-mcp init` is now `drun-mcp claude
+  init` (also now registers `claude mcp add` itself, previously a separate
+  manual step documented alongside it) and `drun-mcp claude deregister` is
+  new. `install.sh`/`update.sh`/`uninstall.sh` are back to handling only the
+  binary and daemon lifecycle.
+- **Bridges generalized behind a `Bridge` trait and a static registry**
+  (`crates/drun-mcp/src/bridges::REGISTRY`), so `drun-mcp claude`/`hermes` are
+  now two implementations of one extension point instead of two hand-written,
+  parallel code paths. `main`'s CLI dispatch, `--help` text, and the new
+  `drun-mcp bridges list` / `drun-mcp bridges deregister-all` subcommands all
+  read from `REGISTRY` generically; `uninstall.sh` now calls
+  `drun-mcp bridges deregister-all` instead of naming providers itself. Adding
+  a future bridge (Gemini, Codex, ...) means one new module implementing
+  `Bridge` plus one line in `REGISTRY` — no changes anywhere else. See
+  "Adding a new bridge" in `DEVELOPMENT.md`.
+
 ### Web UI
 
 - Sessions running a `session_bash` command now stream live: a "● running" badge

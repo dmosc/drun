@@ -198,36 +198,16 @@ install_daemon() {
   esac
 }
 
-# ── Claude Code MCP registration ──────────────────────────────────────────────
-
-register_mcp() {
-  if ! command -v claude &>/dev/null; then
-    echo ""
-    echo "Claude Code CLI not found. Add drun manually:"
-    echo "  claude mcp add --scope user --transport sse drun $MCP_URL"
-    return
-  fi
-
-  if claude mcp list 2>/dev/null | grep -q "^drun"; then
-    echo "drun already registered in Claude Code, skipping."
-    return
-  fi
-
-  claude mcp add --scope user --transport sse drun "$MCP_URL"
-  echo "drun added to Claude Code (SSE → $MCP_URL, user scope)."
-}
-
 # ── main ──────────────────────────────────────────────────────────────────────
 
 detect_platform
 install_binary
 create_config
 install_daemon
-register_mcp
 
 echo ""
 echo "Done! drun is ready."
 echo "  MCP  → $MCP_URL"
 echo "  UI   → http://127.0.0.1:7274"
 echo ""
-echo "To enable drun in a project, cd into it and run: drun-mcp init"
+echo "Run 'drun-mcp bridges list' to integrate drun with different providers."

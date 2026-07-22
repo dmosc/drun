@@ -37,6 +37,8 @@ The drun framework can be consumed in the following ways:
 
 - **[Via Claude Code](#claude-code)**: drun's MCP tools replace Claude's native
   file/shell/network tools inside a sandboxed workspace.
+- **[Via Hermes](#hermes)**: same idea, for local models run through
+  [Hermes](https://github.com/NousResearch/hermes-agent).
 - **[Standalone CLI](#standalone-cli)**: a CLI agentic loop that's integrated
   with [Ollama](https://ollama.com/) and [LiteLLM](https://docs.litellm.ai/).
 - **[Using the Python SDK](#python-sdk)**: script sandboxed sessions directly,
@@ -63,8 +65,25 @@ This installs and configures a few things (skips if not applicable):
 3. `drun-mcp` as a persistent background daemon (`launchd` on macOS, `systemd`
    on Linux) so a single process serves all simultaneous sessions running on the
    host.
-4. The MCP registration in Claude Code pointing at the running daemon over SSE
-   (`http://127.0.0.1:7273/sse`).
+
+`install.sh` only handles the binary and the daemon — it does not wire up any
+agent. Once it's done, point the binary at whichever bridge you use:
+
+```bash
+# Run this from a project root to do per-project scoping for Claude Code.
+drun-mcp claude init
+# This links the MCP globally against the Hermes agent. Applies everywhere.
+drun-mcp hermes init
+```
+
+`drun-mcp bridges list` shows every bridge drun currently supports (name,
+scope, and what it does), so you don't need to remember this list — new
+bridges show up there as they're added. `drun-mcp bridges deregister-all`
+undoes every bridge that's currently registered in one call; `uninstall.sh`
+uses this internally.
+
+See [Claude Code](#claude-code) and [Hermes](#hermes) for what each of these
+does.
 
 Once installed, the following endpoints are available:
 
@@ -100,8 +119,10 @@ curl -fsSL https://raw.githubusercontent.com/dmosc/drun/main/uninstall.sh | bash
 
 1. Stops the background daemon and removes the `launchd` agent (macOS) or
    `systemd` user service (Linux).
+1. Unlinks the MCP from any bridge it was wired to (e.g. Claude Code, Hermes) —
+   via `drun-mcp bridges deregister-all`, which knows every bridge drun
+   supports without `uninstall.sh` having to name them.
 1. Removes the drun MCP binary from `/usr/local/bin/drun-mcp`.
-1. Unlinks the MCP reference from Claude Code.
 1. Removes `.claude/settings.json` from each project so native Claude tools are
    restored automatically.
 1. Leaves `~/.drun/config.toml` and any `CLAUDE.md` files untouched; delete
@@ -119,27 +140,99 @@ curl -fsSL https://raw.githubusercontent.com/dmosc/drun/main/uninstall.sh | bash
 From the root of any project you want drun to manage:
 
 ```bash
-drun-mcp init
+drun-mcp claude init
 ```
 
-Creates two files in the current directory (appends if they already exist):
+This does two things:
 
-1. `.claude/settings.json` — restricts Claude to drun tools only for this
-   workspace. Native file (`Read`, `Edit`, `Write`, `NotebookEdit`, `Glob`,
-   `Grep`), shell (`Bash`, `BashOutput`, `KillBash`), network (`WebFetch`,
-   `WebSearch`), and subagent delegation (`Task`) tools are all blocked, and
-   drun's MCP tools are pre-allowed so Claude isn't prompted on every call.
-2. `CLAUDE.md` — tells Claude to use drun tools instead of native ones and how
-   to bootstrap a session (`create_session` then `session_mount`).
+1. **Registers drun with Claude Code**
+   (`claude mcp add --scope user --transport
+   sse drun http://127.0.0.1:7273/sse`)
+   — a one-time, user-scope step; skipped if already registered. If the `claude`
+   CLI isn't on `PATH`, it prints this command instead so you can run it
+   yourself once Claude Code is installed.
+2. **Creates two files in the current directory** (appends if they already
+   exist):
+   - `.claude/settings.json` — restricts Claude to drun tools only for this
+     workspace. Native file (`Read`, `Edit`, `Write`, `NotebookEdit`, `Glob`,
+     `Grep`), shell (`Bash`, `BashOutput`, `KillBash`), network (`WebFetch`,
+     `WebSearch`), and subagent delegation (`Task`) tools are all blocked, and
+     drun's MCP tools are pre-allowed so Claude isn't prompted on every call.
+   - `CLAUDE.md` — tells Claude to use drun tools instead of native ones and how
+     to bootstrap a session (`create_session` then `session_mount`).
 
-This restriction is intentionally per-project; you wouldn't want native tools
-blocked globally across every workspace. Run `drun-mcp init` from any project
-root to opt that project into the drun sandbox.
+The tool restriction is intentionally per-project; you wouldn't want native
+tools blocked globally across every workspace. Run `drun-mcp claude init` from
+any project root to opt that project into the drun sandbox — the registration
+step is idempotent, so re-running it across projects doesn't re-register with
+Claude Code each time.
 
 Validate that the MCP is live:
 
 ```bash
 claude mcp list
+```
+
+To undo the global registration (leaving any per-project `.claude/settings.json`
+and `CLAUDE.md` files in place — remove those by hand if you no longer want
+them):
+
+```bash
+drun-mcp claude deregister
+```
+
+### Hermes
+
+#### Requirements
+
+- [Hermes](https://github.com/NousResearch/hermes-agent) running local models.
+- The `drun-mcp` daemon [installed](#installing) above.
+
+#### Setup
+
+Hermes has no per-project scoping mechanism for MCP servers or tool permissions
+— everything lives in the single user-level `~/.hermes/config.yaml`. So unlike
+Claude Code, there's nothing to run per project:
+
+```bash
+drun-mcp hermes init
+```
+
+This does two things, both machine-wide:
+
+1. **Registers drun** by writing a `drun` entry directly into
+   `~/.hermes/config.yaml` under `mcp_servers`, pointing at the daemon's
+   streamable-HTTP endpoint:
+
+   ```yaml
+   mcp_servers:
+      drun:
+         url: "http://127.0.0.1:7273/mcp"
+         headers:
+            Accept: "application/json, text/event-stream"
+   ```
+
+   If the `hermes` CLI isn't on `PATH` yet, it prints this block instead so you
+   can add it manually once Hermes is set up.
+
+2. **Disables Hermes's native `terminal`, `file`, `web`, `search`, and
+   `delegation` toolsets** (via `agent.disabled_toolsets` in the same file) so
+   Hermes relies on drun's sandboxed tools instead of touching the host
+   directly. Because this key isn't project-scoped, it applies to **every**
+   Hermes session on the machine, not just projects using drun — if you want
+   Hermes to keep native tool access for other work, skip this step and edit
+   `~/.hermes/config.yaml` by hand to register just the `mcp_servers` entry.
+
+Start Hermes and it will discover drun's tools at connect time:
+
+```bash
+hermes chat
+```
+
+To undo both steps:
+
+```bash
+drun-mcp hermes deregister
 ```
 
 ### Standalone CLI
@@ -258,8 +351,8 @@ Run `drun-mcp config --help` to print a list of available commands.
 
 `~/.drun/config.toml` is re-read on every tool call, so edits — via the CLI
 above or by hand — take effect on the very next call, no restart, no dropped
-sessions. `drun-mcp init` also allowlists the current project directory for
-`session_mount` automatically.
+sessions. `drun-mcp claude init` also allowlists the current project directory
+for `session_mount` automatically.
 
 The two exceptions are `web_port` and `session_idle_timeout_secs`: both are only
 applied at daemon startup, so changing either still requires a restart:

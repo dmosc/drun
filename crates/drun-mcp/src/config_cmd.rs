@@ -33,7 +33,7 @@ fn usage_and_exit(usage: &str) -> ! {
 }
 
 fn config_path() -> PathBuf {
-    crate::init::drun_home().join("config.toml")
+    crate::drun_home().join("config.toml")
 }
 
 fn add_domain(domain: &str) {

@@ -1,6 +1,10 @@
 #[cfg(test)]
 use std::path::Path;
-use std::{io::Write, path::PathBuf};
+use std::{
+    io::Write,
+    path::PathBuf,
+    process::{Command, Stdio},
+};
 
 use serde_json::{Map, Value, json};
 
@@ -22,6 +26,55 @@ const REQUIRED_DENY: &[&str] = &[
 ];
 const REQUIRED_ALLOW: &[&str] = &["mcp__drun__*"];
 
+/// [`super::Bridge`] impl — see that trait for the extensibility contract.
+pub struct Claude;
+
+impl super::Bridge for Claude {
+    fn name(&self) -> &'static str {
+        "claude"
+    }
+
+    fn description(&self) -> &'static str {
+        "Claude Code — blocks native tools per-project, registers the MCP server"
+    }
+
+    fn scope(&self) -> super::Scope {
+        super::Scope::Project
+    }
+
+    fn init(&self) {
+        register_mcp();
+
+        let project = ProjectInit {
+            project_dir: std::env::current_dir().expect("cannot read current directory"),
+            drun_home: crate::drun_home(),
+        };
+
+        project.write_settings();
+        project.write_claude_md();
+        project.register_project();
+        project.allow_mount_path();
+
+        eprintln!("drun: initialized for {}", project.project_dir.display());
+    }
+
+    fn deregister(&self) {
+        if !claude_available() {
+            return;
+        }
+
+        let status = Command::new("claude")
+            .args(["mcp", "remove", "--scope", "user", "drun"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+
+        if matches!(status, Ok(s) if s.success()) {
+            eprintln!("drun: removed from Claude Code (user scope).");
+        }
+    }
+}
+
 fn rendered_default_settings() -> String {
     let value = json!({
         "permissions": {
@@ -35,22 +88,58 @@ fn rendered_default_settings() -> String {
     )
 }
 
-pub fn run() {
-    let project = ProjectInit {
-        project_dir: std::env::current_dir().expect("cannot read current directory"),
-        drun_home: drun_home(),
-    };
-
-    project.write_settings();
-    project.write_claude_md();
-    project.register_project();
-    project.allow_mount_path();
-
-    eprintln!("drun: initialized for {}", project.project_dir.display());
+fn mcp_url() -> String {
+    format!("http://127.0.0.1:{}/sse", crate::mcp_port())
 }
 
-pub(crate) fn drun_home() -> PathBuf {
-    PathBuf::from(std::env::var("HOME").expect("HOME not set")).join(".drun")
+fn claude_available() -> bool {
+    match Command::new("claude")
+        .arg("--version")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+    {
+        Ok(_) => true,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
+        Err(_) => true,
+    }
+}
+
+fn already_registered(mcp_list_output: &str) -> bool {
+    mcp_list_output.lines().any(|l| l.starts_with("drun"))
+}
+
+fn register_mcp() {
+    let url = mcp_url();
+
+    if !claude_available() {
+        eprintln!("drun: Claude Code CLI not found. Add drun manually:");
+        eprintln!("  claude mcp add --scope user --transport sse drun {url}");
+        return;
+    }
+
+    let list_output = Command::new("claude")
+        .args(["mcp", "list"])
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .unwrap_or_default();
+
+    if already_registered(&list_output) {
+        eprintln!("drun: already registered in Claude Code, skipping.");
+        return;
+    }
+
+    let status = Command::new("claude")
+        .args(["mcp", "add", "--scope", "user", "--transport", "sse", "drun", &url])
+        .status();
+
+    if matches!(status, Ok(s) if s.success()) {
+        eprintln!("drun: added to Claude Code (SSE → {url}, user scope).");
+    } else {
+        eprintln!("drun: failed to register with Claude Code. Add it manually:");
+        eprintln!("  claude mcp add --scope user --transport sse drun {url}");
+    }
 }
 
 struct ProjectInit {
@@ -203,8 +292,8 @@ sandbox. Use the drun MCP tools (prefixed `mcp__drun__`) for everything.
 
 1. Call `create_session` — sessions start with an empty workspace.
 2. Call `session_mount` with path `{project_path}` to load this project's files
-   into the session (already allowlisted by `drun-mcp init`). Re-mount any
-   other host paths you need the same way.
+   into the session (already allowlisted by `drun-mcp claude init`). Re-mount
+   any other host paths you need the same way.
 3. From there, work entirely through drun tools — there is no host file or shell
    access outside of them.
 
@@ -248,6 +337,13 @@ mod tests {
             drun_home: drun_home.to_path_buf(),
             project_dir: project_dir.to_path_buf(),
         }
+    }
+
+    #[test]
+    fn already_registered_matches_a_leading_drun_line() {
+        assert!(already_registered("drun: http://127.0.0.1:7273/sse (SSE) - ✓ Connected\n"));
+        assert!(!already_registered("other-server: some-url - ✓ Connected\n"));
+        assert!(!already_registered(""));
     }
 
     #[test]

@@ -206,36 +206,51 @@ it is up.
 
 You must do **two** things for Claude Code, and they are different:
 
-**(a) Block native tools + allow drun tools.** This is what `drun-mcp init` does:
-run it in the project directory and it writes `.claude/settings.json` with a
-`permissions` block that *denies* `Bash`, `Edit`, `Write`, `Read`, `Glob`,
+**(a) Block native tools + allow drun tools.** This is what `drun-mcp claude
+init` does: run it in the project directory and it writes `.claude/settings.json`
+with a `permissions` block that *denies* `Bash`, `Edit`, `Write`, `Read`, `Glob`,
 `Grep`, `WebFetch`, `WebSearch`, `Task`, etc. and *allows* `mcp__drun__*`. It
 also creates a `CLAUDE.md` telling the agent to work through drun tools, and
 registers the project in `~/.drun/projects`.
 
 ```bash
-cd /path/to/project && drun-mcp init
+cd /path/to/project && drun-mcp claude init
 ```
 
-**(b) Register the MCP server connection.** ⚠️ **`drun-mcp init` does NOT do
-this.** It sets permissions but does not add the `mcpServers` entry that tells
-Claude Code *where* drun is. You must add it yourself, at the correct scope:
+**(b) Register the MCP server connection.** `drun-mcp claude init` *also* runs
+`claude mcp add --scope user --transport sse drun http://127.0.0.1:7273/sse` —
+but ⚠️ **that scope is usually wrong for an app you're embedding drun into.**
+User scope registers drun in *every* Claude Code session on the machine, not
+just sessions your app manages. (It uses the SSE transport, not `http`+`/mcp`;
+`drun-mcp` does serve `/sse` — confirmed with a raw `curl`, it responds with a
+real SSE stream — but this codebase has not verified end-to-end that Claude
+Code's own SSE client accepts it, so don't assume it's equivalent to the
+`http`+`/mcp` path documented below.) For a per-project/per-session setup you
+control, write the correct `mcpServers.drun` entry (exact shape in the
+transport section, with `type: "http"` against `/mcp`) into the agent
+workspace's `.claude/settings.local.json` yourself, independent of whether
+`drun-mcp claude init` ran.
 
-- For a per-project/per-session setup you control, write the `mcpServers.drun`
-  entry (exact shape in the transport section) into the agent workspace's
-  `.claude/settings.local.json`.
 - **Scope gotcha (critical for existing apps):** Claude Code also reads
   `~/.claude.json` project entries keyed by the git repo path. If the user has
   opened this repo in Claude Code before, that entry may contain
   `"mcpServers": {}`, which **silently overrides** `settings.local.json`. If the
   drun tools don't appear, this is almost always why. Fix by writing the drun
   entry into that project's record in `~/.claude.json` (project scope), ideally
-  at project-creation time. Avoid registering at global/user scope unless the
-  user genuinely wants drun in *every* Claude Code session on the machine.
+  at project-creation time.
 
 For a **non–Claude-Code agent**, translate the same HTTP MCP config into whatever
 format that framework expects (env var, config file, CLI flag). Transport is
 always `http` → `http://127.0.0.1:7273/mcp` with the Accept header.
+
+**Hermes** (a harness for local models) is simpler: `drun-mcp hermes init`
+handles both registration and tool restriction in one step, but — unlike
+Claude Code — everything it touches (`~/.hermes/config.yaml`) is machine-wide,
+not per-project or per-session, since Hermes has no scoping mechanism for
+either. That makes it a poor fit for the "embed drun into an existing app"
+pattern this guide covers (which wants per-session isolation); it's really
+only appropriate for a single-user, single-machine Hermes setup. See the
+[Hermes section of the README](../README.md#hermes) if that's your case.
 
 ### Step 4 — Per-session setup
 
@@ -260,7 +275,7 @@ Do not declare success until you have confirmed the agent actually sees drun:
 - Have the agent make one real `session_bash` call (e.g. `echo hello` or `ls`)
   and confirm it returns.
 - Confirm native tools are blocked (the agent should be unable to call `Bash`
-  directly if you ran `drun-mcp init`).
+  directly if you ran `drun-mcp claude init`).
 
 If `drun` shows ✘ failed, check in order: (1) is drun-mcp actually running on
 7273, (2) is the transport `http` + `/mcp` (not `sse` + `/sse`), (3) is the
@@ -276,19 +291,22 @@ your config.
 - **Config looks right but no tools** → `~/.claude.json` project entry with empty
   `mcpServers` overriding `settings.local.json`. Write drun at project scope there.
 - **Tools appear but agent still edits host directly** → you registered the MCP
-  server but never ran `drun-mcp init`, so native tools were never blocked.
+  server but never ran `drun-mcp claude init`, so native tools were never blocked.
 - **Agent can't reach the internet** → expected; `session_bash` has no network.
   Use `session_fetch` (and add the domain to the allowlist with
   `drun-mcp config add-domain`).
 - **`session_mount` denied** → the path isn't in `mount_allowlist`; add it with
   `drun-mcp config add-path`.
 
-## Known gaps to flag to the user
-
-- `drun-mcp init` configures permissions + CLAUDE.md but **not** the MCP server
-  connection — you must add `mcpServers` separately.
-- drun's bundled `install.sh` registers with `--transport sse`, which does not
-  work; use `--transport http` against `/mcp` with the Accept header.
+- `drun-mcp claude init` does register `mcpServers` now (via `claude mcp add`),
+  but at **user scope with `--transport sse`** — the wrong scope for an
+  embedded app regardless of whether the SSE transport itself works (`/sse`
+  does respond to a raw `curl` with a real SSE stream, so the "always use
+  `http`+`/mcp`" guidance elsewhere in this doc may be stronger than strictly
+  necessary — this hasn't been re-verified against Claude Code's own client).
+  Don't rely on the user-scope registration for an embedded app either way —
+  write the correct config into `settings.local.json` / `~/.claude.json`
+  yourself, at project scope, as described in Step 3.
 - No `/health` endpoint (must use the MCP handshake to probe readiness).
 - Port 7273 is hardcoded (collisions if two apps each start their own drun-mcp).
 - No official Go/Python/Node client library for host-side calls.

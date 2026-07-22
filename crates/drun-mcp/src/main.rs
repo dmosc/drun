@@ -1,7 +1,7 @@
+mod bridges;
 mod config_cmd;
 mod errors;
 mod handler;
-mod init;
 mod live_output;
 mod response;
 mod server;
@@ -29,11 +29,25 @@ pub(crate) fn mcp_port() -> u16 {
         .unwrap_or(DEFAULT_MCP_PORT)
 }
 
+/// `~/.drun` — shared across `config_cmd` and any `Bridge` that needs it
+/// (e.g. `bridges::claude` for the project registry and mount allowlist).
+/// Not bridge-specific: lives here rather than in any one bridge module.
+pub(crate) fn drun_home() -> std::path::PathBuf {
+    std::path::PathBuf::from(std::env::var("HOME").expect("HOME not set")).join(".drun")
+}
+
 #[tokio::main]
 async fn main() -> SdkResult<()> {
     match std::env::args().nth(1).as_deref() {
-        Some("init") => {
-            init::run();
+        Some("bridges") => {
+            match std::env::args().nth(2).as_deref() {
+                Some("list") => bridges::print_list(),
+                Some("deregister-all") => bridges::deregister_all(),
+                _ => {
+                    print_usage();
+                    std::process::exit(1);
+                }
+            }
             return Ok(());
         }
         Some("config") => {
@@ -45,7 +59,22 @@ async fn main() -> SdkResult<()> {
             print_usage();
             return Ok(());
         }
-        _ => {}
+        Some(name) => {
+            let Some(bridge) = bridges::find(name) else {
+                print_usage();
+                std::process::exit(1);
+            };
+            match std::env::args().nth(2).as_deref() {
+                Some("init") => bridge.init(),
+                Some("deregister") => bridge.deregister(),
+                _ => {
+                    print_usage();
+                    std::process::exit(1);
+                }
+            }
+            return Ok(());
+        }
+        None => {}
     }
 
     let started_at = std::time::Instant::now();
@@ -75,21 +104,58 @@ async fn main() -> SdkResult<()> {
 }
 
 fn print_usage() {
-    eprintln!(
-        "drun-mcp — MCP server for drun\n\
-         \n\
-         Usage:\n\
-         \x20\x20drun-mcp                            start the daemon\n\
-         \x20\x20drun-mcp init                        set up drun for the current project\n\
-         \x20\x20drun-mcp config add-domain <name>    allow a domain for session_fetch\n\
-         \x20\x20drun-mcp config add-path <path>      allow a path for session_mount\n\
-         \x20\x20drun-mcp config remove-domain <name> disallow a domain for session_fetch\n\
-         \x20\x20drun-mcp config remove-path <path>   disallow a path for session_mount\n\
-         \x20\x20drun-mcp config list                 show the current allowlists\n\
-         \n\
-         config add-*/remove-* edit ~/.drun/config.toml — changes take effect\n\
-         on the next tool call, no restart needed."
+    let mut rows: Vec<(String, String)> = vec![
+        (String::new(), "start the daemon".into()),
+        ("bridges list".into(), "list available agent bridges".into()),
+        (
+            "bridges deregister-all".into(),
+            "undo every registered bridge".into(),
+        ),
+    ];
+    // One `init`/`deregister` pair per registered bridge — adding a bridge
+    // to `bridges::REGISTRY` makes it show up here automatically.
+    for bridge in bridges::REGISTRY {
+        rows.push((
+            format!("{} init", bridge.name()),
+            bridge.description().to_string(),
+        ));
+        rows.push((
+            format!("{} deregister", bridge.name()),
+            format!("undo `{} init`", bridge.name()),
+        ));
+    }
+    rows.extend(
+        [
+            (
+                "config add-domain <name>",
+                "allow a domain for session_fetch",
+            ),
+            ("config add-path <path>", "allow a path for session_mount"),
+            (
+                "config remove-domain <name>",
+                "disallow a domain for session_fetch",
+            ),
+            (
+                "config remove-path <path>",
+                "disallow a path for session_mount",
+            ),
+            ("config list", "show the current allowlists"),
+        ]
+        .map(|(cmd, desc)| (cmd.to_string(), desc.to_string())),
     );
+
+    let width = rows.iter().map(|(cmd, _)| cmd.len()).max().unwrap_or(0);
+
+    let mut usage = String::from("drun-mcp — MCP server for drun\n\nUsage:\n");
+    for (cmd, desc) in &rows {
+        usage.push_str(&format!("  drun-mcp {cmd:<width$}  {desc}\n"));
+    }
+    usage.push_str(
+        "\nconfig add-*/remove-* edit ~/.drun/config.toml — changes take effect\n\
+         on the next tool call, no restart needed.",
+    );
+
+    eprintln!("{usage}");
 }
 
 fn build_server_details() -> InitializeResult {

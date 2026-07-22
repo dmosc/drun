@@ -28,14 +28,12 @@ remove_daemon() {
   pkill -f "drun-mcp\$" 2>/dev/null || true
 }
 
-# ── Claude Code MCP deregistration ───────────────────────────────────────────
+# ── Bridge deregistration ─────────────────────────────────────────────────────
 
-deregister_mcp() {
-  if ! command -v claude &>/dev/null; then
-    return
+deregister_bridges() {
+  if command -v drun-mcp &>/dev/null; then
+    drun-mcp bridges deregister-all 2>/dev/null || true
   fi
-
-  claude mcp remove --scope user drun 2>/dev/null && echo "Removed drun from Claude Code." || true
 }
 
 # ── per-project cleanup ───────────────────────────────────────────────────────
@@ -78,7 +76,7 @@ remove_binary() {
 # ── main ──────────────────────────────────────────────────────────────────────
 
 remove_daemon
-deregister_mcp
+deregister_bridges
 cleanup_project_settings
 remove_binary
 
