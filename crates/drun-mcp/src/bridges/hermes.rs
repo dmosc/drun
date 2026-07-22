@@ -35,6 +35,15 @@ impl super::Bridge for Hermes {
     }
 
     fn init(&self) {
+        let project_dir = std::env::current_dir().expect("cannot read current directory");
+        let project_path = project_dir.to_str().expect("non-UTF-8 project path");
+        super::shared::write_project_instructions(
+            &project_dir,
+            "HERMES.md",
+            &hermes_md_content(project_path),
+        );
+        super::shared::allow_mount_path(&crate::drun_home(), &project_dir);
+
         if !hermes_available() {
             let path = hermes_config_path();
             eprintln!(
@@ -102,6 +111,17 @@ fn hermes_available() -> bool {
 fn rendered_mcp_entry(url: &str) -> String {
     format!(
         "mcp_servers:\n  drun:\n    url: \"{url}\"\n    headers:\n      Accept: \"application/json, text/event-stream\"\n"
+    )
+}
+
+fn hermes_md_content(project_path: &str) -> String {
+    format!(
+        "# Agent instructions\n\n\
+         This project uses [drun](https://github.com/dmosc/drun) as a sandboxed runtime.\n\
+         Hermes's native `terminal`, `file`, `web`, `search`, and `delegation` toolsets are\n\
+         disabled (machine-wide — see `~/.hermes/config.yaml`) so they don't bypass the\n\
+         sandbox. Use the drun MCP tools for everything.\n\n{}",
+        super::shared::drun_instructions_body(project_path)
     )
 }
 
@@ -359,6 +379,19 @@ mod tests {
     const URL: &str = "http://127.0.0.1:7273/mcp";
 
     #[test]
+    fn hermes_md_content_includes_the_project_path() {
+        let content = hermes_md_content("/home/user/myproject");
+        assert!(content.contains("/home/user/myproject"));
+    }
+
+    #[test]
+    fn hermes_md_content_documents_the_core_tools() {
+        let content = hermes_md_content("/tmp/project");
+        assert!(content.contains("session_bash"));
+        assert!(content.contains("session_mount"));
+    }
+
+    #[test]
     fn merge_mcp_entry_creates_key_in_empty_file() {
         let out = merge_mcp_entry("", URL);
         assert_eq!(
@@ -381,7 +414,9 @@ mod tests {
         let out = merge_mcp_entry(existing, URL);
         assert!(out.contains("  drun:\n    url: \"http://127.0.0.1:7273/mcp\""));
         assert!(out.contains("  filesystem:\n    command: \"npx\""));
-        assert!(out.contains("  linear:\n    url: \"https://mcp.linear.app/mcp\"\n    auth: oauth"));
+        assert!(
+            out.contains("  linear:\n    url: \"https://mcp.linear.app/mcp\"\n    auth: oauth")
+        );
     }
 
     #[test]
@@ -396,7 +431,9 @@ mod tests {
         let existing = "mcp_servers:\n  drun:\n    url: \"http://127.0.0.1:7273/mcp\"\n    headers:\n      Accept: \"x\"\n  linear:\n    url: \"https://mcp.linear.app/mcp\"\n    auth: oauth\n";
         let out = remove_mcp_entry(existing);
         assert!(!out.contains("drun:"));
-        assert!(out.contains("mcp_servers:\n  linear:\n    url: \"https://mcp.linear.app/mcp\"\n    auth: oauth\n"));
+        assert!(out.contains(
+            "mcp_servers:\n  linear:\n    url: \"https://mcp.linear.app/mcp\"\n    auth: oauth\n"
+        ));
     }
 
     #[test]
@@ -459,6 +496,9 @@ mod tests {
     fn has_any_disabled_toolset_detects_our_entries() {
         let existing = merge_disabled_toolsets("", REQUIRED_TOOLSETS);
         assert!(has_any_disabled_toolset(&existing, REQUIRED_TOOLSETS));
-        assert!(!has_any_disabled_toolset("agent:\n  disabled_toolsets:\n    - memory\n", REQUIRED_TOOLSETS));
+        assert!(!has_any_disabled_toolset(
+            "agent:\n  disabled_toolsets:\n    - memory\n",
+            REQUIRED_TOOLSETS
+        ));
     }
 }

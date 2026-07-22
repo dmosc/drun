@@ -131,7 +131,16 @@ fn register_mcp() {
     }
 
     let status = Command::new("claude")
-        .args(["mcp", "add", "--scope", "user", "--transport", "sse", "drun", &url])
+        .args([
+            "mcp",
+            "add",
+            "--scope",
+            "user",
+            "--transport",
+            "sse",
+            "drun",
+            &url,
+        ])
         .status();
 
     if matches!(status, Ok(s) if s.success()) {
@@ -149,22 +158,7 @@ struct ProjectInit {
 
 impl ProjectInit {
     fn allow_mount_path(&self) {
-        let config_path = self.drun_home.join("config.toml");
-        if !config_path.exists() {
-            return;
-        }
-        match crate::config_cmd::add_path_to(&config_path, &self.project_dir) {
-            Ok(true) => eprintln!(
-                "drun: added '{}' to mount_allowlist",
-                self.project_dir.display()
-            ),
-            Ok(false) => {}
-            Err(e) => eprintln!(
-                "drun: could not update mount_allowlist ({e}) — add it manually with \
-                 `drun-mcp config add-path {}`",
-                self.project_dir.display()
-            ),
-        }
+        super::shared::allow_mount_path(&self.drun_home, &self.project_dir);
     }
 
     fn write_settings(&self) {
@@ -204,17 +198,12 @@ impl ProjectInit {
     }
 
     fn write_claude_md(&self) {
-        let claude_md = self.project_dir.join("CLAUDE.md");
-
-        if claude_md.exists() {
-            eprintln!("drun: CLAUDE.md already exists, skipping");
-            return;
-        }
-
         let project_path = self.project_dir.to_str().expect("non-UTF-8 project path");
-        std::fs::write(&claude_md, claude_md_content(project_path))
-            .expect("cannot write CLAUDE.md");
-        eprintln!("drun: created CLAUDE.md");
+        super::shared::write_project_instructions(
+            &self.project_dir,
+            "CLAUDE.md",
+            &claude_md_content(project_path),
+        );
     }
 
     fn register_project(&self) {
@@ -280,51 +269,13 @@ fn merge_string_array(
 
 fn claude_md_content(project_path: &str) -> String {
     format!(
-        r#"# Agent instructions
-
-This project uses [drun](https://github.com/dmosc/drun) as a sandboxed runtime.
-Native file, shell, and network tools (`Bash`, `Edit`, `Write`, `NotebookEdit`,
-`Read`, `Glob`, `Grep`, `WebFetch`, `WebSearch`, `Task`) are disabled for this
-workspace — they would otherwise read or write the host directly, bypassing the
-sandbox. Use the drun MCP tools (prefixed `mcp__drun__`) for everything.
-
-## Getting started
-
-1. Call `create_session` — sessions start with an empty workspace.
-2. Call `session_mount` with path `{project_path}` to load this project's files
-   into the session (already allowlisted by `drun-mcp claude init`). Re-mount
-   any other host paths you need the same way.
-3. From there, work entirely through drun tools — there is no host file or shell
-   access outside of them.
-
-## Core tools
-
-- **`session_bash`** — run shell commands in the sandboxed workspace (also
-  covers listing/searching files — e.g. `ls`, `grep`, `find`)
-- **`session_read_file`** / **`session_write_file`** / **`session_delete_file`**
-  — read, write, and delete files in the session
-- **`session_mount`** — load a host file or directory into the session
-- **`session_fetch`** — make HTTP requests from the sandbox (subject to the
-  server's domain_allowlist)
-- **`session_export`** — write session files back out to the host
-- **`session_diff`** / **`session_rollback`** / **`session_fork`** — inspect and
-  navigate checkpoint history (session_rollback is destructive past the rollback
-  point once you continue the session — use session_fork first if you need to
-  keep that history)
-
-## If a fetch or mount is denied
-
-`session_fetch` and `session_mount` are restricted to an allowlist. If either
-is denied for a domain or path you need, tell the user to run:
-
-- `drun-mcp config add-domain <domain>` to allow a new domain for
-  `session_fetch`
-- `drun-mcp config add-path <path>` to allow a new host path for
-  `session_mount`
-
-Both commands edit `~/.drun/config.toml` directly — no restart needed, and
-the change is visible on your very next tool call in this same session.
-"#
+        "# Agent instructions\n\n\
+         This project uses [drun](https://github.com/dmosc/drun) as a sandboxed runtime.\n\
+         Native file, shell, and network tools (`Bash`, `Edit`, `Write`, `NotebookEdit`,\n\
+         `Read`, `Glob`, `Grep`, `WebFetch`, `WebSearch`, `Task`) are disabled for this\n\
+         workspace — they would otherwise read or write the host directly, bypassing the\n\
+         sandbox. Use the drun MCP tools (prefixed `mcp__drun__`) for everything.\n\n{}",
+        super::shared::drun_instructions_body(project_path)
     )
 }
 
@@ -341,8 +292,12 @@ mod tests {
 
     #[test]
     fn already_registered_matches_a_leading_drun_line() {
-        assert!(already_registered("drun: http://127.0.0.1:7273/sse (SSE) - ✓ Connected\n"));
-        assert!(!already_registered("other-server: some-url - ✓ Connected\n"));
+        assert!(already_registered(
+            "drun: http://127.0.0.1:7273/sse (SSE) - ✓ Connected\n"
+        ));
+        assert!(!already_registered(
+            "other-server: some-url - ✓ Connected\n"
+        ));
         assert!(!already_registered(""));
     }
 
@@ -482,7 +437,7 @@ mod tests {
     }
 
     #[test]
-    fn allow_mount_path_adds_the_project_dir_to_an_existing_config() {
+    fn allow_mount_path_delegates_to_the_shared_implementation() {
         let drun_home = tempfile::tempdir().unwrap();
         let project_dir = tempfile::tempdir().unwrap();
         std::fs::write(
@@ -499,16 +454,6 @@ mod tests {
                 .mount_allowlist
                 .contains(&project_dir.path().to_path_buf())
         );
-    }
-
-    #[test]
-    fn allow_mount_path_is_a_no_op_without_a_daemon_config() {
-        let drun_home = tempfile::tempdir().unwrap();
-        let project_dir = tempfile::tempdir().unwrap();
-
-        project_init(drun_home.path(), project_dir.path()).allow_mount_path();
-
-        assert!(!drun_home.path().join("config.toml").exists());
     }
 
     #[test]

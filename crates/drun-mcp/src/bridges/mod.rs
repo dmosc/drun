@@ -1,5 +1,6 @@
 pub mod claude;
 pub mod hermes;
+mod shared;
 
 /// Where a bridge's registration takes effect.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

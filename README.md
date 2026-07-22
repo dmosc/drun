@@ -72,15 +72,12 @@ agent. Once it's done, point the binary at whichever bridge you use:
 ```bash
 # Run this from a project root to do per-project scoping for Claude Code.
 drun-mcp claude init
-# This links the MCP globally against the Hermes agent. Applies everywhere.
 drun-mcp hermes init
 ```
 
-`drun-mcp bridges list` shows every bridge drun currently supports (name,
-scope, and what it does), so you don't need to remember this list — new
-bridges show up there as they're added. `drun-mcp bridges deregister-all`
-undoes every bridge that's currently registered in one call; `uninstall.sh`
-uses this internally.
+`drun-mcp bridges list` shows every bridge drun currently supports (name, scope,
+and what it does). `drun-mcp bridges deregister-all` undoes every bridge that's
+currently registered in one call.
 
 See [Claude Code](#claude-code) and [Hermes](#hermes) for what each of these
 does.
@@ -120,8 +117,8 @@ curl -fsSL https://raw.githubusercontent.com/dmosc/drun/main/uninstall.sh | bash
 1. Stops the background daemon and removes the `launchd` agent (macOS) or
    `systemd` user service (Linux).
 1. Unlinks the MCP from any bridge it was wired to (e.g. Claude Code, Hermes) —
-   via `drun-mcp bridges deregister-all`, which knows every bridge drun
-   supports without `uninstall.sh` having to name them.
+   via `drun-mcp bridges deregister-all`, which knows every bridge drun supports
+   without `uninstall.sh` having to name them.
 1. Removes the drun MCP binary from `/usr/local/bin/drun-mcp`.
 1. Removes `.claude/settings.json` from each project so native Claude tools are
    restored automatically.
@@ -190,17 +187,24 @@ drun-mcp claude deregister
 
 #### Setup
 
-Hermes has no per-project scoping mechanism for MCP servers or tool permissions
-— everything lives in the single user-level `~/.hermes/config.yaml`. So unlike
-Claude Code, there's nothing to run per project:
+Run this from the root of any project you want drun to manage — same as
+`drun-mcp claude init` for Claude Code:
 
 ```bash
 drun-mcp hermes init
 ```
 
-This does two things, both machine-wide:
+This does three things:
 
-1. **Registers drun** by writing a `drun` entry directly into
+1. **Creates `HERMES.md` in the current directory** (skipped if it already
+   exists) — Hermes's own highest-priority
+   [context file](https://github.com/NousResearch/hermes-agent/blob/main/website/docs/user-guide/features/context-files.md),
+   auto-discovered per project the same way `CLAUDE.md` is for Claude Code.
+   Without it, Hermes has no way to know drun exists or how to bootstrap a
+   session beyond whatever's in its raw tool list — this is what tells it to
+   call `create_session` then `session_mount` up front, same instructions
+   `CLAUDE.md` gives Claude Code.
+2. **Registers drun** by writing a `drun` entry directly into
    `~/.hermes/config.yaml` under `mcp_servers`, pointing at the daemon's
    streamable-HTTP endpoint:
 
@@ -215,7 +219,7 @@ This does two things, both machine-wide:
    If the `hermes` CLI isn't on `PATH` yet, it prints this block instead so you
    can add it manually once Hermes is set up.
 
-2. **Disables Hermes's native `terminal`, `file`, `web`, `search`, and
+3. **Disables Hermes's native `terminal`, `file`, `web`, `search`, and
    `delegation` toolsets** (via `agent.disabled_toolsets` in the same file) so
    Hermes relies on drun's sandboxed tools instead of touching the host
    directly. Because this key isn't project-scoped, it applies to **every**
@@ -223,13 +227,21 @@ This does two things, both machine-wide:
    Hermes to keep native tool access for other work, skip this step and edit
    `~/.hermes/config.yaml` by hand to register just the `mcp_servers` entry.
 
+Steps 2 and 3 are machine-wide and idempotent — re-running
+`drun-mcp hermes
+init` in a second project skips them (already
+registered/already disabled) and only step 1 (`HERMES.md`) actually does
+anything new.
+
 Start Hermes and it will discover drun's tools at connect time:
 
 ```bash
 hermes chat
 ```
 
-To undo both steps:
+To undo everything `hermes init` did (deregisters drun and re-enables the
+disabled toolsets machine-wide; leaves any project's `HERMES.md` in place — same
+as Claude Code leaves `CLAUDE.md`, delete it by hand if you no longer want it):
 
 ```bash
 drun-mcp hermes deregister

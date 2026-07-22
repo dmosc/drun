@@ -19,21 +19,39 @@ All notable changes to drun are documented here.
   surgery rather than a full YAML parse/reserialize, so existing comments and
   formatting in the user's config survive untouched.
 - **Provider setup moved out of the bash installer and into the `drun-mcp`
-  binary**, namespaced by bridge: `drun-mcp init` is now `drun-mcp claude
-  init` (also now registers `claude mcp add` itself, previously a separate
-  manual step documented alongside it) and `drun-mcp claude deregister` is
-  new. `install.sh`/`update.sh`/`uninstall.sh` are back to handling only the
-  binary and daemon lifecycle.
+  binary**, namespaced by bridge: `drun-mcp init` is now
+  `drun-mcp claude
+  init` (also now registers `claude mcp add` itself,
+  previously a separate manual step documented alongside it) and
+  `drun-mcp claude deregister` is new. `install.sh`/`update.sh`/`uninstall.sh`
+  are back to handling only the binary and daemon lifecycle.
 - **Bridges generalized behind a `Bridge` trait and a static registry**
   (`crates/drun-mcp/src/bridges::REGISTRY`), so `drun-mcp claude`/`hermes` are
   now two implementations of one extension point instead of two hand-written,
   parallel code paths. `main`'s CLI dispatch, `--help` text, and the new
   `drun-mcp bridges list` / `drun-mcp bridges deregister-all` subcommands all
   read from `REGISTRY` generically; `uninstall.sh` now calls
-  `drun-mcp bridges deregister-all` instead of naming providers itself. Adding
-  a future bridge (Gemini, Codex, ...) means one new module implementing
-  `Bridge` plus one line in `REGISTRY` — no changes anywhere else. See
-  "Adding a new bridge" in `DEVELOPMENT.md`.
+  `drun-mcp bridges deregister-all` instead of naming providers itself. Adding a
+  future bridge (Gemini, Codex, ...) means one new module implementing `Bridge`
+  plus one line in `REGISTRY` — no changes anywhere else.
+- **`drun-mcp hermes init` now also writes `HERMES.md`** in the current
+  directory (skipped if it already exists) — Hermes's own highest-priority
+  [context file](https://github.com/NousResearch/hermes-agent/blob/main/website/docs/user-guide/features/context-files.md),
+  auto-discovered per project the same way `CLAUDE.md` is for Claude Code.
+  Without it Hermes had no way to learn drun exists or how to bootstrap a
+  session beyond raw MCP tool schemas alone. `hermes init` also now allowlists
+  the current project directory for `session_mount`, same as `claude init`
+  already did. The registration/toolset-restriction steps stay machine-wide and
+  idempotent; only the `HERMES.md` write is genuinely new each time
+  `hermes init` runs in a different project — run it from every project root,
+  same as `claude init`.
+- **Extracted the project-instructions markdown body and the mount-allowlist
+  helper into `bridges::shared`**, since neither was actually Claude-specific —
+  both were only ever in `bridges::claude` because that's where `CLAUDE.md`
+  generation happened to be written first. `claude_md_content`/
+  `hermes_md_content` now differ only in their opening paragraph (which native
+  tools/toolsets are blocked, and why); the "Getting started"/"Core
+  tools"/allowlist-troubleshooting body is identical prose generated once.
 
 ### Web UI
 
