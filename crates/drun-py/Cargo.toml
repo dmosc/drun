@@ -1,6 +1,6 @@
 [package]
 name = "drun"
-version = "0.3.20"
+version = "0.3.21"
 edition = "2024"
 
 [lib]
@@ -9,7 +9,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 pyo3 = { version = "0.28.3", features = ["abi3-py39"] }
-drun-core = { version = "0.3.20", path = "../drun-core" }
+drun-core = { version = "0.3.21", path = "../drun-core" }
 
 [dev-dependencies]
 pyo3 = { version = "0.28.3", features = ["auto-initialize"] }
