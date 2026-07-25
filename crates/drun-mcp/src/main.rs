@@ -1,4 +1,4 @@
-mod bridges;
+mod bridge;
 mod config_cmd;
 mod errors;
 mod handler;
@@ -30,7 +30,7 @@ pub(crate) fn mcp_port() -> u16 {
 }
 
 /// `~/.drun` — shared across `config_cmd` and any `Bridge` that needs it
-/// (e.g. `bridges::claude` for the project registry and mount allowlist).
+/// (e.g. `bridge::claude` for the project registry and mount allowlist).
 /// Not bridge-specific: lives here rather than in any one bridge module.
 pub(crate) fn drun_home() -> std::path::PathBuf {
     std::path::PathBuf::from(std::env::var("HOME").expect("HOME not set")).join(".drun")
@@ -49,8 +49,8 @@ async fn main() -> SdkResult<()> {
     match std::env::args().nth(1).as_deref() {
         Some("bridges") => {
             match std::env::args().nth(2).as_deref() {
-                Some("list") => bridges::print_list(),
-                Some("deregister-all") => bridges::deregister_all(),
+                Some("list") => bridge::REGISTRY.print_list(),
+                Some("deregister-all") => bridge::REGISTRY.deregister_all(),
                 _ => {
                     print_usage();
                     std::process::exit(1);
@@ -68,7 +68,7 @@ async fn main() -> SdkResult<()> {
             return Ok(());
         }
         Some(name) => {
-            let Some(bridge) = bridges::find(name) else {
+            let Some(bridge) = bridge::REGISTRY.find(name) else {
                 print_usage();
                 std::process::exit(1);
             };
@@ -121,8 +121,8 @@ fn print_usage() {
         ),
     ];
     // One `init`/`deregister` pair per registered bridge — adding a bridge
-    // to `bridges::REGISTRY` makes it show up here automatically.
-    for bridge in bridges::REGISTRY {
+    // to `bridge::REGISTRY` makes it show up here automatically.
+    for bridge in bridge::REGISTRY.iter() {
         rows.push((
             format!("{} init", bridge.name()),
             bridge.description().to_string(),

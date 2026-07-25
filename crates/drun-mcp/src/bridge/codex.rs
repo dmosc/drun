@@ -2,14 +2,16 @@ use std::path::{Path, PathBuf};
 
 use toml_edit::{DocumentMut, Item, Table, value};
 
+use super::Bridge;
+
 // Codex has no CLI for registering MCP servers, so this edits
 // ~/.codex/config.toml directly via toml_edit (format-preserving).
 // See: https://developers.openai.com/codex/config-reference
 
-/// [`super::Bridge`] impl — see that trait for the extensibility contract.
+/// [`Bridge`] impl — see that trait for the extensibility contract.
 pub struct Codex;
 
-impl super::Bridge for Codex {
+impl Bridge for Codex {
     fn name(&self) -> &'static str {
         "codex"
     }
@@ -25,15 +27,15 @@ impl super::Bridge for Codex {
     fn init(&self) {
         let project_dir = std::env::current_dir().expect("cannot read current directory");
         let project_path = project_dir.to_str().expect("non-UTF-8 project path");
-        super::shared::write_project_instructions(
+        self.init_common(
             &project_dir,
+            &crate::drun_home(),
             "AGENTS.md",
-            &agents_md_content(project_path),
+            &self.agents_md_content(project_path),
         );
-        super::shared::allow_mount_path(&crate::drun_home(), &project_dir);
-        super::shared::register_project(&crate::drun_home(), &project_dir);
-        let path = config_path();
-        let mut config = match CodexConfig::load() {
+
+        let path = self.config_path();
+        let mut config = match CodexConfig::load(&path) {
             Ok(config) => config,
             Err(e) => {
                 eprintln!(
@@ -57,7 +59,7 @@ impl super::Bridge for Codex {
                 "drun: updated {} — registered the MCP server (HTTP → {}) and disabled the native \
              shell tool. Both apply machine-wide, not just this project.",
                 path.display(),
-                mcp_url()
+                config.mcp_url()
             ),
             Err(e) => eprintln!("drun: could not write {} ({e})", path.display()),
         }
@@ -65,8 +67,8 @@ impl super::Bridge for Codex {
     }
 
     fn deregister(&self) {
-        let path = config_path();
-        let Ok(mut config) = CodexConfig::load() else {
+        let path = self.config_path();
+        let Ok(mut config) = CodexConfig::load(&path) else {
             return;
         };
 
@@ -83,12 +85,21 @@ impl super::Bridge for Codex {
     }
 }
 
-fn config_path() -> PathBuf {
-    PathBuf::from(std::env::var("HOME").expect("HOME not set")).join(".codex/config.toml")
-}
+impl Codex {
+    fn config_path(&self) -> PathBuf {
+        PathBuf::from(std::env::var("HOME").expect("HOME not set")).join(".codex/config.toml")
+    }
 
-fn mcp_url() -> String {
-    format!("http://127.0.0.1:{}/mcp", crate::mcp_port())
+    fn agents_md_content(&self, project_path: &str) -> String {
+        format!(
+            "# Agent instructions\n\n\
+             This project uses [drun](https://github.com/dmosc/drun) as a sandboxed runtime.\n\
+             Codex's native shell tool is disabled (machine-wide — see `features.shell_tool` in \
+             `~/.codex/config.toml`) so it can't bypass the sandbox. Use the drun MCP tools for \
+             everything.\n\n{}",
+            self.drun_instructions_body(project_path)
+        )
+    }
 }
 
 struct CodexConfig {
@@ -96,9 +107,8 @@ struct CodexConfig {
 }
 
 impl CodexConfig {
-    fn load() -> Result<Self, String> {
-        let path = config_path();
-        let contents = std::fs::read_to_string(&path).unwrap_or_default();
+    fn load(path: &Path) -> Result<Self, String> {
+        let contents = std::fs::read_to_string(path).unwrap_or_default();
         let doc = contents
             .parse::<DocumentMut>()
             .map_err(|e| format!("cannot parse {}: {e}", path.display()))?;
@@ -116,7 +126,12 @@ impl CodexConfig {
         crate::atomic_write(path, &self.render())
     }
 
+    fn mcp_url(&self) -> String {
+        format!("http://127.0.0.1:{}/mcp", crate::mcp_port())
+    }
+
     fn merge_mcp_entry(&mut self) -> bool {
+        let url = self.mcp_url();
         let servers = self
             .doc
             .entry("mcp_servers")
@@ -129,7 +144,7 @@ impl CodexConfig {
         }
 
         let mut drun = Table::new();
-        drun.insert("url", value(mcp_url()));
+        drun.insert("url", value(url));
         servers.insert("drun", Item::Table(drun));
         true
     }
@@ -172,17 +187,6 @@ impl CodexConfig {
     }
 }
 
-fn agents_md_content(project_path: &str) -> String {
-    format!(
-        "# Agent instructions\n\n\
-         This project uses [drun](https://github.com/dmosc/drun) as a sandboxed runtime.\n\
-         Codex's native shell tool is disabled (machine-wide — see `features.shell_tool` in \
-         `~/.codex/config.toml`) so it can't bypass the sandbox. Use the drun MCP tools for \
-         everything.\n\n{}",
-        super::shared::drun_instructions_body(project_path)
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -199,7 +203,7 @@ mod tests {
         assert!(c.merge_mcp_entry());
         let rendered = c.render();
         assert!(rendered.contains("[mcp_servers.drun]"));
-        assert!(rendered.contains(&mcp_url()));
+        assert!(rendered.contains(&c.mcp_url()));
     }
 
     #[test]
@@ -281,13 +285,13 @@ mod tests {
 
     #[test]
     fn agents_md_content_includes_the_project_path() {
-        let content = agents_md_content("/home/user/myproject");
+        let content = Codex.agents_md_content("/home/user/myproject");
         assert!(content.contains("/home/user/myproject"));
     }
 
     #[test]
     fn agents_md_content_documents_the_core_tools() {
-        let content = agents_md_content("/tmp/project");
+        let content = Codex.agents_md_content("/tmp/project");
         assert!(content.contains("session_bash"));
         assert!(content.contains("session_mount"));
     }

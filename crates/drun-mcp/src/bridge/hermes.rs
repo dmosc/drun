@@ -4,18 +4,17 @@ use std::{
     process::{Command, Stdio},
 };
 
+use super::Bridge;
+
 // Hermes has no CLI for registering MCP servers, so this edits
 // ~/.hermes/config.yaml directly as line surgery (no YAML lib dependency),
 // preserving the user's existing formatting and comments.
 // See: https://github.com/NousResearch/hermes-agent/blob/main/website/docs/user-guide/features/mcp.md
 
-// Machine-wide — Hermes has no per-project scope. Mirrors Claude's REQUIRED_DENY.
-const REQUIRED_TOOLSETS: &[&str] = &["terminal", "file", "web", "search", "delegation"];
-
-/// [`super::Bridge`] impl — see that trait for the extensibility contract.
+/// [`Bridge`] impl — see that trait for the extensibility contract.
 pub struct Hermes;
 
-impl super::Bridge for Hermes {
+impl Bridge for Hermes {
     fn name(&self) -> &'static str {
         "hermes"
     }
@@ -31,35 +30,34 @@ impl super::Bridge for Hermes {
     fn init(&self) {
         let project_dir = std::env::current_dir().expect("cannot read current directory");
         let project_path = project_dir.to_str().expect("non-UTF-8 project path");
-        super::shared::write_project_instructions(
+        self.init_common(
             &project_dir,
+            &crate::drun_home(),
             "HERMES.md",
-            &hermes_md_content(project_path),
+            &self.hermes_md_content(project_path),
         );
-        super::shared::allow_mount_path(&crate::drun_home(), &project_dir);
-        super::shared::register_project(&crate::drun_home(), &project_dir);
-        if !hermes_available() {
-            let path = hermes_config_path();
+        if !self.hermes_available() {
+            let path = self.hermes_config_path();
             eprintln!(
                 "drun: Hermes CLI not found. Add drun manually to {}:",
                 path.display()
             );
-            eprint!("{}", rendered_mcp_entry(&mcp_http_url()));
+            eprint!("{}", self.rendered_mcp_entry(&self.mcp_http_url()));
             return;
         }
-        register_mcp();
-        restrict_toolsets();
+        self.register_mcp();
+        self.restrict_toolsets();
         eprintln!("drun: initialized for {project_path}");
     }
 
     fn deregister(&self) {
-        let path = hermes_config_path();
+        let path = self.hermes_config_path();
         let Ok(mut config) = HermesConfig::try_load(&path) else {
             return;
         };
 
         let mcp_removed = config.remove_mcp_entry();
-        let toolsets_restored = config.remove_disabled_toolsets(REQUIRED_TOOLSETS);
+        let toolsets_restored = config.remove_disabled_toolsets(Self::REQUIRED_TOOLSETS);
 
         if !mcp_removed && !toolsets_restored {
             return;
@@ -67,6 +65,89 @@ impl super::Bridge for Hermes {
 
         if config.save(&path).is_ok() {
             eprintln!("drun: removed from Hermes ({}).", path.display());
+        }
+    }
+}
+
+impl Hermes {
+    const REQUIRED_TOOLSETS: &'static [&'static str] =
+        &["terminal", "file", "web", "search", "delegation"];
+
+    fn hermes_config_path(&self) -> PathBuf {
+        PathBuf::from(std::env::var("HOME").expect("HOME not set")).join(".hermes/config.yaml")
+    }
+
+    fn mcp_http_url(&self) -> String {
+        format!("http://127.0.0.1:{}/mcp", crate::mcp_port())
+    }
+
+    fn hermes_available(&self) -> bool {
+        match Command::new("hermes")
+            .arg("--version")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+        {
+            Ok(_) => true,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => false,
+            Err(_) => true,
+        }
+    }
+
+    fn rendered_mcp_entry(&self, url: &str) -> String {
+        format!(
+            "mcp_servers:\n  drun:\n    url: \"{url}\"\n    headers:\n      Accept: \"application/json, text/event-stream\"\n"
+        )
+    }
+
+    fn hermes_md_content(&self, project_path: &str) -> String {
+        format!(
+            "# Agent instructions\n\n\
+             This project uses [drun](https://github.com/dmosc/drun) as a sandboxed runtime.\n\
+             Hermes's native `terminal`, `file`, `web`, `search`, and `delegation` toolsets are\n\
+             disabled (machine-wide — see `~/.hermes/config.yaml`) so they don't bypass the\n\
+             sandbox. Use the drun MCP tools for everything.\n\n{}",
+            self.drun_instructions_body(project_path)
+        )
+    }
+
+    fn register_mcp(&self) {
+        let path = self.hermes_config_path();
+        let mut config = HermesConfig::load_or_default(&path);
+
+        if config.has_mcp_entry() {
+            eprintln!("drun: already registered in Hermes, skipping.");
+            return;
+        }
+
+        config.merge_mcp_entry(&self.mcp_http_url());
+        match config.save(&path) {
+            Ok(()) => eprintln!(
+                "drun: added to Hermes (HTTP → {}, {}).",
+                self.mcp_http_url(),
+                path.display()
+            ),
+            Err(e) => eprintln!("drun: could not write {} ({e})", path.display()),
+        }
+    }
+
+    fn restrict_toolsets(&self) {
+        let path = self.hermes_config_path();
+        let mut config = HermesConfig::load_or_default(&path);
+
+        if !config.merge_disabled_toolsets(Self::REQUIRED_TOOLSETS) {
+            eprintln!("drun: Hermes toolset restriction already applied, skipping.");
+            return;
+        }
+
+        match config.save(&path) {
+            Ok(()) => eprintln!(
+                "drun: disabled Hermes's native {} toolsets globally (agent.disabled_toolsets in \
+                 {}) — this applies to every Hermes session on this machine, not just this project.",
+                Self::REQUIRED_TOOLSETS.join("/"),
+                path.display()
+            ),
+            Err(e) => eprintln!("drun: could not write {} ({e})", path.display()),
         }
     }
 }
@@ -288,84 +369,6 @@ impl HermesConfig {
     }
 }
 
-fn hermes_config_path() -> PathBuf {
-    PathBuf::from(std::env::var("HOME").expect("HOME not set")).join(".hermes/config.yaml")
-}
-
-fn mcp_http_url() -> String {
-    format!("http://127.0.0.1:{}/mcp", crate::mcp_port())
-}
-
-fn hermes_available() -> bool {
-    match Command::new("hermes")
-        .arg("--version")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-    {
-        Ok(_) => true,
-        Err(e) if e.kind() == io::ErrorKind::NotFound => false,
-        Err(_) => true,
-    }
-}
-
-fn rendered_mcp_entry(url: &str) -> String {
-    format!(
-        "mcp_servers:\n  drun:\n    url: \"{url}\"\n    headers:\n      Accept: \"application/json, text/event-stream\"\n"
-    )
-}
-
-fn hermes_md_content(project_path: &str) -> String {
-    format!(
-        "# Agent instructions\n\n\
-         This project uses [drun](https://github.com/dmosc/drun) as a sandboxed runtime.\n\
-         Hermes's native `terminal`, `file`, `web`, `search`, and `delegation` toolsets are\n\
-         disabled (machine-wide — see `~/.hermes/config.yaml`) so they don't bypass the\n\
-         sandbox. Use the drun MCP tools for everything.\n\n{}",
-        super::shared::drun_instructions_body(project_path)
-    )
-}
-
-fn register_mcp() {
-    let path = hermes_config_path();
-    let mut config = HermesConfig::load_or_default(&path);
-
-    if config.has_mcp_entry() {
-        eprintln!("drun: already registered in Hermes, skipping.");
-        return;
-    }
-
-    config.merge_mcp_entry(&mcp_http_url());
-    match config.save(&path) {
-        Ok(()) => eprintln!(
-            "drun: added to Hermes (HTTP → {}, {}).",
-            mcp_http_url(),
-            path.display()
-        ),
-        Err(e) => eprintln!("drun: could not write {} ({e})", path.display()),
-    }
-}
-
-fn restrict_toolsets() {
-    let path = hermes_config_path();
-    let mut config = HermesConfig::load_or_default(&path);
-
-    if !config.merge_disabled_toolsets(REQUIRED_TOOLSETS) {
-        eprintln!("drun: Hermes toolset restriction already applied, skipping.");
-        return;
-    }
-
-    match config.save(&path) {
-        Ok(()) => eprintln!(
-            "drun: disabled Hermes's native {} toolsets globally (agent.disabled_toolsets in \
-             {}) — this applies to every Hermes session on this machine, not just this project.",
-            REQUIRED_TOOLSETS.join("/"),
-            path.display()
-        ),
-        Err(e) => eprintln!("drun: could not write {} ({e})", path.display()),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -374,13 +377,13 @@ mod tests {
 
     #[test]
     fn hermes_md_content_includes_the_project_path() {
-        let content = hermes_md_content("/home/user/myproject");
+        let content = Hermes.hermes_md_content("/home/user/myproject");
         assert!(content.contains("/home/user/myproject"));
     }
 
     #[test]
     fn hermes_md_content_documents_the_core_tools() {
-        let content = hermes_md_content("/tmp/project");
+        let content = Hermes.hermes_md_content("/tmp/project");
         assert!(content.contains("session_bash"));
         assert!(content.contains("session_mount"));
     }
@@ -454,9 +457,9 @@ mod tests {
     #[test]
     fn merge_disabled_toolsets_creates_full_block_when_agent_key_missing() {
         let mut config = HermesConfig::parse("");
-        assert!(config.merge_disabled_toolsets(REQUIRED_TOOLSETS));
+        assert!(config.merge_disabled_toolsets(Hermes::REQUIRED_TOOLSETS));
         let out = config.render();
-        for t in REQUIRED_TOOLSETS {
+        for t in Hermes::REQUIRED_TOOLSETS {
             assert!(out.contains(&format!("    - {t}")), "missing {t} in {out}");
         }
         assert!(out.starts_with("agent:\n  disabled_toolsets:\n"));
@@ -466,11 +469,11 @@ mod tests {
     fn merge_disabled_toolsets_adds_list_when_agent_key_exists_without_it() {
         let existing = "agent:\n  max_iterations: 50\n";
         let mut config = HermesConfig::parse(existing);
-        assert!(config.merge_disabled_toolsets(REQUIRED_TOOLSETS));
+        assert!(config.merge_disabled_toolsets(Hermes::REQUIRED_TOOLSETS));
         let out = config.render();
         assert!(out.contains("agent:\n  disabled_toolsets:\n"));
         assert!(out.contains("  max_iterations: 50"));
-        for t in REQUIRED_TOOLSETS {
+        for t in Hermes::REQUIRED_TOOLSETS {
             assert!(out.contains(&format!("    - {t}")));
         }
     }
@@ -479,11 +482,11 @@ mod tests {
     fn merge_disabled_toolsets_preserves_user_entries_and_dedupes() {
         let existing = "agent:\n  disabled_toolsets:\n    - memory\n    - terminal\n";
         let mut config = HermesConfig::parse(existing);
-        assert!(config.merge_disabled_toolsets(REQUIRED_TOOLSETS));
+        assert!(config.merge_disabled_toolsets(Hermes::REQUIRED_TOOLSETS));
         let out = config.render();
         assert_eq!(out.matches("- terminal").count(), 1);
         assert!(out.contains("- memory"));
-        for t in REQUIRED_TOOLSETS {
+        for t in Hermes::REQUIRED_TOOLSETS {
             assert!(out.contains(&format!("- {t}")));
         }
     }
@@ -491,9 +494,9 @@ mod tests {
     #[test]
     fn merge_disabled_toolsets_is_idempotent() {
         let mut config = HermesConfig::parse("");
-        assert!(config.merge_disabled_toolsets(REQUIRED_TOOLSETS));
+        assert!(config.merge_disabled_toolsets(Hermes::REQUIRED_TOOLSETS));
         let first = config.render();
-        assert!(!config.merge_disabled_toolsets(REQUIRED_TOOLSETS));
+        assert!(!config.merge_disabled_toolsets(Hermes::REQUIRED_TOOLSETS));
         assert_eq!(first, config.render());
     }
 
@@ -501,10 +504,10 @@ mod tests {
     fn remove_disabled_toolsets_drops_only_our_entries() {
         let existing = "agent:\n  disabled_toolsets:\n    - memory\n    - terminal\n    - file\n    - web\n    - search\n    - delegation\n";
         let mut config = HermesConfig::parse(existing);
-        assert!(config.remove_disabled_toolsets(REQUIRED_TOOLSETS));
+        assert!(config.remove_disabled_toolsets(Hermes::REQUIRED_TOOLSETS));
         let out = config.render();
         assert!(out.contains("- memory"));
-        for t in REQUIRED_TOOLSETS {
+        for t in Hermes::REQUIRED_TOOLSETS {
             assert!(!out.contains(&format!("- {t}")));
         }
     }
@@ -512,8 +515,8 @@ mod tests {
     #[test]
     fn remove_disabled_toolsets_drops_the_key_when_list_becomes_empty() {
         let mut config = HermesConfig::parse("");
-        config.merge_disabled_toolsets(REQUIRED_TOOLSETS);
-        assert!(config.remove_disabled_toolsets(REQUIRED_TOOLSETS));
+        config.merge_disabled_toolsets(Hermes::REQUIRED_TOOLSETS);
+        assert!(config.remove_disabled_toolsets(Hermes::REQUIRED_TOOLSETS));
         let out = config.render();
         assert!(!out.contains("disabled_toolsets"));
         assert!(out.contains("agent:"));
@@ -522,17 +525,17 @@ mod tests {
     #[test]
     fn remove_disabled_toolsets_is_a_no_op_when_absent() {
         let mut config = HermesConfig::parse("");
-        assert!(!config.remove_disabled_toolsets(REQUIRED_TOOLSETS));
+        assert!(!config.remove_disabled_toolsets(Hermes::REQUIRED_TOOLSETS));
     }
 
     #[test]
     fn has_any_disabled_toolset_detects_our_entries() {
         let mut config = HermesConfig::parse("");
-        config.merge_disabled_toolsets(REQUIRED_TOOLSETS);
-        assert!(config.has_any_disabled_toolset(REQUIRED_TOOLSETS));
+        config.merge_disabled_toolsets(Hermes::REQUIRED_TOOLSETS);
+        assert!(config.has_any_disabled_toolset(Hermes::REQUIRED_TOOLSETS));
         assert!(
             !HermesConfig::parse("agent:\n  disabled_toolsets:\n    - memory\n")
-                .has_any_disabled_toolset(REQUIRED_TOOLSETS)
+                .has_any_disabled_toolset(Hermes::REQUIRED_TOOLSETS)
         );
     }
 }
