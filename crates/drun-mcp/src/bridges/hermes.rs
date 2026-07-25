@@ -1,21 +1,15 @@
 use std::{
     io,
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::{Command, Stdio},
 };
 
-// Hermes has no CLI for registering arbitrary (non-catalog) MCP servers, so
-// this edits ~/.hermes/config.yaml directly. Editing is done as targeted line
-// surgery rather than a full YAML parse/reserialize, so any comments or
-// formatting the user already has in that file survive untouched.
+// Hermes has no CLI for registering MCP servers, so this edits
+// ~/.hermes/config.yaml directly as line surgery (no YAML lib dependency),
+// preserving the user's existing formatting and comments.
 // See: https://github.com/NousResearch/hermes-agent/blob/main/website/docs/user-guide/features/mcp.md
-//      https://github.com/NousResearch/hermes-agent/blob/main/website/docs/user-guide/configuration.md#global-toolset-disable
 
-// Toolsets that overlap with drun's sandboxed tools (terminal/file execution,
-// web access, subagent delegation) — mirrors Claude Code's REQUIRED_DENY list
-// in bridges::claude, translated to Hermes's toolset names. Disabling these is
-// a machine-wide setting (agent.disabled_toolsets applies to every Hermes
-// session, not just this project) since Hermes has no per-project scope.
+// Machine-wide — Hermes has no per-project scope. Mirrors Claude's REQUIRED_DENY.
 const REQUIRED_TOOLSETS: &[&str] = &["terminal", "file", "web", "search", "delegation"];
 
 /// [`super::Bridge`] impl — see that trait for the extensibility contract.
@@ -60,30 +54,237 @@ impl super::Bridge for Hermes {
 
     fn deregister(&self) {
         let path = hermes_config_path();
-        let Ok(existing) = std::fs::read_to_string(&path) else {
+        let Ok(mut config) = HermesConfig::try_load(&path) else {
             return;
         };
 
-        let mut updated = existing.clone();
-        let mut changed = false;
+        let mcp_removed = config.remove_mcp_entry();
+        let toolsets_restored = config.remove_disabled_toolsets(REQUIRED_TOOLSETS);
 
-        if has_mcp_entry(&updated) {
-            updated = remove_mcp_entry(&updated);
-            changed = true;
-        }
-
-        if has_any_disabled_toolset(&updated, REQUIRED_TOOLSETS) {
-            updated = remove_disabled_toolsets(&updated, REQUIRED_TOOLSETS);
-            changed = true;
-        }
-
-        if !changed {
+        if !mcp_removed && !toolsets_restored {
             return;
         }
 
-        if std::fs::write(&path, updated).is_ok() {
+        if config.save(&path).is_ok() {
             eprintln!("drun: removed from Hermes ({}).", path.display());
         }
+    }
+}
+
+struct HermesConfig {
+    lines: Vec<String>,
+}
+
+impl HermesConfig {
+    fn parse(existing: &str) -> Self {
+        Self {
+            lines: existing.lines().map(str::to_string).collect(),
+        }
+    }
+
+    fn load_or_default(path: &Path) -> Self {
+        Self::parse(&std::fs::read_to_string(path).unwrap_or_default())
+    }
+
+    fn try_load(path: &Path) -> io::Result<Self> {
+        std::fs::read_to_string(path).map(|s| Self::parse(&s))
+    }
+
+    fn render(&self) -> String {
+        if self.lines.is_empty() {
+            return String::new();
+        }
+        let mut rendered = self.lines.join("\n");
+        rendered.push('\n');
+        rendered
+    }
+
+    fn save(&self, path: &Path) -> io::Result<()> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(path, self.render())
+    }
+
+    fn has_mcp_entry(&self) -> bool {
+        self.lines.iter().any(|l| l.trim_end() == "  drun:")
+    }
+
+    fn merge_mcp_entry(&mut self, url: &str) -> bool {
+        if self.has_mcp_entry() {
+            return false;
+        }
+
+        let entry = [
+            "  drun:".to_string(),
+            format!("    url: \"{url}\""),
+            "    headers:".to_string(),
+            "      Accept: \"application/json, text/event-stream\"".to_string(),
+        ];
+
+        match self
+            .lines
+            .iter()
+            .position(|l| l.trim_end() == "mcp_servers:")
+        {
+            Some(pos) => {
+                for (i, e) in entry.iter().enumerate() {
+                    self.lines.insert(pos + 1 + i, e.clone());
+                }
+            }
+            None => {
+                if !self.lines.is_empty() {
+                    self.lines.push(String::new());
+                }
+                self.lines.push("mcp_servers:".to_string());
+                self.lines.extend(entry);
+            }
+        }
+        true
+    }
+
+    fn remove_mcp_entry(&mut self) -> bool {
+        if !self.has_mcp_entry() {
+            return false;
+        }
+
+        let mut out = Vec::with_capacity(self.lines.len());
+        let mut skipping = false;
+        for line in &self.lines {
+            if line.trim_end() == "  drun:" {
+                skipping = true;
+                continue;
+            }
+            if skipping {
+                let indent = line.len() - line.trim_start().len();
+                if line.trim().is_empty() || indent >= 3 {
+                    continue;
+                }
+                skipping = false;
+            }
+            out.push(line.clone());
+        }
+        self.lines = out;
+        true
+    }
+
+    fn agent_block_range(&self) -> Option<(usize, usize)> {
+        let start = self.lines.iter().position(|l| l.trim_end() == "agent:")?;
+        let end = self.lines[start + 1..]
+            .iter()
+            .position(|l| !l.trim().is_empty() && !l.starts_with("  "))
+            .map(|i| start + 1 + i)
+            .unwrap_or(self.lines.len());
+        Some((start, end))
+    }
+
+    fn disabled_toolsets_pos(&self, agent_start: usize, agent_end: usize) -> Option<usize> {
+        self.lines[agent_start + 1..agent_end]
+            .iter()
+            .position(|l| l.trim_end() == "  disabled_toolsets:")
+            .map(|i| agent_start + 1 + i)
+    }
+
+    fn disabled_toolsets_list_range(&self, dt_pos: usize) -> (usize, usize) {
+        let end = self.lines[dt_pos + 1..]
+            .iter()
+            .position(|l| !(l.starts_with("    - ") || l.trim().is_empty()))
+            .map(|i| dt_pos + 1 + i)
+            .unwrap_or(self.lines.len());
+        (dt_pos + 1, end)
+    }
+
+    #[cfg(test)]
+    fn has_any_disabled_toolset(&self, names: &[&str]) -> bool {
+        let Some((agent_start, agent_end)) = self.agent_block_range() else {
+            return false;
+        };
+        let Some(dt_pos) = self.disabled_toolsets_pos(agent_start, agent_end) else {
+            return false;
+        };
+        let (list_start, list_end) = self.disabled_toolsets_list_range(dt_pos);
+        self.lines[list_start..list_end]
+            .iter()
+            .any(|l| names.contains(&l.trim_start().trim_start_matches("- ")))
+    }
+
+    // Never removes an existing (possibly user-added) entry.
+    fn merge_disabled_toolsets(&mut self, required: &[&str]) -> bool {
+        let Some((agent_start, agent_end)) = self.agent_block_range() else {
+            if !self.lines.is_empty() {
+                self.lines.push(String::new());
+            }
+            self.lines.push("agent:".to_string());
+            self.lines.push("  disabled_toolsets:".to_string());
+            for t in required {
+                self.lines.push(format!("    - {t}"));
+            }
+            return true;
+        };
+
+        match self.disabled_toolsets_pos(agent_start, agent_end) {
+            Some(dt_pos) => {
+                let (list_start, list_end) = self.disabled_toolsets_list_range(dt_pos);
+                let existing_items: Vec<String> = self.lines[list_start..list_end]
+                    .iter()
+                    .map(|l| l.trim_start().trim_start_matches("- ").to_string())
+                    .collect();
+
+                let mut insert_at = list_end;
+                let mut changed = false;
+                for t in required {
+                    if !existing_items.iter().any(|i| i == t) {
+                        self.lines.insert(insert_at, format!("    - {t}"));
+                        insert_at += 1;
+                        changed = true;
+                    }
+                }
+                changed
+            }
+            None => {
+                let mut insert_at = agent_start + 1;
+                self.lines
+                    .insert(insert_at, "  disabled_toolsets:".to_string());
+                insert_at += 1;
+                for t in required {
+                    self.lines.insert(insert_at, format!("    - {t}"));
+                    insert_at += 1;
+                }
+                true
+            }
+        }
+    }
+
+    // Leaves `agent:` in place even if it ends up empty — it may hold
+    // unrelated keys we can't see here.
+    fn remove_disabled_toolsets(&mut self, names: &[&str]) -> bool {
+        let Some((agent_start, agent_end)) = self.agent_block_range() else {
+            return false;
+        };
+        let Some(dt_pos) = self.disabled_toolsets_pos(agent_start, agent_end) else {
+            return false;
+        };
+        let (list_start, list_end) = self.disabled_toolsets_list_range(dt_pos);
+
+        let remaining: Vec<String> = self.lines[list_start..list_end]
+            .iter()
+            .filter(|l| !names.contains(&l.trim_start().trim_start_matches("- ")))
+            .cloned()
+            .collect();
+
+        if remaining.len() == list_end - list_start {
+            return false;
+        }
+
+        let mut out: Vec<String> = Vec::new();
+        out.extend_from_slice(&self.lines[..dt_pos]);
+        if !remaining.is_empty() {
+            out.push(self.lines[dt_pos].clone());
+            out.extend(remaining);
+        }
+        out.extend_from_slice(&self.lines[list_end..]);
+        self.lines = out;
+        true
     }
 }
 
@@ -127,18 +328,15 @@ fn hermes_md_content(project_path: &str) -> String {
 
 fn register_mcp() {
     let path = hermes_config_path();
-    if let Some(parent) = path.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-    let existing = std::fs::read_to_string(&path).unwrap_or_default();
+    let mut config = HermesConfig::load_or_default(&path);
 
-    if has_mcp_entry(&existing) {
+    if config.has_mcp_entry() {
         eprintln!("drun: already registered in Hermes, skipping.");
         return;
     }
 
-    let updated = merge_mcp_entry(&existing, &mcp_http_url());
-    match std::fs::write(&path, updated) {
+    config.merge_mcp_entry(&mcp_http_url());
+    match config.save(&path) {
         Ok(()) => eprintln!(
             "drun: added to Hermes (HTTP → {}, {}).",
             mcp_http_url(),
@@ -150,18 +348,14 @@ fn register_mcp() {
 
 fn restrict_toolsets() {
     let path = hermes_config_path();
-    if let Some(parent) = path.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-    let existing = std::fs::read_to_string(&path).unwrap_or_default();
+    let mut config = HermesConfig::load_or_default(&path);
 
-    let updated = merge_disabled_toolsets(&existing, REQUIRED_TOOLSETS);
-    if updated == existing {
+    if !config.merge_disabled_toolsets(REQUIRED_TOOLSETS) {
         eprintln!("drun: Hermes toolset restriction already applied, skipping.");
         return;
     }
 
-    match std::fs::write(&path, updated) {
+    match config.save(&path) {
         Ok(()) => eprintln!(
             "drun: disabled Hermes's native {} toolsets globally (agent.disabled_toolsets in \
              {}) — this applies to every Hermes session on this machine, not just this project.",
@@ -170,206 +364,6 @@ fn restrict_toolsets() {
         ),
         Err(e) => eprintln!("drun: could not write {} ({e})", path.display()),
     }
-}
-
-fn has_mcp_entry(content: &str) -> bool {
-    content.lines().any(|l| l.trim_end() == "  drun:")
-}
-
-/// Inserts a `drun:` entry under the top-level `mcp_servers:` key, creating
-/// that key if it doesn't exist yet. Leaves every other line untouched.
-fn merge_mcp_entry(existing: &str, url: &str) -> String {
-    let entry = [
-        "  drun:".to_string(),
-        format!("    url: \"{url}\""),
-        "    headers:".to_string(),
-        "      Accept: \"application/json, text/event-stream\"".to_string(),
-    ];
-
-    let lines: Vec<&str> = existing.lines().collect();
-
-    if let Some(pos) = lines.iter().position(|l| l.trim_end() == "mcp_servers:") {
-        let mut out: Vec<String> = lines.iter().map(|s| s.to_string()).collect();
-        for (i, e) in entry.iter().enumerate() {
-            out.insert(pos + 1 + i, e.clone());
-        }
-        let mut rendered = out.join("\n");
-        rendered.push('\n');
-        rendered
-    } else {
-        let mut out = existing.to_string();
-        if !out.is_empty() {
-            if !out.ends_with('\n') {
-                out.push('\n');
-            }
-            out.push('\n');
-        }
-        out.push_str("mcp_servers:\n");
-        for e in &entry {
-            out.push_str(e);
-            out.push('\n');
-        }
-        out
-    }
-}
-
-/// Removes the `drun:` entry (and everything indented under it) from
-/// `mcp_servers:`, leaving sibling entries and everything else untouched.
-fn remove_mcp_entry(existing: &str) -> String {
-    let mut out = String::new();
-    let mut skipping = false;
-
-    for line in existing.lines() {
-        if line.trim_end() == "  drun:" {
-            skipping = true;
-            continue;
-        }
-        if skipping {
-            let indent = line.len() - line.trim_start().len();
-            if line.trim().is_empty() || indent >= 3 {
-                continue;
-            }
-            skipping = false;
-        }
-        out.push_str(line);
-        out.push('\n');
-    }
-
-    out
-}
-
-fn agent_block_range(lines: &[String]) -> Option<(usize, usize)> {
-    let start = lines.iter().position(|l| l.trim_end() == "agent:")?;
-    let end = lines[start + 1..]
-        .iter()
-        .position(|l| !l.trim().is_empty() && !l.starts_with("  "))
-        .map(|i| start + 1 + i)
-        .unwrap_or(lines.len());
-    Some((start, end))
-}
-
-fn disabled_toolsets_list_range(lines: &[String], dt_pos: usize) -> (usize, usize) {
-    let end = lines[dt_pos + 1..]
-        .iter()
-        .position(|l| !(l.starts_with("    - ") || l.trim().is_empty()))
-        .map(|i| dt_pos + 1 + i)
-        .unwrap_or(lines.len());
-    (dt_pos + 1, end)
-}
-
-/// Adds any of `required` not already present under `agent.disabled_toolsets`,
-/// creating `agent:` and/or `disabled_toolsets:` as needed. Never removes an
-/// existing (possibly user-added) entry.
-fn merge_disabled_toolsets(existing: &str, required: &[&str]) -> String {
-    let mut lines: Vec<String> = existing.lines().map(|s| s.to_string()).collect();
-
-    let Some((agent_start, agent_end)) = agent_block_range(&lines) else {
-        let mut out = existing.to_string();
-        if !out.is_empty() {
-            if !out.ends_with('\n') {
-                out.push('\n');
-            }
-            out.push('\n');
-        }
-        out.push_str("agent:\n  disabled_toolsets:\n");
-        for t in required {
-            out.push_str(&format!("    - {t}\n"));
-        }
-        return out;
-    };
-
-    let dt_pos = lines[agent_start + 1..agent_end]
-        .iter()
-        .position(|l| l.trim_end() == "  disabled_toolsets:")
-        .map(|i| agent_start + 1 + i);
-
-    match dt_pos {
-        Some(dt_pos) => {
-            let (list_start, list_end) = disabled_toolsets_list_range(&lines, dt_pos);
-            let existing_items: Vec<String> = lines[list_start..list_end]
-                .iter()
-                .map(|l| l.trim_start().trim_start_matches("- ").to_string())
-                .collect();
-
-            let mut insert_at = list_end;
-            for t in required {
-                if !existing_items.iter().any(|i| i == t) {
-                    lines.insert(insert_at, format!("    - {t}"));
-                    insert_at += 1;
-                }
-            }
-        }
-        None => {
-            let mut insert_at = agent_start + 1;
-            lines.insert(insert_at, "  disabled_toolsets:".to_string());
-            insert_at += 1;
-            for t in required {
-                lines.insert(insert_at, format!("    - {t}"));
-                insert_at += 1;
-            }
-        }
-    }
-
-    let mut rendered = lines.join("\n");
-    rendered.push('\n');
-    rendered
-}
-
-fn has_any_disabled_toolset(existing: &str, names: &[&str]) -> bool {
-    let lines: Vec<String> = existing.lines().map(|s| s.to_string()).collect();
-    let Some((agent_start, agent_end)) = agent_block_range(&lines) else {
-        return false;
-    };
-    let Some(dt_pos) = lines[agent_start + 1..agent_end]
-        .iter()
-        .position(|l| l.trim_end() == "  disabled_toolsets:")
-        .map(|i| agent_start + 1 + i)
-    else {
-        return false;
-    };
-    let (list_start, list_end) = disabled_toolsets_list_range(&lines, dt_pos);
-    lines[list_start..list_end]
-        .iter()
-        .any(|l| names.contains(&l.trim_start().trim_start_matches("- ")))
-}
-
-/// Removes exactly the entries in `names` from `agent.disabled_toolsets`,
-/// leaving any other (e.g. user-added) entries alone. If the list becomes
-/// empty, removes `disabled_toolsets:` too; leaves `agent:` itself even if
-/// it ends up empty, since it may hold unrelated keys we can't see here.
-fn remove_disabled_toolsets(existing: &str, names: &[&str]) -> String {
-    let lines: Vec<String> = existing.lines().map(|s| s.to_string()).collect();
-    let Some((agent_start, agent_end)) = agent_block_range(&lines) else {
-        return existing.to_string();
-    };
-    let Some(dt_pos) = lines[agent_start + 1..agent_end]
-        .iter()
-        .position(|l| l.trim_end() == "  disabled_toolsets:")
-        .map(|i| agent_start + 1 + i)
-    else {
-        return existing.to_string();
-    };
-    let (list_start, list_end) = disabled_toolsets_list_range(&lines, dt_pos);
-
-    let remaining: Vec<String> = lines[list_start..list_end]
-        .iter()
-        .filter(|l| !names.contains(&l.trim_start().trim_start_matches("- ")))
-        .cloned()
-        .collect();
-
-    let mut out: Vec<String> = Vec::new();
-    out.extend_from_slice(&lines[..dt_pos]);
-    if !remaining.is_empty() {
-        out.push(lines[dt_pos].clone());
-        out.extend(remaining);
-    }
-    out.extend_from_slice(&lines[list_end..]);
-
-    let mut rendered = out.join("\n");
-    if !rendered.is_empty() {
-        rendered.push('\n');
-    }
-    rendered
 }
 
 #[cfg(test)]
@@ -393,9 +387,10 @@ mod tests {
 
     #[test]
     fn merge_mcp_entry_creates_key_in_empty_file() {
-        let out = merge_mcp_entry("", URL);
+        let mut config = HermesConfig::parse("");
+        assert!(config.merge_mcp_entry(URL));
         assert_eq!(
-            out,
+            config.render(),
             "mcp_servers:\n  drun:\n    url: \"http://127.0.0.1:7273/mcp\"\n    headers:\n      Accept: \"application/json, text/event-stream\"\n"
         );
     }
@@ -403,7 +398,9 @@ mod tests {
     #[test]
     fn merge_mcp_entry_appends_key_when_missing_alongside_other_settings() {
         let existing = "model: \"hermes-4-70b\"\ntemperature: 0.7\n";
-        let out = merge_mcp_entry(existing, URL);
+        let mut config = HermesConfig::parse(existing);
+        assert!(config.merge_mcp_entry(URL));
+        let out = config.render();
         assert!(out.starts_with(existing));
         assert!(out.contains("mcp_servers:\n  drun:"));
     }
@@ -411,7 +408,9 @@ mod tests {
     #[test]
     fn merge_mcp_entry_inserts_under_existing_key_and_preserves_siblings() {
         let existing = "mcp_servers:\n  filesystem:\n    command: \"npx\"\n  linear:\n    url: \"https://mcp.linear.app/mcp\"\n    auth: oauth\n";
-        let out = merge_mcp_entry(existing, URL);
+        let mut config = HermesConfig::parse(existing);
+        assert!(config.merge_mcp_entry(URL));
+        let out = config.render();
         assert!(out.contains("  drun:\n    url: \"http://127.0.0.1:7273/mcp\""));
         assert!(out.contains("  filesystem:\n    command: \"npx\""));
         assert!(
@@ -420,16 +419,26 @@ mod tests {
     }
 
     #[test]
+    fn merge_mcp_entry_is_idempotent() {
+        let mut config = HermesConfig::parse("");
+        assert!(config.merge_mcp_entry(URL));
+        assert!(!config.merge_mcp_entry(URL));
+    }
+
+    #[test]
     fn has_mcp_entry_detects_existing_registration() {
-        let existing = merge_mcp_entry("", URL);
-        assert!(has_mcp_entry(&existing));
-        assert!(!has_mcp_entry("mcp_servers:\n  other:\n    url: \"x\"\n"));
+        let mut config = HermesConfig::parse("");
+        config.merge_mcp_entry(URL);
+        assert!(config.has_mcp_entry());
+        assert!(!HermesConfig::parse("mcp_servers:\n  other:\n    url: \"x\"\n").has_mcp_entry());
     }
 
     #[test]
     fn remove_mcp_entry_strips_only_the_drun_block() {
         let existing = "mcp_servers:\n  drun:\n    url: \"http://127.0.0.1:7273/mcp\"\n    headers:\n      Accept: \"x\"\n  linear:\n    url: \"https://mcp.linear.app/mcp\"\n    auth: oauth\n";
-        let out = remove_mcp_entry(existing);
+        let mut config = HermesConfig::parse(existing);
+        assert!(config.remove_mcp_entry());
+        let out = config.render();
         assert!(!out.contains("drun:"));
         assert!(out.contains(
             "mcp_servers:\n  linear:\n    url: \"https://mcp.linear.app/mcp\"\n    auth: oauth\n"
@@ -437,8 +446,16 @@ mod tests {
     }
 
     #[test]
+    fn remove_mcp_entry_is_a_no_op_when_absent() {
+        let mut config = HermesConfig::parse("");
+        assert!(!config.remove_mcp_entry());
+    }
+
+    #[test]
     fn merge_disabled_toolsets_creates_full_block_when_agent_key_missing() {
-        let out = merge_disabled_toolsets("", REQUIRED_TOOLSETS);
+        let mut config = HermesConfig::parse("");
+        assert!(config.merge_disabled_toolsets(REQUIRED_TOOLSETS));
+        let out = config.render();
         for t in REQUIRED_TOOLSETS {
             assert!(out.contains(&format!("    - {t}")), "missing {t} in {out}");
         }
@@ -448,7 +465,9 @@ mod tests {
     #[test]
     fn merge_disabled_toolsets_adds_list_when_agent_key_exists_without_it() {
         let existing = "agent:\n  max_iterations: 50\n";
-        let out = merge_disabled_toolsets(existing, REQUIRED_TOOLSETS);
+        let mut config = HermesConfig::parse(existing);
+        assert!(config.merge_disabled_toolsets(REQUIRED_TOOLSETS));
+        let out = config.render();
         assert!(out.contains("agent:\n  disabled_toolsets:\n"));
         assert!(out.contains("  max_iterations: 50"));
         for t in REQUIRED_TOOLSETS {
@@ -459,7 +478,9 @@ mod tests {
     #[test]
     fn merge_disabled_toolsets_preserves_user_entries_and_dedupes() {
         let existing = "agent:\n  disabled_toolsets:\n    - memory\n    - terminal\n";
-        let out = merge_disabled_toolsets(existing, REQUIRED_TOOLSETS);
+        let mut config = HermesConfig::parse(existing);
+        assert!(config.merge_disabled_toolsets(REQUIRED_TOOLSETS));
+        let out = config.render();
         assert_eq!(out.matches("- terminal").count(), 1);
         assert!(out.contains("- memory"));
         for t in REQUIRED_TOOLSETS {
@@ -469,15 +490,19 @@ mod tests {
 
     #[test]
     fn merge_disabled_toolsets_is_idempotent() {
-        let first = merge_disabled_toolsets("", REQUIRED_TOOLSETS);
-        let second = merge_disabled_toolsets(&first, REQUIRED_TOOLSETS);
-        assert_eq!(first, second);
+        let mut config = HermesConfig::parse("");
+        assert!(config.merge_disabled_toolsets(REQUIRED_TOOLSETS));
+        let first = config.render();
+        assert!(!config.merge_disabled_toolsets(REQUIRED_TOOLSETS));
+        assert_eq!(first, config.render());
     }
 
     #[test]
     fn remove_disabled_toolsets_drops_only_our_entries() {
         let existing = "agent:\n  disabled_toolsets:\n    - memory\n    - terminal\n    - file\n    - web\n    - search\n    - delegation\n";
-        let out = remove_disabled_toolsets(existing, REQUIRED_TOOLSETS);
+        let mut config = HermesConfig::parse(existing);
+        assert!(config.remove_disabled_toolsets(REQUIRED_TOOLSETS));
+        let out = config.render();
         assert!(out.contains("- memory"));
         for t in REQUIRED_TOOLSETS {
             assert!(!out.contains(&format!("- {t}")));
@@ -486,19 +511,28 @@ mod tests {
 
     #[test]
     fn remove_disabled_toolsets_drops_the_key_when_list_becomes_empty() {
-        let existing = merge_disabled_toolsets("", REQUIRED_TOOLSETS);
-        let out = remove_disabled_toolsets(&existing, REQUIRED_TOOLSETS);
+        let mut config = HermesConfig::parse("");
+        config.merge_disabled_toolsets(REQUIRED_TOOLSETS);
+        assert!(config.remove_disabled_toolsets(REQUIRED_TOOLSETS));
+        let out = config.render();
         assert!(!out.contains("disabled_toolsets"));
         assert!(out.contains("agent:"));
     }
 
     #[test]
+    fn remove_disabled_toolsets_is_a_no_op_when_absent() {
+        let mut config = HermesConfig::parse("");
+        assert!(!config.remove_disabled_toolsets(REQUIRED_TOOLSETS));
+    }
+
+    #[test]
     fn has_any_disabled_toolset_detects_our_entries() {
-        let existing = merge_disabled_toolsets("", REQUIRED_TOOLSETS);
-        assert!(has_any_disabled_toolset(&existing, REQUIRED_TOOLSETS));
-        assert!(!has_any_disabled_toolset(
-            "agent:\n  disabled_toolsets:\n    - memory\n",
-            REQUIRED_TOOLSETS
-        ));
+        let mut config = HermesConfig::parse("");
+        config.merge_disabled_toolsets(REQUIRED_TOOLSETS);
+        assert!(config.has_any_disabled_toolset(REQUIRED_TOOLSETS));
+        assert!(
+            !HermesConfig::parse("agent:\n  disabled_toolsets:\n    - memory\n")
+                .has_any_disabled_toolset(REQUIRED_TOOLSETS)
+        );
     }
 }

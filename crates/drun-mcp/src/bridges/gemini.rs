@@ -1,4 +1,6 @@
+#[cfg(test)]
 use std::path::Path;
+use std::path::PathBuf;
 
 use serde_json::{Value, json};
 
@@ -39,18 +41,16 @@ impl super::Bridge for Gemini {
     }
 
     fn init(&self) {
-        let project_dir = std::env::current_dir().expect("cannot read current directory");
-        let project_path = project_dir.to_str().expect("non-UTF-8 project path");
-        write_settings(&project_dir);
-        super::shared::write_project_instructions(
-            &project_dir,
-            "GEMINI.md",
-            &gemini_md_content(project_path),
-        );
-        super::shared::allow_mount_path(&crate::drun_home(), &project_dir);
-        super::shared::register_project(&crate::drun_home(), &project_dir);
+        let project = ProjectInit {
+            project_dir: std::env::current_dir().expect("cannot read current directory"),
+            drun_home: crate::drun_home(),
+        };
+        project.write_settings();
+        project.write_gemini_md();
+        project.allow_mount_path();
+        project.register_project();
         CLI.register();
-        eprintln!("drun: initialized for {project_path}");
+        eprintln!("drun: initialized for {}", project.project_dir.display());
     }
 
     fn deregister(&self) {
@@ -66,14 +66,39 @@ fn rendered_default_settings() -> String {
     )
 }
 
-fn write_settings(project_dir: &Path) {
-    let settings_file = project_dir.join(".gemini").join("settings.json");
-    super::shared::write_json_settings(
-        &settings_file,
-        ".gemini/settings.json",
-        rendered_default_settings,
-        merge_settings,
-    );
+// Mirrors super::claude::ProjectInit.
+struct ProjectInit {
+    project_dir: PathBuf,
+    drun_home: PathBuf,
+}
+
+impl ProjectInit {
+    fn allow_mount_path(&self) {
+        super::shared::allow_mount_path(&self.drun_home, &self.project_dir);
+    }
+
+    fn write_settings(&self) {
+        let settings_file = self.project_dir.join(".gemini").join("settings.json");
+        super::shared::write_json_settings(
+            &settings_file,
+            ".gemini/settings.json",
+            rendered_default_settings,
+            merge_settings,
+        );
+    }
+
+    fn write_gemini_md(&self) {
+        let project_path = self.project_dir.to_str().expect("non-UTF-8 project path");
+        super::shared::write_project_instructions(
+            &self.project_dir,
+            "GEMINI.md",
+            &gemini_md_content(project_path),
+        );
+    }
+
+    fn register_project(&self) {
+        super::shared::register_project(&self.drun_home, &self.project_dir);
+    }
 }
 
 fn merge_settings(existing: &str) -> Result<Option<String>, String> {
@@ -107,6 +132,13 @@ fn gemini_md_content(project_path: &str) -> String {
 mod tests {
     use super::*;
 
+    fn project_init(drun_home: &Path, project_dir: &Path) -> ProjectInit {
+        ProjectInit {
+            drun_home: drun_home.to_path_buf(),
+            project_dir: project_dir.to_path_buf(),
+        }
+    }
+
     #[test]
     fn gemini_md_content_includes_the_project_path() {
         let content = gemini_md_content("/home/user/myproject");
@@ -130,7 +162,7 @@ mod tests {
     #[test]
     fn write_settings_creates_gemini_settings_json() {
         let dir = tempfile::tempdir().unwrap();
-        write_settings(dir.path());
+        project_init(dir.path(), dir.path()).write_settings();
         let settings_path = dir.path().join(".gemini/settings.json");
         assert!(settings_path.exists());
         let content = std::fs::read_to_string(&settings_path).unwrap();
@@ -145,7 +177,7 @@ mod tests {
         let settings_path = settings_dir.join("settings.json");
         std::fs::write(&settings_path, "custom content").unwrap();
 
-        write_settings(dir.path());
+        project_init(dir.path(), dir.path()).write_settings();
 
         assert_eq!(
             std::fs::read_to_string(&settings_path).unwrap(),
@@ -161,7 +193,7 @@ mod tests {
         let settings_path = settings_dir.join("settings.json");
         std::fs::write(&settings_path, r#"{"theme": "dark"}"#).unwrap();
 
-        write_settings(dir.path());
+        project_init(dir.path(), dir.path()).write_settings();
 
         let content = std::fs::read_to_string(&settings_path).unwrap();
         let value: serde_json::Value = serde_json::from_str(&content).unwrap();
@@ -183,7 +215,7 @@ mod tests {
         let settings_path = settings_dir.join("settings.json");
         std::fs::write(&settings_path, r#"{"excludeTools": ["SomeOtherTool"]}"#).unwrap();
 
-        write_settings(dir.path());
+        project_init(dir.path(), dir.path()).write_settings();
 
         let content = std::fs::read_to_string(&settings_path).unwrap();
         let value: serde_json::Value = serde_json::from_str(&content).unwrap();
@@ -197,11 +229,11 @@ mod tests {
     #[test]
     fn write_settings_is_idempotent_once_fully_merged() {
         let dir = tempfile::tempdir().unwrap();
-        write_settings(dir.path());
+        project_init(dir.path(), dir.path()).write_settings();
         let settings_path = dir.path().join(".gemini/settings.json");
         let first = std::fs::read_to_string(&settings_path).unwrap();
 
-        write_settings(dir.path());
+        project_init(dir.path(), dir.path()).write_settings();
 
         let second = std::fs::read_to_string(&settings_path).unwrap();
         assert_eq!(first, second);
@@ -211,5 +243,63 @@ mod tests {
     fn merge_settings_errors_when_root_is_not_an_object() {
         let err = merge_settings(r#"["not", "an", "object"]"#).unwrap_err();
         assert!(err.contains("root"));
+    }
+
+    #[test]
+    fn write_gemini_md_creates_the_file_with_project_path() {
+        let dir = tempfile::tempdir().unwrap();
+        project_init(dir.path(), dir.path()).write_gemini_md();
+        let path = dir.path().join("GEMINI.md");
+        assert!(path.exists());
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert!(content.contains(dir.path().to_str().unwrap()));
+    }
+
+    #[test]
+    fn write_gemini_md_does_not_overwrite_an_existing_file() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("GEMINI.md"), "custom").unwrap();
+
+        project_init(dir.path(), dir.path()).write_gemini_md();
+
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("GEMINI.md")).unwrap(),
+            "custom"
+        );
+    }
+
+    #[test]
+    fn allow_mount_path_delegates_to_the_shared_implementation() {
+        let drun_home = tempfile::tempdir().unwrap();
+        let project_dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            drun_home.path().join("config.toml"),
+            "mount_allowlist = []\n",
+        )
+        .unwrap();
+
+        project_init(drun_home.path(), project_dir.path()).allow_mount_path();
+
+        let config = drun_core::Config::load_from(Some(&drun_home.path().join("config.toml")));
+        assert!(
+            config
+                .mount_allowlist
+                .contains(&project_dir.path().to_path_buf())
+        );
+    }
+
+    #[test]
+    fn register_project_delegates_to_the_shared_implementation() {
+        let drun_home = tempfile::tempdir().unwrap();
+        let project_dir = tempfile::tempdir().unwrap();
+
+        project_init(drun_home.path(), project_dir.path()).register_project();
+
+        let registry = std::fs::read_to_string(drun_home.path().join("projects")).unwrap();
+        assert!(
+            registry
+                .lines()
+                .any(|l| l == project_dir.path().to_str().unwrap())
+        );
     }
 }
