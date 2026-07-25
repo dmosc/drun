@@ -29,7 +29,7 @@ impl Bridge for Claude {
         let project_path = project_dir.to_str().expect("non-UTF-8 project path");
         self.init_common(
             &project_dir,
-            &crate::drun_home(),
+            &crate::Env.drun_home(),
             "CLAUDE.md",
             &self.claude_md_content(project_path),
         );

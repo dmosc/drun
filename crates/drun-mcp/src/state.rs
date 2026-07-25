@@ -796,12 +796,12 @@ mod tests {
             &sessions,
             &config,
             Instant::now(),
-            crate::DEFAULT_MCP_PORT,
+            crate::Env::DEFAULT_MCP_PORT,
             7274,
         );
         assert_eq!(status.session_count, 1);
         assert_eq!(status.max_sessions, Some(10));
-        assert_eq!(status.mcp_port, crate::DEFAULT_MCP_PORT);
+        assert_eq!(status.mcp_port, crate::Env::DEFAULT_MCP_PORT);
         assert_eq!(status.web_port, 7274);
         assert_eq!(status.pid, std::process::id());
     }

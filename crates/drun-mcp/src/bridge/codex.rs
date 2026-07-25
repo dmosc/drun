@@ -29,7 +29,7 @@ impl Bridge for Codex {
         let project_path = project_dir.to_str().expect("non-UTF-8 project path");
         self.init_common(
             &project_dir,
-            &crate::drun_home(),
+            &crate::Env.drun_home(),
             "AGENTS.md",
             &self.agents_md_content(project_path),
         );
@@ -123,11 +123,11 @@ impl CodexConfig {
         if let Some(parent) = path.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
-        crate::atomic_write(path, &self.render())
+        crate::FileManager::write(path, &self.render())
     }
 
     fn mcp_url(&self) -> String {
-        format!("http://127.0.0.1:{}/mcp", crate::mcp_port())
+        format!("http://127.0.0.1:{}/mcp", crate::Env.mcp_port())
     }
 
     fn merge_mcp_entry(&mut self) -> bool {

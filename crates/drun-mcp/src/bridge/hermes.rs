@@ -32,7 +32,7 @@ impl Bridge for Hermes {
         let project_path = project_dir.to_str().expect("non-UTF-8 project path");
         self.init_common(
             &project_dir,
-            &crate::drun_home(),
+            &crate::Env.drun_home(),
             "HERMES.md",
             &self.hermes_md_content(project_path),
         );
@@ -78,7 +78,7 @@ impl Hermes {
     }
 
     fn mcp_http_url(&self) -> String {
-        format!("http://127.0.0.1:{}/mcp", crate::mcp_port())
+        format!("http://127.0.0.1:{}/mcp", crate::Env.mcp_port())
     }
 
     fn hermes_available(&self) -> bool {

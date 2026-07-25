@@ -33,7 +33,7 @@ fn usage_and_exit(usage: &str) -> ! {
 }
 
 fn config_path() -> PathBuf {
-    crate::drun_home().join("config.toml")
+    crate::Env.drun_home().join("config.toml")
 }
 
 fn add_domain(domain: &str) {
@@ -172,7 +172,7 @@ fn add_to_array(config_path: &Path, key: &str, value: &str) -> Result<bool, Stri
         .ok_or_else(|| format!("'{key}' in {} is not an array", config_path.display()))?;
     array.push(value);
 
-    crate::atomic_write(config_path, &doc.to_string())?;
+    crate::FileManager::write(config_path, &doc.to_string())?;
     Ok(true)
 }
 
@@ -208,7 +208,7 @@ fn remove_from_array(config_path: &Path, key: &str, value: &str) -> Result<bool,
     };
     array.remove(idx);
 
-    crate::atomic_write(config_path, &doc.to_string())?;
+    crate::FileManager::write(config_path, &doc.to_string())?;
     Ok(true)
 }
 

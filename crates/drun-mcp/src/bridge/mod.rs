@@ -285,7 +285,7 @@ the change is visible on your very next tool call in this same session.
     }
 
     fn cli_mcp_url(&self) -> String {
-        format!("http://127.0.0.1:{}/sse", crate::mcp_port())
+        format!("http://127.0.0.1:{}/sse", crate::Env.mcp_port())
     }
 
     fn cli_mcp_available(&self, bin: &str) -> bool {

@@ -1,6 +1,8 @@
 mod bridge;
 mod config_cmd;
+mod env;
 mod errors;
+mod file_manager;
 mod handler;
 mod live_output;
 mod response;
@@ -9,6 +11,8 @@ mod state;
 mod tools;
 mod web;
 
+pub(crate) use env::Env;
+pub(crate) use file_manager::FileManager;
 use handler::DrunHandler;
 use rust_mcp_sdk::{
     ToMcpServerHandler,
@@ -19,30 +23,6 @@ use rust_mcp_sdk::{
         ServerCapabilitiesTools,
     },
 };
-
-pub(crate) const DEFAULT_MCP_PORT: u16 = 7273;
-
-pub(crate) fn mcp_port() -> u16 {
-    std::env::var("DRUN_MCP_PORT")
-        .ok()
-        .and_then(|p| p.parse().ok())
-        .unwrap_or(DEFAULT_MCP_PORT)
-}
-
-/// `~/.drun` — shared across `config_cmd` and any `Bridge` that needs it
-/// (e.g. `bridge::claude` for the project registry and mount allowlist).
-/// Not bridge-specific: lives here rather than in any one bridge module.
-pub(crate) fn drun_home() -> std::path::PathBuf {
-    std::path::PathBuf::from(std::env::var("HOME").expect("HOME not set")).join(".drun")
-}
-
-/// Writes `contents` to `path` via a temp file + rename, so a reader never
-/// observes a half-written file.
-pub(crate) fn atomic_write(path: &std::path::Path, contents: &str) -> Result<(), String> {
-    let tmp = path.with_extension("tmp");
-    std::fs::write(&tmp, contents).map_err(|e| format!("cannot write {}: {e}", tmp.display()))?;
-    std::fs::rename(&tmp, path).map_err(|e| format!("cannot write {}: {e}", path.display()))
-}
 
 #[tokio::main]
 async fn main() -> SdkResult<()> {
@@ -94,7 +74,7 @@ async fn main() -> SdkResult<()> {
         tokio::spawn(web::WebServer::new(handler.clone(), web_port, started_at).serve());
     }
 
-    let mcp_port = mcp_port();
+    let mcp_port = Env.mcp_port();
     eprintln!("drun: MCP → http://127.0.0.1:{mcp_port}/mcp (streamable HTTP)");
     eprintln!("drun: MCP → http://127.0.0.1:{mcp_port}/sse (SSE)");
 

@@ -99,7 +99,7 @@ impl WebServer {
             )
             .with_state(AppState {
                 handler,
-                mcp_port: crate::mcp_port(),
+                mcp_port: crate::Env.mcp_port(),
                 web_port,
                 started_at,
             })
@@ -589,7 +589,7 @@ mod tests {
     fn app_state(sessions: SessionMap) -> AppState {
         AppState {
             handler: test_handler(sessions, Config::default()),
-            mcp_port: crate::DEFAULT_MCP_PORT,
+            mcp_port: crate::Env::DEFAULT_MCP_PORT,
             web_port: 7274,
             started_at: Instant::now(),
         }
@@ -789,7 +789,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         let body = body_string(response).await;
         assert!(body.contains("\"session_count\":1"));
-        assert!(body.contains(&format!("\"mcp_port\":{}", crate::DEFAULT_MCP_PORT)));
+        assert!(body.contains(&format!("\"mcp_port\":{}", crate::Env::DEFAULT_MCP_PORT)));
         assert!(body.contains("\"web_port\":7274"));
     }
 
@@ -945,7 +945,7 @@ mod tests {
         };
         let state = AppState {
             handler: test_handler(sessions, config),
-            mcp_port: crate::DEFAULT_MCP_PORT,
+            mcp_port: crate::Env::DEFAULT_MCP_PORT,
             web_port: 7274,
             started_at: Instant::now(),
         };
@@ -1036,7 +1036,7 @@ mod tests {
         };
         let state = AppState {
             handler: test_handler(sessions, config),
-            mcp_port: crate::DEFAULT_MCP_PORT,
+            mcp_port: crate::Env::DEFAULT_MCP_PORT,
             web_port: 7274,
             started_at: Instant::now(),
         };
