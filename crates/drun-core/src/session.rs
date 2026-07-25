@@ -208,7 +208,8 @@ impl Session {
         }
         let mut read_paths: Vec<PathBuf> = self.overlays.values().cloned().collect();
         read_paths.extend(self.config.get().mount_allowlist);
-        let child = sandbox::Sandbox::new(workspace_dir.path(), read_paths)
+        let sandbox = sandbox::Sandbox::new(workspace_dir.path(), read_paths)?;
+        let child = sandbox
             .command(command)?
             .current_dir(workspace_dir.path())
             .stdout(std::process::Stdio::piped())

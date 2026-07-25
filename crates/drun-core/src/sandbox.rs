@@ -9,17 +9,23 @@ use std::process::Command;
 pub(crate) struct Sandbox {
     workspace: PathBuf,
     read_paths: Vec<PathBuf>,
+    #[cfg(target_os = "macos")]
+    tmp_dir: tempfile::TempDir,
 }
 
 impl Sandbox {
-    pub(crate) fn new(workspace_dir: &Path, read_paths: Vec<PathBuf>) -> Self {
+    pub(crate) fn new(workspace_dir: &Path, read_paths: Vec<PathBuf>) -> anyhow::Result<Self> {
         let workspace = workspace_dir
             .canonicalize()
             .unwrap_or_else(|_| workspace_dir.to_path_buf());
-        Self {
+        Ok(Self {
             workspace,
             read_paths,
-        }
+            #[cfg(target_os = "macos")]
+            tmp_dir: tempfile::Builder::new()
+                .prefix("drun")
+                .tempdir_in("/private/tmp")?,
+        })
     }
 
     #[cfg(target_os = "macos")]
@@ -91,6 +97,7 @@ impl Sandbox {
 
         let mut cmd = Command::new("sandbox-exec");
         cmd.arg("-p").arg(profile).arg("sh").arg("-c").arg(command);
+        cmd.env("TMPDIR", self.tmp_dir.path());
         // New process group set globally allows cleanup workflows to wipe out
         // all spawned processes and subprocesses, ensuring that none remains
         // alive.
