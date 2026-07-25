@@ -21,19 +21,21 @@ pub struct DrunCheckpoint {
     pub exit_code: Option<i32>,
 }
 
-pub fn checkpoint_to_py(c: &drun_core::Checkpoint) -> DrunCheckpoint {
-    DrunCheckpoint {
-        id: c.id,
-        stdout: c.stdout.clone(),
-        stderr: c.stderr.clone(),
-        files: c
-            .files
-            .iter()
-            .map(|(k, arc)| (k.clone(), (**arc).clone()))
-            .collect(),
-        label: c.label.clone(),
-        command: c.command.clone(),
-        exit_code: c.exit_code,
+impl DrunCheckpoint {
+    pub fn from_checkpoint(c: &drun_core::Checkpoint) -> Self {
+        Self {
+            id: c.id,
+            stdout: c.stdout.clone(),
+            stderr: c.stderr.clone(),
+            files: c
+                .files
+                .iter()
+                .map(|(k, arc)| (k.clone(), (**arc).clone()))
+                .collect(),
+            label: c.label.clone(),
+            command: c.command.clone(),
+            exit_code: c.exit_code,
+        }
     }
 }
 
@@ -55,7 +57,7 @@ mod tests {
             command: Some("echo hi".to_string()),
             exit_code: Some(0),
         };
-        let py_checkpoint = checkpoint_to_py(&checkpoint);
+        let py_checkpoint = DrunCheckpoint::from_checkpoint(&checkpoint);
 
         assert_eq!(py_checkpoint.id, 3);
         assert_eq!(py_checkpoint.stdout, "out");

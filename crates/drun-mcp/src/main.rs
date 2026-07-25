@@ -1,4 +1,5 @@
 mod bridge;
+mod cli;
 mod config_cmd;
 mod env;
 mod errors;
@@ -11,6 +12,7 @@ mod state;
 mod tools;
 mod web;
 
+pub(crate) use cli::Cli;
 pub(crate) use config_cmd::ConfigCmd;
 pub(crate) use env::Env;
 pub(crate) use file_manager::FileManager;
@@ -20,10 +22,6 @@ use rust_mcp_sdk::{
     ToMcpServerHandler,
     error::SdkResult,
     mcp_server::{HyperServerOptions, hyper_server},
-    schema::{
-        Implementation, InitializeResult, ProtocolVersion, ServerCapabilities,
-        ServerCapabilitiesTools,
-    },
 };
 
 #[tokio::main]
@@ -34,7 +32,7 @@ async fn main() -> SdkResult<()> {
                 Some("list") => bridge::REGISTRY.print_list(),
                 Some("deregister-all") => bridge::REGISTRY.deregister_all(),
                 _ => {
-                    print_usage();
+                    Cli::print_usage();
                     std::process::exit(1);
                 }
             }
@@ -46,19 +44,19 @@ async fn main() -> SdkResult<()> {
             return Ok(());
         }
         Some("--help" | "-h") => {
-            print_usage();
+            Cli::print_usage();
             return Ok(());
         }
         Some(name) => {
             let Some(bridge) = bridge::REGISTRY.find(name) else {
-                print_usage();
+                Cli::print_usage();
                 std::process::exit(1);
             };
             match std::env::args().nth(2).as_deref() {
                 Some("init") => bridge.init(),
                 Some("deregister") => bridge.deregister(),
                 _ => {
-                    print_usage();
+                    Cli::print_usage();
                     std::process::exit(1);
                 }
             }
@@ -81,7 +79,7 @@ async fn main() -> SdkResult<()> {
     eprintln!("drun: MCP → http://127.0.0.1:{mcp_port}/sse (SSE)");
 
     hyper_server::create_server(
-        build_server_details(),
+        Cli::build_server_details(),
         handler.to_mcp_server_handler(),
         HyperServerOptions {
             host: "127.0.0.1".into(),
@@ -91,91 +89,4 @@ async fn main() -> SdkResult<()> {
     )
     .start()
     .await
-}
-
-fn print_usage() {
-    let mut rows: Vec<(String, String)> = vec![
-        (String::new(), "start the daemon".into()),
-        ("bridges list".into(), "list available agent bridges".into()),
-        (
-            "bridges deregister-all".into(),
-            "undo every registered bridge".into(),
-        ),
-    ];
-    // One `init`/`deregister` pair per registered bridge — adding a bridge
-    // to `bridge::REGISTRY` makes it show up here automatically.
-    for bridge in bridge::REGISTRY.iter() {
-        rows.push((
-            format!("{} init", bridge.name()),
-            bridge.description().to_string(),
-        ));
-        rows.push((
-            format!("{} deregister", bridge.name()),
-            format!("undo `{} init`", bridge.name()),
-        ));
-    }
-    rows.extend(
-        [
-            (
-                "config add-domain <name>",
-                "allow a domain for session_fetch",
-            ),
-            ("config add-path <path>", "allow a path for session_mount"),
-            (
-                "config remove-domain <name>",
-                "disallow a domain for session_fetch",
-            ),
-            (
-                "config remove-path <path>",
-                "disallow a path for session_mount",
-            ),
-            ("config list", "show the current allowlists"),
-        ]
-        .map(|(cmd, desc)| (cmd.to_string(), desc.to_string())),
-    );
-
-    let width = rows.iter().map(|(cmd, _)| cmd.len()).max().unwrap_or(0);
-
-    let mut usage = String::from("drun-mcp — MCP server for drun\n\nUsage:\n");
-    for (cmd, desc) in &rows {
-        usage.push_str(&format!("  drun-mcp {cmd:<width$}  {desc}\n"));
-    }
-    usage.push_str(
-        "\nconfig add-*/remove-* edit ~/.drun/config.toml — changes take effect\n\
-         on the next tool call, no restart needed.",
-    );
-
-    eprintln!("{usage}");
-}
-
-fn build_server_details() -> InitializeResult {
-    InitializeResult {
-        server_info: Implementation {
-            name: "drun".into(),
-            version: env!("CARGO_PKG_VERSION").into(),
-            title: Some("drun".into()),
-            description: Some("Sandboxed code execution for agentic loops".into()),
-            icons: vec![],
-            website_url: None,
-        },
-        capabilities: ServerCapabilities {
-            tools: Some(ServerCapabilitiesTools { list_changed: None }),
-            ..Default::default()
-        },
-        protocol_version: ProtocolVersion::V2025_11_25.into(),
-        instructions: Some("Go to https://drun.dev to view docs.".into()),
-        meta: None,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn build_server_details_reports_the_crate_version() {
-        let details = build_server_details();
-        assert_eq!(details.server_info.name, "drun");
-        assert_eq!(details.server_info.version, env!("CARGO_PKG_VERSION"));
-    }
 }

@@ -175,7 +175,7 @@ impl Session {
     ) -> anyhow::Result<&Checkpoint> {
         self.check_command_policy(command)?;
         let workspace_dir = tempfile::TempDir::new()?;
-        workspace::materialize(
+        workspace::Workspace::materialize(
             &self.checkpoints[self.checkpoint_idx].files,
             workspace_dir.path(),
         )?;
@@ -202,7 +202,7 @@ impl Session {
             stderr,
             exit_code,
         } = self.run_sandboxed_bash_child(child, on_stdout)?;
-        let collected_files = workspace::collect(workspace_dir.path())?;
+        let collected_files = workspace::Workspace::collect(workspace_dir.path())?;
         self.record_bash_checkpoint(command, collected_files, stdout, stderr, exit_code)
     }
 

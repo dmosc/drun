@@ -1,4 +1,4 @@
-use crate::types::{DrunCheckpoint, checkpoint_to_py};
+use crate::types::DrunCheckpoint;
 use drun_core::{ConfigHandle, Session};
 use pyo3::{exceptions::PyRuntimeError, prelude::*};
 use std::sync::Mutex;
@@ -55,7 +55,7 @@ impl DrunSession {
             .lock()
             .unwrap()
             .execute_bash(&command, &mut |_| {})
-            .map(checkpoint_to_py)
+            .map(DrunCheckpoint::from_checkpoint)
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))
     }
 
@@ -72,7 +72,7 @@ impl DrunSession {
             .lock()
             .unwrap()
             .delete_file(&path)
-            .map(checkpoint_to_py)
+            .map(DrunCheckpoint::from_checkpoint)
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))
     }
 
@@ -113,7 +113,7 @@ impl DrunSession {
 
     #[getter]
     pub fn current(&self) -> DrunCheckpoint {
-        checkpoint_to_py(self.inner.lock().unwrap().current())
+        DrunCheckpoint::from_checkpoint(self.inner.lock().unwrap().current())
     }
 
     #[getter]
@@ -123,7 +123,7 @@ impl DrunSession {
             .unwrap()
             .history()
             .iter()
-            .map(checkpoint_to_py)
+            .map(DrunCheckpoint::from_checkpoint)
             .collect()
     }
 }
