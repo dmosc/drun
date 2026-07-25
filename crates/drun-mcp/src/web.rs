@@ -1,5 +1,5 @@
 use crate::ResponseBuilder;
-use crate::handler::{CloseSessionError, DrunHandler, SessionMap};
+use crate::handler::{CloseSessionError, DrunHandler};
 use crate::live_output::LiveEntry;
 use crate::state;
 use axum::{
@@ -164,7 +164,7 @@ impl WebServer {
         State(app): State<AppState>,
         Path(session_id): Path<String>,
     ) -> Response {
-        Self::with_session(&app.handler.sessions, &session_id, |session| {
+        app.with_session(&session_id, |session| {
             Self::json_response(&state::CheckpointSummary::history(session))
         })
     }
@@ -175,7 +175,7 @@ impl WebServer {
         Query(params): Query<DiffQueryParams>,
     ) -> Response {
         let from_id = params.from.unwrap_or(0);
-        Self::with_session(&app.handler.sessions, &session_id, move |session| {
+        app.with_session(&session_id, move |session| {
             let to_id = params.to.unwrap_or(session.current().id);
             match session.diff(from_id, to_id) {
                 Ok(diff) => (StatusCode::OK, diff).into_response(),
@@ -188,51 +188,44 @@ impl WebServer {
         State(app): State<AppState>,
         Path((session_id, checkpoint_id)): Path<(String, usize)>,
     ) -> Response {
-        Self::read_checkpoint_stream(
-            &app.handler.sessions,
-            &session_id,
-            checkpoint_id,
-            |checkpoint| checkpoint.stdout.clone(),
-        )
+        app.read_checkpoint_stream(&session_id, checkpoint_id, |checkpoint| {
+            checkpoint.stdout.clone()
+        })
     }
 
     async fn handle_checkpoint_stderr(
         State(app): State<AppState>,
         Path((session_id, checkpoint_id)): Path<(String, usize)>,
     ) -> Response {
-        Self::read_checkpoint_stream(
-            &app.handler.sessions,
-            &session_id,
-            checkpoint_id,
-            |checkpoint| checkpoint.stderr.clone(),
-        )
+        app.read_checkpoint_stream(&session_id, checkpoint_id, |checkpoint| {
+            checkpoint.stderr.clone()
+        })
     }
 
     async fn handle_checkpoint_files(
         State(app): State<AppState>,
         Path((session_id, checkpoint_id)): Path<(String, usize)>,
     ) -> Response {
-        Self::with_session(&app.handler.sessions, &session_id, |session| match session
-            .history()
-            .get(checkpoint_id)
-        {
-            Some(checkpoint) => {
-                let mut files: Vec<FileEntry> = checkpoint
-                    .files
-                    .iter()
-                    .map(|(path, bytes)| FileEntry {
-                        path: path.clone(),
-                        size_bytes: bytes.len(),
-                    })
-                    .collect();
-                files.sort_by(|a, b| a.path.cmp(&b.path));
-                Self::json_response(&files)
+        app.with_session(&session_id, |session| {
+            match session.history().get(checkpoint_id) {
+                Some(checkpoint) => {
+                    let mut files: Vec<FileEntry> = checkpoint
+                        .files
+                        .iter()
+                        .map(|(path, bytes)| FileEntry {
+                            path: path.clone(),
+                            size_bytes: bytes.len(),
+                        })
+                        .collect();
+                    files.sort_by(|a, b| a.path.cmp(&b.path));
+                    Self::json_response(&files)
+                }
+                None => (
+                    StatusCode::NOT_FOUND,
+                    format!("checkpoint {checkpoint_id} not found"),
+                )
+                    .into_response(),
             }
-            None => (
-                StatusCode::NOT_FOUND,
-                format!("checkpoint {checkpoint_id} not found"),
-            )
-                .into_response(),
         })
     }
 
@@ -240,7 +233,7 @@ impl WebServer {
         State(app): State<AppState>,
         Path((session_id, checkpoint_id, path)): Path<(String, usize, String)>,
     ) -> Response {
-        Self::with_session(&app.handler.sessions, &session_id, move |session| {
+        app.with_session(&session_id, move |session| {
             let Some(checkpoint) = session.history().get(checkpoint_id) else {
                 return (
                     StatusCode::NOT_FOUND,
@@ -285,7 +278,7 @@ impl WebServer {
             checkpoint_id,
             checkpoint_label,
         } = body.map(|Json(b)| b).unwrap_or_default();
-        Self::with_session(&app.handler.sessions, &session_id, |source| {
+        app.with_session(&session_id, |source| {
             let resolved = match source
                 .resolve_checkpoint(checkpoint_id, checkpoint_label.as_deref())
             {
@@ -325,7 +318,7 @@ impl WebServer {
             checkpoint_id,
             checkpoint_label,
         } = body.map(|Json(b)| b).unwrap_or_default();
-        Self::with_session_mut(&app.handler.sessions, &session_id, |session| {
+        app.with_session_mut(&session_id, |session| {
             let resolved = match session
                 .resolve_checkpoint(checkpoint_id, checkpoint_label.as_deref())
             {
@@ -358,7 +351,7 @@ impl WebServer {
         Json(body): Json<LabelRequest>,
     ) -> Response {
         let response_id = session_id.clone();
-        Self::with_session_mut(&app.handler.sessions, &session_id, move |session| {
+        app.with_session_mut(&session_id, move |session| {
             session.set_label(body.label);
             Self::json_response(&state::SessionState::compute(
                 &response_id,
@@ -380,14 +373,15 @@ impl WebServer {
         {
             return (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()).into_response();
         }
-        Self::with_session(&app.handler.sessions, &session_id, |session| match session
-            .snapshot()
-            .write(&output_path)
-        {
-            Ok(()) => Self::json_response(&serde_json::json!({
-                "snapshot_path": output_path.to_string_lossy(),
-            })),
-            Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()).into_response(),
+        app.with_session(&session_id, |session| {
+            match session.snapshot().write(&output_path) {
+                Ok(()) => Self::json_response(&serde_json::json!({
+                    "snapshot_path": output_path.to_string_lossy(),
+                })),
+                Err(error) => {
+                    (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()).into_response()
+                }
+            }
         })
     }
 
@@ -416,12 +410,36 @@ impl WebServer {
         }
     }
 
+    fn json_response(value: &impl serde::Serialize) -> Response {
+        let mut headers = HeaderMap::new();
+        headers.insert("content-type", HeaderValue::from_static("application/json"));
+        let body = serde_json::to_string(value).unwrap_or_else(|_| "null".into());
+        (StatusCode::OK, headers, body).into_response()
+    }
+}
+
+#[derive(Clone)]
+struct AppState {
+    handler: DrunHandler,
+    mcp_port: u16,
+    web_port: u16,
+    started_at: Instant,
+}
+
+impl AppState {
     fn with_session(
-        sessions: &SessionMap,
+        &self,
         session_id: &str,
         handler: impl FnOnce(&drun_core::Session) -> Response,
     ) -> Response {
-        let session_arc = match sessions.lock().unwrap().get(session_id).cloned() {
+        let session_arc = match self
+            .handler
+            .sessions
+            .lock()
+            .unwrap()
+            .get(session_id)
+            .cloned()
+        {
             Some(arc) => arc,
             None => {
                 return (
@@ -438,18 +456,25 @@ impl WebServer {
                 format!("session '{session_id}' is currently executing; retry shortly"),
             )
                 .into_response(),
-            Err(std::sync::TryLockError::Poisoned(poisoned)) => handler(
-                &crate::handler::DrunHandler::recover_poison(session_id, poisoned),
-            ),
+            Err(std::sync::TryLockError::Poisoned(poisoned)) => {
+                handler(&DrunHandler::recover_poison(session_id, poisoned))
+            }
         }
     }
 
     fn with_session_mut(
-        sessions: &SessionMap,
+        &self,
         session_id: &str,
         handler: impl FnOnce(&mut drun_core::Session) -> Response,
     ) -> Response {
-        let session_arc = match sessions.lock().unwrap().get(session_id).cloned() {
+        let session_arc = match self
+            .handler
+            .sessions
+            .lock()
+            .unwrap()
+            .get(session_id)
+            .cloned()
+        {
             Some(arc) => arc,
             None => {
                 return (
@@ -466,19 +491,19 @@ impl WebServer {
                 format!("session '{session_id}' is currently executing; retry shortly"),
             )
                 .into_response(),
-            Err(std::sync::TryLockError::Poisoned(poisoned)) => handler(
-                &mut crate::handler::DrunHandler::recover_poison(session_id, poisoned),
-            ),
+            Err(std::sync::TryLockError::Poisoned(poisoned)) => {
+                handler(&mut DrunHandler::recover_poison(session_id, poisoned))
+            }
         }
     }
 
     fn read_checkpoint_stream(
-        sessions: &SessionMap,
+        &self,
         session_id: &str,
         checkpoint_id: usize,
         extract: impl FnOnce(&drun_core::Checkpoint) -> String,
     ) -> Response {
-        Self::with_session(sessions, session_id, |session| {
+        self.with_session(session_id, |session| {
             match session.history().get(checkpoint_id) {
                 Some(checkpoint) => (StatusCode::OK, extract(checkpoint)).into_response(),
                 None => (
@@ -489,21 +514,6 @@ impl WebServer {
             }
         })
     }
-
-    fn json_response(value: &impl serde::Serialize) -> Response {
-        let mut headers = HeaderMap::new();
-        headers.insert("content-type", HeaderValue::from_static("application/json"));
-        let body = serde_json::to_string(value).unwrap_or_else(|_| "null".into());
-        (StatusCode::OK, headers, body).into_response()
-    }
-}
-
-#[derive(Clone)]
-struct AppState {
-    handler: DrunHandler,
-    mcp_port: u16,
-    web_port: u16,
-    started_at: Instant,
 }
 
 #[derive(Deserialize)]
@@ -563,6 +573,7 @@ impl From<Option<LiveEntry>> for LiveOutput {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::handler::SessionMap;
     use crate::live_output::LiveOutputRegistry;
     use axum::body::to_bytes;
     use drun_core::{Config, Session};
