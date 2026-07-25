@@ -22,6 +22,10 @@ drun's tools. Session "{session_id}" is already created and active, with any req
 paths mounted — session_* tool calls apply to it automatically, no need to remember the \
 current {session_id}.
 
+Call get_config first to see what domains, host paths, and env vars are already
+allowed — check it before your first session_fetch or session_mount instead of
+discovering the allowlist through denied calls.
+
 Use session_bash for shell commands, session_read_file/session_write_file/
 session_delete_file for file access, session_mount to load more host paths, and
 session_fetch for network requests (subject to the server's domain allowlist). Call
@@ -29,6 +33,12 @@ create_session only if you need a second, independent sandbox — its result is 
 containing a session_id field. To work in a different session, call session_switch
 with that exact session_id value; never invent or guess one. If you don't already have
 a session_id from a tool result, call session_list first to see the real ones.
+
+session_bash does not return command output inline — its JSON result is state
+(checkpoint id, byte counts, file deltas), not the text a command printed. Call
+checkpoint_read_stdstreams (no arguments needed for the common case) to read the
+actual stdout; pass {{"stream": "stderr"}} for stderr. Never treat session_bash's
+own JSON as the command's output.
 """
 
     def __init__(

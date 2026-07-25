@@ -132,7 +132,8 @@ domain allowlist, which by default only permits PyPI's CDNs.
 domain_allowlist = ["api.example.com", "data.sec.gov"]
 ```
 
-Call `get_fetch_allowlist` to see the current effective list.
+Call `get_config` to see the current effective allowlist (and mount/env
+allowlists, and resource limits) in one call.
 
 ---
 

@@ -54,6 +54,16 @@ the one last created, forked, restored, or switched to — instead of taking a
 verbatim across every call, where a single dropped or mistyped character would
 misdirect the call onto the wrong session.
 
+**Configuration**
+
+- `get_config` — the operator-configured allowlists (domains, host paths, env
+  vars) and resource limits (workspace size, checkpoints, timeouts). Call this
+  early, before the first `session_fetch`/`session_mount`, instead of
+  discovering what's allowed through denied calls. Note: an empty
+  `domain_allowlist` permits _no_ domains, but an empty `mount_allowlist`
+  permits _any_ host path — opposite defaults, worth knowing before you assume
+  an empty list means "unrestricted."
+
 **Session lifecycle**
 
 - `create_session` — create a sandbox session, returns `session_id`, and makes
@@ -68,7 +78,11 @@ misdirect the call onto the wrong session.
 **Files & shell (the core loop)**
 
 - `session_bash` — run a shell command in the workspace. Uses the host PATH, so
-  python3/node/go/etc. are available. **No network access** by design.
+  python3/node/go/etc. are available. **No network access** by design. Returns
+  state (checkpoint id, byte counts, file deltas) — not the command's actual
+  output; see "Reading command output" below.
+- `checkpoint_read_stdstreams` — read the actual stdout/stderr text a command
+  produced. Defaults to the current checkpoint's stdout.
 - `session_read_file` — read a session-relative file (supports offset/limit
   paging)
 - `session_write_file` — create/overwrite a file (`is_base64` for binary)
@@ -79,6 +93,25 @@ misdirect the call onto the wrong session.
 - `session_export` — write sandbox-created files back out to the host
 - `session_commit` — write changed _mounted_ files back to their original host
   paths
+
+**Reading command output**
+
+`session_bash` does not return stdout/stderr text inline. A naive agent will
+treat the returned JSON (`{"checkpoint_id": 3, "stdout_bytes": 842, ...}`) as
+the command's output and either hallucinate a result or conclude the command
+printed nothing. It didn't — call `checkpoint_read_stdstreams` (no arguments
+needed for the common case) to read the actual text:
+
+```
+session_bash({"command": "pytest -q"})
+→ {"checkpoint_id": 3, "stdout_bytes": 842, "stderr_bytes": 0, ...}
+
+checkpoint_read_stdstreams({})
+→ {"stream": "stdout", "content": "...12 passed in 0.4s", ...}
+```
+
+Pass `{"stream": "stderr"}` for stderr, or `{"checkpoint_id": N}` to read an
+older checkpoint's output.
 
 **History navigation (the drun superpower)**
 
@@ -102,8 +135,7 @@ misdirect the call onto the wrong session.
 
 - `session_fetch` — the _only_ outbound-HTTP gateway. Saves the response body as
   a workspace file (never returned inline). Target domain must be in the
-  server's allowlist.
-- `get_fetch_allowlist` — list domains allowed for `session_fetch`
+  server's allowlist — check with `get_config`.
 - `session_get_env` — read a host env var, but only ones in the server's
   `env_allowlist` (this is how you pass secrets in without hardcoding)
 

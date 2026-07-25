@@ -300,14 +300,21 @@ pub struct SessionCommit {
 }
 
 #[mcp_tool(
-    name = "get_fetch_allowlist",
-    description = "Return the list of domains the server permits for session_fetch calls and Python outbound HTTP. Use this to check what external hosts are available before constructing fetch requests.",
+    name = "get_config",
+    description = "Return the server's operator-configured limits and allowlists: which domains \
+                   session_fetch may reach, which host paths session_mount may load, which env \
+                   vars session_get_env may read, the bash command policy, and resource limits \
+                   (workspace size, checkpoint count, timeouts). Call this before your first \
+                   session_fetch or session_mount to see what's available instead of discovering \
+                   it through denied calls. Note the allowlists default oppositely when empty: \
+                   an empty domain_allowlist permits no domains, while an empty mount_allowlist \
+                   permits any host path.",
     idempotent_hint = true,
     destructive_hint = false,
     read_only_hint = true
 )]
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct GetFetchAllowlist {}
+pub struct GetConfig {}
 
 #[mcp_tool(
     name = "session_fetch",
@@ -517,7 +524,7 @@ tool_box!(
         SessionExport,
         SessionTree,
         SessionFetch,
-        GetFetchAllowlist,
+        GetConfig,
         ListSnapshots,
         SessionSnapshotTool,
         SessionRestore,

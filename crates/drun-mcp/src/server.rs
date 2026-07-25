@@ -77,7 +77,7 @@ impl ServerHandler for DrunHandler {
             DrunTools::ListSnapshots(_) => self.handle_list_snapshots(),
             DrunTools::SessionExport(t) => self.handle_session_export(&connection_id, t),
             DrunTools::SessionFetch(t) => self.handle_session_fetch(&connection_id, t).await,
-            DrunTools::GetFetchAllowlist(_) => self.handle_get_fetch_allowlist(),
+            DrunTools::GetConfig(_) => self.handle_get_config(),
             DrunTools::SessionSnapshotTool(t) => self.handle_session_snapshot(&connection_id, t),
             DrunTools::SessionGetEnv(t) => self.handle_session_get_env(&connection_id, t),
             DrunTools::SessionRestore(t) => self.handle_session_restore(&connection_id, t),
@@ -530,9 +530,31 @@ impl DrunHandler {
         })
     }
 
-    fn handle_get_fetch_allowlist(&self) -> Result<CallToolResult, CallToolError> {
+    fn handle_get_config(&self) -> Result<CallToolResult, CallToolError> {
+        let config = self.config.get();
         Ok(text(
-            serde_json::to_string(&self.config.get().domain_allowlist).unwrap(),
+            serde_json::json!({
+                "domain_allowlist": config.domain_allowlist,
+                "mount_allowlist": config
+                    .mount_allowlist
+                    .iter()
+                    .map(|p| p.display().to_string())
+                    .collect::<Vec<_>>(),
+                "mount_overlay_paths": config.mount_overlay_paths,
+                "env_allowlist": config.env_allowlist,
+                "bash_command_denylist": config.bash_command_denylist,
+                "bash_command_allowlist": config.bash_command_allowlist,
+                "export_root": config.export_root.display().to_string(),
+                "snapshots_dir": config.snapshots_dir.display().to_string(),
+                "max_workspace_mb": config.max_workspace_mb,
+                "max_sessions": config.max_sessions,
+                "max_checkpoints": config.max_checkpoints,
+                "session_idle_timeout_secs": config.session_idle_timeout_secs,
+                "bash_timeout_ms": config.bash_timeout_ms,
+                "fetch_timeout_ms": config.fetch_timeout_ms,
+                "connect_timeout_ms": config.connect_timeout_ms,
+            })
+            .to_string(),
         ))
     }
 
@@ -2299,14 +2321,33 @@ mod tests {
     }
 
     #[test]
-    fn get_fetch_allowlist_returns_the_configured_domains() {
+    fn get_config_reports_the_configured_allowlists() {
         let config = Config {
             domain_allowlist: vec!["pypi.org".to_string()],
+            mount_allowlist: vec![PathBuf::from("/home/user/project")],
+            env_allowlist: vec!["API_KEY".to_string()],
             ..Config::default()
         };
         let handler = DrunHandler::new(config);
-        let result = handler.handle_get_fetch_allowlist().unwrap();
-        assert_eq!(result_json(&result), serde_json::json!(["pypi.org"]));
+        let result = handler.handle_get_config().unwrap();
+        let json = result_json(&result);
+        assert_eq!(json["domain_allowlist"], serde_json::json!(["pypi.org"]));
+        assert_eq!(
+            json["mount_allowlist"],
+            serde_json::json!(["/home/user/project"])
+        );
+        assert_eq!(json["env_allowlist"], serde_json::json!(["API_KEY"]));
+    }
+
+    #[test]
+    fn get_config_reports_resource_limits() {
+        let handler = DrunHandler::new(Config::default());
+        let result = handler.handle_get_config().unwrap();
+        let json = result_json(&result);
+        assert_eq!(json["max_workspace_mb"], 512);
+        assert_eq!(json["max_sessions"], 50);
+        assert_eq!(json["max_checkpoints"], 200);
+        assert_eq!(json["session_idle_timeout_secs"], 3600);
     }
 
     #[test]

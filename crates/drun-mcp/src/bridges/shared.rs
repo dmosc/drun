@@ -5,24 +5,51 @@ pub(crate) fn drun_instructions_body(project_path: &str) -> String {
         r#"## Getting started
 
 1. Call `create_session` — sessions start with an empty workspace.
-2. Call `session_mount` with path `{project_path}` to load this project's files
+2. Call `get_config` to see what domains, host paths, and env vars are already
+   allowed. Check this before your first `session_fetch` or `session_mount`
+   instead of discovering the allowlist through denied calls.
+3. Call `session_mount` with path `{project_path}` to load this project's files
    into the session (already allowlisted by drun's setup for this project).
    Re-mount any other host paths you need the same way.
-3. From there, work entirely through drun tools — there is no host file or shell
+4. From there, work entirely through drun tools — there is no host file or shell
    access outside of them.
 
 Every session_* tool below applies to the session you last created, forked, restored,
 or switched to — none of them take a session_id.
 
+## Reading command output
+
+`session_bash` does not return stdout/stderr text inline — it returns state:
+checkpoint_id, stdout_bytes/stderr_bytes (byte counts, not content), and which
+files changed. To read what a command actually printed, call
+`checkpoint_read_stdstreams` against that checkpoint:
+
+```
+session_bash({{"command": "pytest -q"}})
+→ {{"checkpoint_id": 3, "stdout_bytes": 842, "stderr_bytes": 0, ...}}
+
+checkpoint_read_stdstreams({{}})
+→ {{"stream": "stdout", "content": "...12 passed in 0.4s", ...}}
+```
+
+`checkpoint_read_stdstreams` defaults to the current checkpoint's stdout; pass
+`{{"stream": "stderr"}}` for stderr, or `{{"checkpoint_id": N}}` for an older one.
+Don't treat the JSON from `session_bash` itself as the command's output.
+
 ## Core tools
 
+- **`get_config`** — see the domain/path/env allowlists and resource limits
+  before you hit a denial
 - **`session_bash`** — run shell commands in the sandboxed workspace (also
-  covers listing/searching files — e.g. `ls`, `grep`, `find`)
+  covers listing/searching files — e.g. `ls`, `grep`, `find`). Returns state,
+  not output — see "Reading command output" above.
+- **`checkpoint_read_stdstreams`** — read the actual stdout/stderr text from
+  any checkpoint
 - **`session_read_file`** / **`session_write_file`** / **`session_delete_file`**
   — read, write, and delete files in the session
 - **`session_mount`** — load a host file or directory into the session
 - **`session_fetch`** — make HTTP requests from the sandbox (subject to the
-  server's domain_allowlist)
+  server's domain_allowlist — check with `get_config` first)
 - **`session_export`** — write session files back out to the host
 - **`session_diff`** / **`session_rollback`** / **`session_fork`** — inspect and
   navigate checkpoint history (session_rollback is destructive past the rollback
@@ -33,8 +60,9 @@ or switched to — none of them take a session_id.
 
 ## If a fetch or mount is denied
 
-`session_fetch` and `session_mount` are restricted to an allowlist. If either
-is denied for a domain or path you need, tell the user to run:
+`session_fetch` and `session_mount` are restricted to an allowlist — check
+`get_config` first to see what's already permitted. If either is denied for a
+domain or path you need, tell the user to run:
 
 - `drun-mcp config add-domain <domain>` to allow a new domain for
   `session_fetch`
@@ -96,6 +124,19 @@ mod tests {
         let body = drun_instructions_body("/tmp/project");
         assert!(body.contains("session_bash"));
         assert!(body.contains("session_mount"));
+    }
+
+    #[test]
+    fn drun_instructions_body_explains_reading_command_output() {
+        let body = drun_instructions_body("/tmp/project");
+        assert!(body.contains("checkpoint_read_stdstreams"));
+        assert!(body.contains("does not return stdout/stderr text inline"));
+    }
+
+    #[test]
+    fn drun_instructions_body_documents_get_config() {
+        let body = drun_instructions_body("/tmp/project");
+        assert!(body.contains("get_config"));
     }
 
     #[test]
