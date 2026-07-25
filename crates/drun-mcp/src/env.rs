@@ -16,7 +16,11 @@ impl Env {
             .unwrap_or(Self::DEFAULT_MCP_PORT)
     }
 
+    pub(crate) fn home_dir(&self) -> PathBuf {
+        PathBuf::from(std::env::var("HOME").expect("HOME not set"))
+    }
+
     pub(crate) fn drun_home(&self) -> PathBuf {
-        PathBuf::from(std::env::var("HOME").expect("HOME not set")).join(".drun")
+        self.home_dir().join(".drun")
     }
 }

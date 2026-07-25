@@ -54,7 +54,7 @@ impl Bridge for Codex {
             return;
         }
 
-        match config.save(&path) {
+        match config.save() {
             Ok(()) => eprintln!(
                 "drun: updated {} — registered the MCP server (HTTP → {}) and disabled the native \
              shell tool. Both apply machine-wide, not just this project.",
@@ -79,7 +79,7 @@ impl Bridge for Codex {
             return;
         }
 
-        if config.save(&path).is_ok() {
+        if config.save().is_ok() {
             eprintln!("drun: removed from Codex CLI ({}).", path.display());
         }
     }
@@ -87,7 +87,7 @@ impl Bridge for Codex {
 
 impl Codex {
     fn config_path(&self) -> PathBuf {
-        PathBuf::from(std::env::var("HOME").expect("HOME not set")).join(".codex/config.toml")
+        crate::Env.home_dir().join(".codex/config.toml")
     }
 
     fn agents_md_content(&self, project_path: &str) -> String {
@@ -103,6 +103,7 @@ impl Codex {
 }
 
 struct CodexConfig {
+    path: PathBuf,
     doc: DocumentMut,
 }
 
@@ -112,18 +113,21 @@ impl CodexConfig {
         let doc = contents
             .parse::<DocumentMut>()
             .map_err(|e| format!("cannot parse {}: {e}", path.display()))?;
-        Ok(Self { doc })
+        Ok(Self {
+            path: path.to_path_buf(),
+            doc,
+        })
     }
 
     fn render(&self) -> String {
         self.doc.to_string()
     }
 
-    fn save(&self, path: &Path) -> Result<(), String> {
-        if let Some(parent) = path.parent() {
+    fn save(&self) -> Result<(), String> {
+        if let Some(parent) = self.path.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
-        crate::FileManager::write(path, &self.render())
+        crate::FileManager::write(&self.path, &self.render())
     }
 
     fn mcp_url(&self) -> String {
@@ -193,6 +197,7 @@ mod tests {
 
     fn config(s: &str) -> CodexConfig {
         CodexConfig {
+            path: PathBuf::new(),
             doc: s.parse().unwrap(),
         }
     }

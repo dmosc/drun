@@ -63,7 +63,7 @@ impl Bridge for Hermes {
             return;
         }
 
-        if config.save(&path).is_ok() {
+        if config.save().is_ok() {
             eprintln!("drun: removed from Hermes ({}).", path.display());
         }
     }
@@ -74,7 +74,7 @@ impl Hermes {
         &["terminal", "file", "web", "search", "delegation"];
 
     fn hermes_config_path(&self) -> PathBuf {
-        PathBuf::from(std::env::var("HOME").expect("HOME not set")).join(".hermes/config.yaml")
+        crate::Env.home_dir().join(".hermes/config.yaml")
     }
 
     fn mcp_http_url(&self) -> String {
@@ -121,7 +121,7 @@ impl Hermes {
         }
 
         config.merge_mcp_entry(&self.mcp_http_url());
-        match config.save(&path) {
+        match config.save() {
             Ok(()) => eprintln!(
                 "drun: added to Hermes (HTTP → {}, {}).",
                 self.mcp_http_url(),
@@ -140,7 +140,7 @@ impl Hermes {
             return;
         }
 
-        match config.save(&path) {
+        match config.save() {
             Ok(()) => eprintln!(
                 "drun: disabled Hermes's native {} toolsets globally (agent.disabled_toolsets in \
                  {}) — this applies to every Hermes session on this machine, not just this project.",
@@ -153,22 +153,31 @@ impl Hermes {
 }
 
 struct HermesConfig {
+    path: PathBuf,
     lines: Vec<String>,
 }
 
 impl HermesConfig {
+    #[cfg(test)]
     fn parse(existing: &str) -> Self {
+        Self::from_lines(PathBuf::new(), existing)
+    }
+
+    fn from_lines(path: PathBuf, existing: &str) -> Self {
         Self {
+            path,
             lines: existing.lines().map(str::to_string).collect(),
         }
     }
 
     fn load_or_default(path: &Path) -> Self {
-        Self::parse(&std::fs::read_to_string(path).unwrap_or_default())
+        let contents = std::fs::read_to_string(path).unwrap_or_default();
+        Self::from_lines(path.to_path_buf(), &contents)
     }
 
     fn try_load(path: &Path) -> io::Result<Self> {
-        std::fs::read_to_string(path).map(|s| Self::parse(&s))
+        let contents = std::fs::read_to_string(path)?;
+        Ok(Self::from_lines(path.to_path_buf(), &contents))
     }
 
     fn render(&self) -> String {
@@ -180,11 +189,11 @@ impl HermesConfig {
         rendered
     }
 
-    fn save(&self, path: &Path) -> io::Result<()> {
-        if let Some(parent) = path.parent() {
+    fn save(&self) -> io::Result<()> {
+        if let Some(parent) = self.path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        std::fs::write(path, self.render())
+        std::fs::write(&self.path, self.render())
     }
 
     fn has_mcp_entry(&self) -> bool {
