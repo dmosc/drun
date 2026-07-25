@@ -208,7 +208,8 @@ impl Session {
         }
         let mut read_paths: Vec<PathBuf> = self.overlays.values().cloned().collect();
         read_paths.extend(self.config.get().mount_allowlist);
-        let child = sandbox::Sandbox::new(workspace_dir.path(), read_paths)
+        let scratch_dir = tempfile::TempDir::new()?;
+        let child = sandbox::Sandbox::new(workspace_dir.path(), scratch_dir.path(), read_paths)
             .command(command)?
             .current_dir(workspace_dir.path())
             .stdout(std::process::Stdio::piped())
@@ -1166,6 +1167,22 @@ mod tests {
         let mut session = new_session();
         let checkpoint = session.execute_bash("exit 7", &mut |_| {}).unwrap();
         assert_eq!(checkpoint.exit_code, Some(7));
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn execute_bash_gives_commands_a_writable_home_and_tmpdir() {
+        let mut session = new_session();
+        let checkpoint = session
+            .execute_bash(
+                "mkdir -p \"$HOME/.cache\" && echo hi > \"$HOME/.cache/probe\" \
+                 && echo hi > \"$TMPDIR/probe\" \
+                 && cat \"$HOME/.cache/probe\" \"$TMPDIR/probe\"",
+                &mut |_| {},
+            )
+            .unwrap();
+        assert_eq!(checkpoint.stdout, "hi\nhi\n");
+        assert_eq!(checkpoint.stderr, "");
     }
 
     #[test]
