@@ -17,11 +17,46 @@ pub(crate) enum CloseSessionError {
     Io(std::io::Error),
 }
 
+#[derive(Clone, Default)]
+pub(crate) struct CurrentSessions {
+    by_connection: Arc<Mutex<HashMap<String, String>>>,
+}
+
+impl CurrentSessions {
+    pub(crate) fn get(&self, connection_id: &str) -> Option<String> {
+        self.by_connection
+            .lock()
+            .unwrap()
+            .get(connection_id)
+            .cloned()
+    }
+
+    pub(crate) fn resolve(&self, connection_id: &str) -> Result<String, CallToolError> {
+        self.get(connection_id)
+            .ok_or_else(|| DrunError::no_active_session().into_tool_err())
+    }
+
+    pub(crate) fn set(&self, connection_id: &str, session_id: String) {
+        self.by_connection
+            .lock()
+            .unwrap()
+            .insert(connection_id.to_string(), session_id);
+    }
+
+    fn clear_matching(&self, session_id: &str) {
+        self.by_connection
+            .lock()
+            .unwrap()
+            .retain(|_, current| current != session_id);
+    }
+}
+
 #[derive(Clone)]
 pub struct DrunHandler {
     pub(crate) config: ConfigHandle,
     pub(crate) sessions: SessionMap,
     pub(crate) live_output: LiveOutputRegistry,
+    pub(crate) current_sessions: CurrentSessions,
 }
 
 impl DrunHandler {
@@ -31,6 +66,7 @@ impl DrunHandler {
             config: config.into(),
             sessions: Arc::new(Mutex::new(HashMap::new())),
             live_output: LiveOutputRegistry::default(),
+            current_sessions: CurrentSessions::default(),
         }
     }
 
@@ -39,6 +75,7 @@ impl DrunHandler {
             config: ConfigHandle::from_env(),
             sessions: Arc::new(Mutex::new(HashMap::new())),
             live_output: LiveOutputRegistry::default(),
+            current_sessions: CurrentSessions::default(),
         }
     }
 
@@ -113,6 +150,7 @@ impl DrunHandler {
             .unwrap()
             .remove(session_id)
             .ok_or(CloseSessionError::NotFound)?;
+        self.current_sessions.clear_matching(session_id);
         let config = self.config.get();
         if config.snapshot_on_close {
             let output_path = config.snapshots_dir.join(format!("{session_id}.drun"));
@@ -175,6 +213,24 @@ impl DrunHandler {
         self.check_idle(session_id, &guard)?;
         guard.last_activity = std::time::Instant::now();
         f(&mut guard)
+    }
+
+    pub(crate) fn with_current_session(
+        &self,
+        connection_id: &str,
+        f: impl FnOnce(&str, &Session) -> Result<CallToolResult, CallToolError>,
+    ) -> Result<CallToolResult, CallToolError> {
+        let session_id = self.current_sessions.resolve(connection_id)?;
+        self.with_session(&session_id, |session| f(&session_id, session))
+    }
+
+    pub(crate) fn with_current_session_mut(
+        &self,
+        connection_id: &str,
+        f: impl FnOnce(&str, &mut Session) -> Result<CallToolResult, CallToolError>,
+    ) -> Result<CallToolResult, CallToolError> {
+        let session_id = self.current_sessions.resolve(connection_id)?;
+        self.with_session_mut(&session_id, |session| f(&session_id, session))
     }
 
     pub(crate) fn lock_recovering<'a>(

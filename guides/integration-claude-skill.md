@@ -16,8 +16,8 @@ workspace with rollback, forking, and an outbound-network allowlist — instead 
 touching the host directly.
 
 Your job is to (1) understand the project you are integrating into, (2) get
-`drun-mcp` running and reachable, (3) wire the agent's MCP client to it, and
-(4) verify the agent can call drun tools. Follow the steps below. Do not skip
+`drun-mcp` running and reachable, (3) wire the agent's MCP client to it, and (4)
+verify the agent can call drun tools. Follow the steps below. Do not skip
 verification.
 
 ---
@@ -38,61 +38,79 @@ tools to any MCP-compatible agent (Claude Code, or your own agent framework).
 Pre-built binaries ship with every release at
 `https://github.com/dmosc/drun/releases`:
 
-| Platform              | Asset name                |
-|-----------------------|---------------------------|
-| macOS (Apple Silicon) | `drun-mcp-macos-arm64`    |
-| Linux x86-64          | `drun-mcp-linux-x86_64`   |
+| Platform              | Asset name              |
+| --------------------- | ----------------------- |
+| macOS (Apple Silicon) | `drun-mcp-macos-arm64`  |
+| Linux x86-64          | `drun-mcp-linux-x86_64` |
 
 There is no Windows binary yet. `DRUN_VERSION` (or resolving the latest tag via
 the GitHub API) selects the version at build time.
 
 ### The full tool catalog
 
+Every session-scoped tool below acts on the connection's **active session** —
+the one last created, forked, restored, or switched to — instead of taking a
+`session_id` argument. This keeps an agent from having to carry a session id
+verbatim across every call, where a single dropped or mistyped character would
+misdirect the call onto the wrong session.
+
 **Session lifecycle**
-- `create_session` — create a sandbox session, returns `session_id`
-- `session_close` — terminate a session and free its subprocess
-- `session_list` / `session_tree` — enumerate sessions (tree shows fork nesting)
+
+- `create_session` — create a sandbox session, returns `session_id`, and makes
+  it active
+- `session_switch` — change which session is active for this connection
+- `session_close` — terminate the active session and free its subprocess
+- `session_list` / `session_tree` — enumerate sessions (`session_list` flags the
+  active one with `is_current`; `session_tree` shows fork nesting)
 - `get_session_state` / `session_history` — inspect current state / checkpoints
 - `session_label` / `session_checkpoint_label` — attach human-readable labels
 
 **Files & shell (the core loop)**
+
 - `session_bash` — run a shell command in the workspace. Uses the host PATH, so
   python3/node/go/etc. are available. **No network access** by design.
-- `session_read_file` — read a session-relative file (supports offset/limit paging)
+- `session_read_file` — read a session-relative file (supports offset/limit
+  paging)
 - `session_write_file` — create/overwrite a file (`is_base64` for binary)
 - `session_delete_file` — delete a file
 - `session_mount` — copy a host file/dir into the session (this is how project
   files get in; directories like `node_modules`/venvs are symlinked as read-only
   overlays, never loaded into memory)
 - `session_export` — write sandbox-created files back out to the host
-- `session_commit` — write changed *mounted* files back to their original host paths
+- `session_commit` — write changed _mounted_ files back to their original host
+  paths
 
 **History navigation (the drun superpower)**
-- `session_diff` — unified diff between two checkpoints (default: mounted state → now)
-- `session_rollback` — move head to a prior checkpoint. **Destructive**: the next
-  successful write discards checkpoints after the rollback point. `session_fork`
-  first if you want to keep them.
+
+- `session_diff` — unified diff between two checkpoints (default: mounted state
+  → now)
+- `session_rollback` — move head to a prior checkpoint. **Destructive**: the
+  next successful write discards checkpoints after the rollback point.
+  `session_fork` first if you want to keep them.
 - `session_fork` — branch a new independent session from any checkpoint
-- `session_merge` — overlay files from another session's checkpoint onto this one
+- `session_merge` — overlay files from another session's checkpoint onto this
+  one
 - `session_checkpoint_squash` — collapse a checkpoint range into one
 
 **Snapshots (persist to disk)**
+
 - `session_snapshot` — serialize a session's full history to a `.drun` file
 - `session_restore` — load a `.drun` file back into a new session
 - `list_snapshots` — list `.drun` files in the server's snapshots dir
 
 **Network & secrets**
-- `session_fetch` — the *only* outbound-HTTP gateway. Saves the response body as
-  a workspace file (never returned inline). Target domain must be in the server's
-  allowlist.
+
+- `session_fetch` — the _only_ outbound-HTTP gateway. Saves the response body as
+  a workspace file (never returned inline). Target domain must be in the
+  server's allowlist.
 - `get_fetch_allowlist` — list domains allowed for `session_fetch`
 - `session_get_env` — read a host env var, but only ones in the server's
   `env_allowlist` (this is how you pass secrets in without hardcoding)
 
 ### Server configuration
 
-drun reads `~/.drun/config.toml` once at startup (restart to apply changes).
-Key fields and their defaults:
+drun reads `~/.drun/config.toml` once at startup (restart to apply changes). Key
+fields and their defaults:
 
 - `domain_allowlist` — domains `session_fetch` may reach
 - `mount_allowlist` — host paths `session_mount` may load (empty = allow any)
@@ -104,6 +122,7 @@ Key fields and their defaults:
   `session_idle_timeout_secs` (3600)
 
 The CLI edits these:
+
 ```
 drun-mcp config add-domain <name>    # allow a domain for session_fetch
 drun-mcp config add-path <path>      # allow a path for session_mount
@@ -119,11 +138,11 @@ drun-mcp config list
 drun-mcp implements **MCP Streamable HTTP only**. The single most common failure
 mode is misconfiguring the transport.
 
-| Mistake | Symptom | Fix |
-|---------|---------|-----|
-| Using SSE transport (`GET /sse`) | connection fails / 404 | Use `POST /mcp` |
-| `Accept: application/json` alone | **406 Not Acceptable** | `Accept: application/json, text/event-stream` |
-| Wrong config scope (see below) | agent shows no drun tools | register at the right scope |
+| Mistake                          | Symptom                   | Fix                                           |
+| -------------------------------- | ------------------------- | --------------------------------------------- |
+| Using SSE transport (`GET /sse`) | connection fails / 404    | Use `POST /mcp`                               |
+| `Accept: application/json` alone | **406 Not Acceptable**    | `Accept: application/json, text/event-stream` |
+| Wrong config scope (see below)   | agent shows no drun tools | register at the right scope                   |
 
 The correct Claude Code MCP entry is **always** this shape:
 
@@ -149,10 +168,10 @@ Before changing anything, determine:
 
 1. **Is this a greenfield project or an existing AI agent app?**
    - Greenfield: you control the build, the process lifecycle, and agent config.
-   - Existing app: you must *find* the existing build step, process manager, and
+   - Existing app: you must _find_ the existing build step, process manager, and
      agent-config-writing code and extend them minimally. Read those first.
-2. **What agent runtime does it use?** Claude Code is the primary target. If it's
-   a custom framework, find where it configures MCP servers.
+2. **What agent runtime does it use?** Claude Code is the primary target. If
+   it's a custom framework, find where it configures MCP servers.
 3. **How is the app built and distributed?** (npm/Electron, Go, Python, Docker…)
    This decides how you ship the `drun-mcp` binary.
 4. **Does the app already manage a long-running daemon/server process?** If so,
@@ -187,8 +206,8 @@ Start one long-lived `drun-mcp` process when the app's runtime/daemon starts.
 - **Readiness**: there is no `/health` endpoint. Probe by performing the MCP
   `initialize` handshake (POST `/mcp` with the Accept header above). Retry every
   ~200ms for up to ~10s.
-- **Data location**: set `DRUN_SNAPSHOTS_DIR` to a directory inside the app's own
-  data dir so drun state lives with the rest of the app's data.
+- **Data location**: set `DRUN_SNAPSHOTS_DIR` to a directory inside the app's
+  own data dir so drun state lives with the rest of the app's data.
 
 Verify manually before wiring the agent:
 
@@ -206,29 +225,30 @@ it is up.
 
 You must do **two** things for Claude Code, and they are different:
 
-**(a) Block native tools + allow drun tools.** This is what `drun-mcp claude
-init` does: run it in the project directory and it writes `.claude/settings.json`
-with a `permissions` block that *denies* `Bash`, `Edit`, `Write`, `Read`, `Glob`,
-`Grep`, `WebFetch`, `WebSearch`, `Task`, etc. and *allows* `mcp__drun__*`. It
-also creates a `CLAUDE.md` telling the agent to work through drun tools, and
-registers the project in `~/.drun/projects`.
+**(a) Block native tools + allow drun tools.** This is what
+`drun-mcp claude
+init` does: run it in the project directory and it writes
+`.claude/settings.json` with a `permissions` block that _denies_ `Bash`, `Edit`,
+`Write`, `Read`, `Glob`, `Grep`, `WebFetch`, `WebSearch`, `Task`, etc. and
+_allows_ `mcp__drun__*`. It also creates a `CLAUDE.md` telling the agent to work
+through drun tools, and registers the project in `~/.drun/projects`.
 
 ```bash
 cd /path/to/project && drun-mcp claude init
 ```
 
-**(b) Register the MCP server connection.** `drun-mcp claude init` *also* runs
+**(b) Register the MCP server connection.** `drun-mcp claude init` _also_ runs
 `claude mcp add --scope user --transport sse drun http://127.0.0.1:7273/sse` —
 but ⚠️ **that scope is usually wrong for an app you're embedding drun into.**
-User scope registers drun in *every* Claude Code session on the machine, not
+User scope registers drun in _every_ Claude Code session on the machine, not
 just sessions your app manages. (It uses the SSE transport, not `http`+`/mcp`;
 `drun-mcp` does serve `/sse` — confirmed with a raw `curl`, it responds with a
 real SSE stream — but this codebase has not verified end-to-end that Claude
 Code's own SSE client accepts it, so don't assume it's equivalent to the
 `http`+`/mcp` path documented below.) For a per-project/per-session setup you
-control, write the correct `mcpServers.drun` entry (exact shape in the
-transport section, with `type: "http"` against `/mcp`) into the agent
-workspace's `.claude/settings.local.json` yourself, independent of whether
+control, write the correct `mcpServers.drun` entry (exact shape in the transport
+section, with `type: "http"` against `/mcp`) into the agent workspace's
+`.claude/settings.local.json` yourself, independent of whether
 `drun-mcp claude init` ran.
 
 - **Scope gotcha (critical for existing apps):** Claude Code also reads
@@ -239,17 +259,17 @@ workspace's `.claude/settings.local.json` yourself, independent of whether
   entry into that project's record in `~/.claude.json` (project scope), ideally
   at project-creation time.
 
-For a **non–Claude-Code agent**, translate the same HTTP MCP config into whatever
-format that framework expects (env var, config file, CLI flag). Transport is
-always `http` → `http://127.0.0.1:7273/mcp` with the Accept header.
+For a **non–Claude-Code agent**, translate the same HTTP MCP config into
+whatever format that framework expects (env var, config file, CLI flag).
+Transport is always `http` → `http://127.0.0.1:7273/mcp` with the Accept header.
 
 **Hermes** (a harness for local models) is simpler: `drun-mcp hermes init`
-handles both registration and tool restriction in one step, but — unlike
-Claude Code — everything it touches (`~/.hermes/config.yaml`) is machine-wide,
-not per-project or per-session, since Hermes has no scoping mechanism for
-either. That makes it a poor fit for the "embed drun into an existing app"
-pattern this guide covers (which wants per-session isolation); it's really
-only appropriate for a single-user, single-machine Hermes setup. See the
+handles both registration and tool restriction in one step, but — unlike Claude
+Code — everything it touches (`~/.hermes/config.yaml`) is machine-wide, not
+per-project or per-session, since Hermes has no scoping mechanism for either.
+That makes it a poor fit for the "embed drun into an existing app" pattern this
+guide covers (which wants per-session isolation); it's really only appropriate
+for a single-user, single-machine Hermes setup. See the
 [Hermes section of the README](../README.md#hermes) if that's your case.
 
 ### Step 4 — Per-session setup
@@ -258,13 +278,17 @@ For each agent session that should be sandboxed:
 
 1. `create_session` → get a `session_id`.
 2. `session_mount` the project path (and any other host paths the agent needs).
-3. Hand the `session_id` to the agent (e.g. via system prompt / CLAUDE.md) so it
-   uses that session for `session_bash`, `session_write_file`, etc.
+3. If the agent runs on its own MCP connection (e.g. Claude Code talking to
+   `drun-mcp` directly, separate from whatever called create_session), tell it —
+   via system prompt / CLAUDE.md — to call `session_switch` with that
+   `session_id` as its first drun tool call. After that, `session_bash`,
+   `session_write_file`, etc. apply automatically; the agent never passes a
+   session_id on those calls.
 4. On session end, `session_close`.
 
 If the app manages this from host code (not from inside an agent turn), it needs
-a small MCP HTTP client. drun does not ship official client libraries yet, so you
-may have to write a minimal one (initialize handshake → `tools/call`).
+a small MCP HTTP client. drun does not ship official client libraries yet, so
+you may have to write a minimal one (initialize handshake → `tools/call`).
 
 ### Step 5 — Verify end to end
 
@@ -286,12 +310,15 @@ your config.
 
 ## Common failure modes (check these first when debugging)
 
-- **`drun · ✘ failed`, 406 error** → missing `text/event-stream` in Accept header.
+- **`drun · ✘ failed`, 406 error** → missing `text/event-stream` in Accept
+  header.
 - **`drun · ✘ failed`, 404** → using `sse`/`/sse` instead of `http`/`/mcp`.
-- **Config looks right but no tools** → `~/.claude.json` project entry with empty
-  `mcpServers` overriding `settings.local.json`. Write drun at project scope there.
+- **Config looks right but no tools** → `~/.claude.json` project entry with
+  empty `mcpServers` overriding `settings.local.json`. Write drun at project
+  scope there.
 - **Tools appear but agent still edits host directly** → you registered the MCP
-  server but never ran `drun-mcp claude init`, so native tools were never blocked.
+  server but never ran `drun-mcp claude init`, so native tools were never
+  blocked.
 - **Agent can't reach the internet** → expected; `session_bash` has no network.
   Use `session_fetch` (and add the domain to the allowlist with
   `drun-mcp config add-domain`).
@@ -299,14 +326,14 @@ your config.
   `drun-mcp config add-path`.
 
 - `drun-mcp claude init` does register `mcpServers` now (via `claude mcp add`),
-  but at **user scope with `--transport sse`** — the wrong scope for an
-  embedded app regardless of whether the SSE transport itself works (`/sse`
-  does respond to a raw `curl` with a real SSE stream, so the "always use
-  `http`+`/mcp`" guidance elsewhere in this doc may be stronger than strictly
-  necessary — this hasn't been re-verified against Claude Code's own client).
-  Don't rely on the user-scope registration for an embedded app either way —
-  write the correct config into `settings.local.json` / `~/.claude.json`
-  yourself, at project scope, as described in Step 3.
+  but at **user scope with `--transport sse`** — the wrong scope for an embedded
+  app regardless of whether the SSE transport itself works (`/sse` does respond
+  to a raw `curl` with a real SSE stream, so the "always use `http`+`/mcp`"
+  guidance elsewhere in this doc may be stronger than strictly necessary — this
+  hasn't been re-verified against Claude Code's own client). Don't rely on the
+  user-scope registration for an embedded app either way — write the correct
+  config into `settings.local.json` / `~/.claude.json` yourself, at project
+  scope, as described in Step 3.
 - No `/health` endpoint (must use the MCP handshake to probe readiness).
 - Port 7273 is hardcoded (collisions if two apps each start their own drun-mcp).
 - No official Go/Python/Node client library for host-side calls.

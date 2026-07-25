@@ -104,8 +104,7 @@ async def test_run_prefers_an_explicit_system_prompt_override(monkeypatch):
 async def test_run_executes_a_tool_call_then_returns_the_final_answer(monkeypatch):
     bridge = FakeBridge({"session_bash": "hello world"})
     tool_call = FakeToolCall(
-        "call-1", "session_bash", json.dumps(
-            {"session_id": "s1", "command": "echo hi"})
+        "call-1", "session_bash", json.dumps({"command": "echo hi"})
     )
     monkeypatch.setattr(
         litellm,
@@ -124,8 +123,7 @@ async def test_run_executes_a_tool_call_then_returns_the_final_answer(monkeypatc
     result = await agent.run("run echo")
 
     assert result == "the output was hello world"
-    assert ("session_bash", {"session_id": "s1",
-            "command": "echo hi"}) in bridge.calls
+    assert ("session_bash", {"command": "echo hi"}) in bridge.calls
 
 
 async def test_run_stops_after_max_iterations_without_a_final_answer(monkeypatch):

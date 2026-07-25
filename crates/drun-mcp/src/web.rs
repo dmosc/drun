@@ -582,6 +582,7 @@ mod tests {
             config: config.into(),
             sessions,
             live_output: LiveOutputRegistry::default(),
+            current_sessions: crate::handler::CurrentSessions::default(),
         }
     }
 

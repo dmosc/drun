@@ -35,6 +35,13 @@ impl DrunError {
         )
     }
 
+    pub fn no_active_session() -> Self {
+        Self::new(
+            "no_active_session",
+            "no active session for this connection; call create_session or session_switch first",
+        )
+    }
+
     pub fn session_busy(session_id: &str) -> Self {
         Self::new(
             "session_busy",
@@ -195,6 +202,12 @@ mod tests {
             err.detail,
             Some(serde_json::json!({ "idle_secs": 120, "limit_secs": 60 }))
         );
+    }
+
+    #[test]
+    fn no_active_session_has_a_stable_code() {
+        let err = DrunError::no_active_session();
+        assert_eq!(err.code, "no_active_session");
     }
 
     #[test]

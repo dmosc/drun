@@ -18,13 +18,17 @@ class DrunMcpBridge:
 
     _SYSTEM_PROMPT_TEMPLATE = """\
 You are a coding assistant with access to a sandboxed execution environment through \
-drun's tools. Session "{session_id}" is already created, with any requested paths \
-mounted — pass session_id="{session_id}" to every session_* tool call.
+drun's tools. Session "{session_id}" is already created and active, with any requested \
+paths mounted — session_* tool calls apply to it automatically, no need to remember the \
+current {session_id}.
 
 Use session_bash for shell commands, session_read_file/session_write_file/
 session_delete_file for file access, session_mount to load more host paths, and
 session_fetch for network requests (subject to the server's domain allowlist). Call
-create_session yourself only if you need a second, independent sandbox.
+create_session only if you need a second, independent sandbox — its result is JSON
+containing a session_id field. To work in a different session, call session_switch
+with that exact session_id value; never invent or guess one. If you don't already have
+a session_id from a tool result, call session_list first to see the real ones.
 """
 
     def __init__(
@@ -111,12 +115,12 @@ create_session yourself only if you need a second, independent sandbox.
         session, then mount every requested host path into it."""
         self._session_id = await self._resolve_session_id()
         for path in self._mounts:
-            await self.call("session_mount", {"session_id": self._session_id, "path": path})
+            await self.call("session_mount", {"path": path})
 
     async def _resolve_session_id(self) -> str:
         if self._requested_session_id is not None:
             # Fails fast with a clear daemon error if the session doesn't exist.
-            await self.call("get_session_state", {"session_id": self._requested_session_id})
+            await self.call("session_switch", {"session_id": self._requested_session_id})
             return self._requested_session_id
         created = await self.call("create_session")
         return json.loads(created)["session_id"]

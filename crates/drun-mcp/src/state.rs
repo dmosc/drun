@@ -13,6 +13,7 @@ use std::time::Instant;
 #[derive(Debug, PartialEq, Serialize)]
 pub(crate) struct SessionSummary {
     session_id: String,
+    is_current: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     label: Option<String>,
     checkpoint_id: usize,
@@ -24,7 +25,10 @@ pub(crate) struct SessionSummary {
 }
 
 impl SessionSummary {
-    pub(crate) fn all(sessions: &HashMap<String, Arc<Mutex<Session>>>) -> Vec<SessionSummary> {
+    pub(crate) fn all(
+        sessions: &HashMap<String, Arc<Mutex<Session>>>,
+        current_id: Option<&str>,
+    ) -> Vec<SessionSummary> {
         sessions
             .iter()
             .map(|(id, arc)| {
@@ -33,6 +37,7 @@ impl SessionSummary {
                     CheckpointRef::split(&session.parent);
                 SessionSummary {
                     session_id: id.clone(),
+                    is_current: current_id == Some(id.as_str()),
                     label: session.label.clone(),
                     checkpoint_id: session.current().id,
                     checkpoint_count: session.history().len(),
@@ -527,12 +532,25 @@ mod tests {
         let mut sessions = HashMap::new();
         sessions.insert("s1".to_string(), Arc::new(Mutex::new(session)));
 
-        let summaries = SessionSummary::all(&sessions);
+        let summaries = SessionSummary::all(&sessions, Some("s1"));
         assert_eq!(summaries.len(), 1);
         assert_eq!(summaries[0].session_id, "s1");
         assert_eq!(summaries[0].checkpoint_id, 1);
         assert_eq!(summaries[0].checkpoint_count, 2);
         assert_eq!(summaries[0].parent_session_id, None);
+        assert!(summaries[0].is_current);
+    }
+
+    #[test]
+    fn session_summary_all_marks_non_matching_sessions_as_not_current() {
+        let mut sessions = HashMap::new();
+        sessions.insert("s1".to_string(), Arc::new(Mutex::new(new_session())));
+
+        let summaries = SessionSummary::all(&sessions, Some("other"));
+        assert!(!summaries[0].is_current);
+
+        let summaries = SessionSummary::all(&sessions, None);
+        assert!(!summaries[0].is_current);
     }
 
     #[test]
@@ -545,7 +563,7 @@ mod tests {
         let mut sessions = HashMap::new();
         sessions.insert("child".to_string(), Arc::new(Mutex::new(session)));
 
-        let summaries = SessionSummary::all(&sessions);
+        let summaries = SessionSummary::all(&sessions, None);
         assert_eq!(
             summaries[0].parent_session_id,
             Some("parent-session".to_string())
@@ -567,7 +585,7 @@ mod tests {
         let mut sessions = HashMap::new();
         sessions.insert("s1".to_string(), arc);
 
-        let summaries = SessionSummary::all(&sessions);
+        let summaries = SessionSummary::all(&sessions, None);
         assert_eq!(summaries.len(), 1);
     }
 

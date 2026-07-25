@@ -96,17 +96,16 @@ async def test_call_joins_text_content_blocks():
     session = FakeSession(results=result)
     bridge = bridge_with(session)
 
-    output = await bridge.call("session_bash", {"session_id": "s1", "command": "echo hi"})
+    output = await bridge.call("session_bash", {"command": "echo hi"})
 
     assert output == "line one\nline two"
-    assert session.called_with == (
-        "session_bash", {"session_id": "s1", "command": "echo hi"})
+    assert session.called_with == ("session_bash", {"command": "echo hi"})
 
 
 async def test_call_returns_a_placeholder_for_empty_content():
     bridge = bridge_with(FakeSession())
 
-    output = await bridge.call("session_close", {"session_id": "s1"})
+    output = await bridge.call("session_close")
 
     assert output == "(no output)"
 
@@ -151,13 +150,13 @@ async def test_bootstrap_creates_a_session_and_mounts_paths_when_no_session_id_i
     assert bridge.session_id == "s1"
     assert session.calls == [
         ("create_session", {}),
-        ("session_mount", {"session_id": "s1", "path": "/tmp/data"}),
+        ("session_mount", {"path": "/tmp/data"}),
     ]
 
 
 async def test_bootstrap_attaches_to_an_existing_session_id_without_creating_one():
     session = FakeSession(results={
-        "get_session_state": ok_result("{}"),
+        "session_switch": ok_result("{}"),
         "session_mount": ok_result(),
     })
     bridge = bridge_with(session, session_id="existing", mounts=["/tmp/data"])
@@ -166,8 +165,8 @@ async def test_bootstrap_attaches_to_an_existing_session_id_without_creating_one
 
     assert bridge.session_id == "existing"
     assert session.calls == [
-        ("get_session_state", {"session_id": "existing"}),
-        ("session_mount", {"session_id": "existing", "path": "/tmp/data"}),
+        ("session_switch", {"session_id": "existing"}),
+        ("session_mount", {"path": "/tmp/data"}),
     ]
 
 
@@ -176,7 +175,7 @@ async def test_bootstrap_raises_when_the_given_session_id_does_not_exist():
         isError=True,
         content=[TextContent(type="text", text="session 'missing' not found")],
     )
-    session = FakeSession(results={"get_session_state": result})
+    session = FakeSession(results={"session_switch": result})
     bridge = bridge_with(session, session_id="missing")
 
     with pytest.raises(RuntimeError, match="session 'missing' not found"):
@@ -189,7 +188,7 @@ async def test_default_system_prompt_embeds_the_resolved_session_id():
     bridge = bridge_with(session)
     await bridge._bootstrap()
 
-    assert 'session_id="s1"' in bridge.default_system_prompt
+    assert 'Session "s1"' in bridge.default_system_prompt
 
 
 async def test_session_id_before_bootstrap_raises():

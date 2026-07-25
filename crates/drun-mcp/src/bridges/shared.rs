@@ -11,6 +11,9 @@ pub(crate) fn drun_instructions_body(project_path: &str) -> String {
 3. From there, work entirely through drun tools — there is no host file or shell
    access outside of them.
 
+Every session_* tool below applies to the session you last created, forked, restored,
+or switched to — none of them take a session_id.
+
 ## Core tools
 
 - **`session_bash`** — run shell commands in the sandboxed workspace (also
@@ -25,6 +28,8 @@ pub(crate) fn drun_instructions_body(project_path: &str) -> String {
   navigate checkpoint history (session_rollback is destructive past the rollback
   point once you continue the session — use session_fork first if you need to
   keep that history)
+- **`session_list`** / **`session_switch`** — see every session and change which
+  one is active
 
 ## If a fetch or mount is denied
 
