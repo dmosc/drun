@@ -35,10 +35,11 @@ with that exact session_id value; never invent or guess one. If you don't alread
 a session_id from a tool result, call session_list first to see the real ones.
 
 session_bash does not return command output inline — its JSON result is state
-(checkpoint id, byte counts, file deltas), not the text a command printed. Call
-checkpoint_read_stdstreams (no arguments needed for the common case) to read the
+(checkpoint id, exit_code, byte counts, file deltas), not the text a command printed.
+Call checkpoint_read_stdstreams (no arguments needed for the common case) to read the
 actual stdout; pass {{"stream": "stderr"}} for stderr. Never treat session_bash's
-own JSON as the command's output.
+own JSON as the command's output, and never treat non-empty stderr as failure —
+check exit_code instead; many commands write warnings or progress to stderr on success.
 """
 
     def __init__(

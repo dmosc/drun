@@ -275,6 +275,8 @@ pub(crate) struct SessionState {
     parent_checkpoint_id: Option<usize>,
     stdout_bytes: usize,
     stderr_bytes: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    exit_code: Option<i32>,
     workspace_file_count: usize,
     files_added_count: usize,
     files_modified_count: usize,
@@ -301,6 +303,7 @@ impl SessionState {
             parent_checkpoint_id,
             stdout_bytes: current.stdout.len(),
             stderr_bytes: current.stderr.len(),
+            exit_code: current.exit_code,
             workspace_file_count: current.files.len(),
             files_added_count: delta.added.len(),
             files_modified_count: delta.modified.len(),
@@ -317,6 +320,8 @@ pub(crate) struct CheckpointSummary {
     label: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     command: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    exit_code: Option<i32>,
     stdout_bytes: usize,
     stderr_bytes: usize,
     file_count: usize,
@@ -342,6 +347,7 @@ impl CheckpointSummary {
                     checkpoint_id: checkpoint.id,
                     label: checkpoint.label.clone(),
                     command: checkpoint.command.clone(),
+                    exit_code: checkpoint.exit_code,
                     stdout_bytes: checkpoint.stdout.len(),
                     stderr_bytes: checkpoint.stderr.len(),
                     file_count: checkpoint.files.len(),
@@ -428,6 +434,7 @@ mod tests {
                     stderr: String::new(),
                     label: None,
                     command: None,
+                    exit_code: None,
                     files: HashMap::new(),
                 },
                 CheckpointRecord {
@@ -436,6 +443,7 @@ mod tests {
                     stderr: String::new(),
                     label: None,
                     command,
+                    exit_code: None,
                     files: HashMap::new(),
                 },
             ],

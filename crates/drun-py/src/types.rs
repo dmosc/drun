@@ -17,6 +17,8 @@ pub struct DrunCheckpoint {
     pub label: Option<String>,
     #[pyo3(get)]
     pub command: Option<String>,
+    #[pyo3(get)]
+    pub exit_code: Option<i32>,
 }
 
 pub fn checkpoint_to_py(c: &drun_core::Checkpoint) -> DrunCheckpoint {
@@ -31,6 +33,7 @@ pub fn checkpoint_to_py(c: &drun_core::Checkpoint) -> DrunCheckpoint {
             .collect(),
         label: c.label.clone(),
         command: c.command.clone(),
+        exit_code: c.exit_code,
     }
 }
 
@@ -50,8 +53,8 @@ mod tests {
             files,
             label: Some("milestone".to_string()),
             command: Some("echo hi".to_string()),
+            exit_code: Some(0),
         };
-
         let py_checkpoint = checkpoint_to_py(&checkpoint);
 
         assert_eq!(py_checkpoint.id, 3);
@@ -63,5 +66,6 @@ mod tests {
         );
         assert_eq!(py_checkpoint.label.as_deref(), Some("milestone"));
         assert_eq!(py_checkpoint.command.as_deref(), Some("echo hi"));
+        assert_eq!(py_checkpoint.exit_code, Some(0));
     }
 }

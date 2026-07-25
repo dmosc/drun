@@ -19,6 +19,8 @@ pub struct CheckpointRecord {
     pub label: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub command: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exit_code: Option<i32>,
     pub files: HashMap<String, usize>,
 }
 
@@ -101,6 +103,7 @@ mod tests {
                     stderr: String::new(),
                     label: None,
                     command: None,
+                    exit_code: None,
                     files: HashMap::new(),
                 },
                 CheckpointRecord {
@@ -109,6 +112,7 @@ mod tests {
                     stderr: String::new(),
                     label: Some("cp1".to_string()),
                     command: Some("echo ok".to_string()),
+                    exit_code: Some(0),
                     files: [("a.txt".to_string(), 0)].into_iter().collect(),
                 },
             ],

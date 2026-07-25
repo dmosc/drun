@@ -174,7 +174,7 @@ impl Session {
         let arc = self.intern_bytes(content);
         files.insert(path.to_string(), arc);
         self.check_workspace_size(&files)?;
-        self.push_checkpoint(files, String::new(), String::new(), None)?;
+        self.push_checkpoint(files, String::new(), String::new(), None, None)?;
         Ok(())
     }
 
@@ -183,7 +183,7 @@ impl Session {
         if files.remove(path).is_none() {
             return Err(RunnerError::file_not_found_in_current(path).into());
         }
-        self.push_checkpoint(files, String::new(), String::new(), None)
+        self.push_checkpoint(files, String::new(), String::new(), None, None)
     }
 
     pub fn execute_bash(
@@ -208,16 +208,19 @@ impl Session {
         }
         let mut read_paths: Vec<PathBuf> = self.overlays.values().cloned().collect();
         read_paths.extend(self.config.get().mount_allowlist);
-        let sandbox = sandbox::Sandbox::new(workspace_dir.path(), read_paths)?;
-        let child = sandbox
+        let child = sandbox::Sandbox::new(workspace_dir.path(), read_paths)
             .command(command)?
             .current_dir(workspace_dir.path())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .spawn()?;
-        let BashOutput { stdout, stderr } = self.run_sandboxed_bash_child(child, on_stdout)?;
+        let BashOutput {
+            stdout,
+            stderr,
+            exit_code,
+        } = self.run_sandboxed_bash_child(child, on_stdout)?;
         let collected_files = workspace::collect(workspace_dir.path())?;
-        self.record_bash_checkpoint(command, collected_files, stdout, stderr)
+        self.record_bash_checkpoint(command, collected_files, stdout, stderr, exit_code)
     }
 
     fn record_bash_checkpoint(
@@ -226,10 +229,17 @@ impl Session {
         files: FileMap,
         stdout: String,
         stderr: String,
+        exit_code: Option<i32>,
     ) -> anyhow::Result<&Checkpoint> {
         let interned_files = self.intern_file_map(files);
         self.check_workspace_size(&interned_files)?;
-        self.push_checkpoint(interned_files, stdout, stderr, Some(command.to_string()))
+        self.push_checkpoint(
+            interned_files,
+            stdout,
+            stderr,
+            Some(command.to_string()),
+            exit_code,
+        )
     }
 
     pub fn rollback(&mut self, checkpoint_idx: usize) -> anyhow::Result<()> {
@@ -316,6 +326,7 @@ impl Session {
             .collect::<Vec<_>>()
             .join(" && ");
         let terminal_files = self.checkpoints[to_id].files.clone();
+        let terminal_exit_code = self.checkpoints[to_id].exit_code;
         let squashed = Checkpoint {
             id: from_id,
             stdout: combined_stdout,
@@ -323,6 +334,7 @@ impl Session {
             files: terminal_files,
             label,
             command: (!combined_command.is_empty()).then_some(combined_command),
+            exit_code: terminal_exit_code,
         };
         let removed_count = to_id - from_id;
         self.checkpoints
@@ -403,7 +415,7 @@ impl Session {
             }
         }
         self.check_workspace_size(&merged)?;
-        self.push_checkpoint(merged, String::new(), String::new(), None)
+        self.push_checkpoint(merged, String::new(), String::new(), None, None)
     }
 
     pub fn export(
@@ -521,6 +533,7 @@ impl Session {
                     stderr: checkpoint.stderr.clone(),
                     label: checkpoint.label.clone(),
                     command: checkpoint.command.clone(),
+                    exit_code: checkpoint.exit_code,
                     files,
                 }
             })
@@ -554,6 +567,7 @@ impl Session {
                     stderr: record.stderr,
                     label: record.label,
                     command: record.command,
+                    exit_code: record.exit_code,
                     files,
                 }
             })
@@ -659,6 +673,7 @@ impl Session {
         stdout: String,
         stderr: String,
         command: Option<String>,
+        exit_code: Option<i32>,
     ) -> anyhow::Result<&Checkpoint> {
         self.check_checkpoint_limit()?;
         let discarding_forward_history = self.checkpoints.len() > self.checkpoint_idx + 1;
@@ -673,6 +688,7 @@ impl Session {
             files,
             label: None,
             command,
+            exit_code,
         });
         self.checkpoint_idx = id;
         if discarding_forward_history {
@@ -813,12 +829,21 @@ impl Session {
         }
         let _ = cancel_tx.send(());
         let stderr = stderr_thread.join().unwrap_or_default();
-        let _ = child.lock().unwrap().wait();
+        let exit_code = child
+            .lock()
+            .unwrap()
+            .wait()
+            .ok()
+            .and_then(|status| status.code());
         Self::kill_process_tree(pgid);
         if timed_out.load(Ordering::Relaxed) {
             return Err(RunnerError::timeout(bash_timeout_ms).into());
         }
-        Ok(BashOutput { stdout, stderr })
+        Ok(BashOutput {
+            stdout,
+            stderr,
+            exit_code,
+        })
     }
 
     /// Kills every sandboxed child (and its descendants) currently tracked
@@ -928,6 +953,7 @@ impl Session {
 struct BashOutput {
     stdout: String,
     stderr: String,
+    exit_code: Option<i32>,
 }
 
 /// (workspace key, file bytes, host path) for regular files discovered under a
@@ -1029,33 +1055,69 @@ mod tests {
     fn execute_bash_records_the_command_on_the_new_checkpoint() {
         let mut session = new_session();
         let checkpoint = session
-            .record_bash_checkpoint("echo hi", FileMap::new(), "hi\n".to_string(), String::new())
+            .record_bash_checkpoint(
+                "echo hi",
+                FileMap::new(),
+                "hi\n".to_string(),
+                String::new(),
+                Some(0),
+            )
             .unwrap();
         assert_eq!(checkpoint.command.as_deref(), Some("echo hi"));
     }
 
     #[test]
-    fn write_file_and_delete_file_leave_the_checkpoints_command_unset() {
+    fn execute_bash_records_the_exit_code_on_the_new_checkpoint() {
         let mut session = new_session();
-        session.write_file("a.txt", b"hi".to_vec()).unwrap();
-        assert_eq!(session.current().command, None);
-        session.delete_file("a.txt").unwrap();
-        assert_eq!(session.current().command, None);
+        let checkpoint = session
+            .record_bash_checkpoint(
+                "exit 7",
+                FileMap::new(),
+                String::new(),
+                String::new(),
+                Some(7),
+            )
+            .unwrap();
+        assert_eq!(checkpoint.exit_code, Some(7));
     }
 
     #[test]
-    fn squash_checkpoints_joins_the_absorbed_commands() {
+    fn write_file_and_delete_file_leave_the_checkpoints_command_and_exit_code_unset() {
+        let mut session = new_session();
+        session.write_file("a.txt", b"hi".to_vec()).unwrap();
+        assert_eq!(session.current().command, None);
+        assert_eq!(session.current().exit_code, None);
+        session.delete_file("a.txt").unwrap();
+        assert_eq!(session.current().command, None);
+        assert_eq!(session.current().exit_code, None);
+    }
+
+    #[test]
+    fn squash_checkpoints_joins_the_absorbed_commands_and_keeps_the_terminal_exit_code() {
         let mut session = new_session();
         session
-            .record_bash_checkpoint("echo one", FileMap::new(), String::new(), String::new())
+            .record_bash_checkpoint(
+                "echo one",
+                FileMap::new(),
+                String::new(),
+                String::new(),
+                Some(0),
+            )
             .unwrap();
         session
-            .record_bash_checkpoint("echo two", FileMap::new(), String::new(), String::new())
+            .record_bash_checkpoint(
+                "echo two",
+                FileMap::new(),
+                String::new(),
+                String::new(),
+                Some(2),
+            )
             .unwrap();
 
         let squashed = session.squash_checkpoints(1, 2, None).unwrap();
 
         assert_eq!(squashed.command.as_deref(), Some("echo one && echo two"));
+        assert_eq!(squashed.exit_code, Some(2));
     }
 
     // These two exercise the real sandbox-exec profile end to end, so they
@@ -1096,6 +1158,14 @@ mod tests {
             .unwrap();
 
         assert!(!checkpoint.stdout.contains("do-not-leak"));
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn execute_bash_records_a_nonzero_exit_code_through_the_real_sandbox() {
+        let mut session = new_session();
+        let checkpoint = session.execute_bash("exit 7", &mut |_| {}).unwrap();
+        assert_eq!(checkpoint.exit_code, Some(7));
     }
 
     #[test]
@@ -1418,6 +1488,7 @@ mod tests {
                 files,
                 label: None,
                 command: None,
+                exit_code: None,
             }
         );
     }

@@ -753,6 +753,7 @@ impl DrunHandler {
                 serde_json::json!({
                     "stream": stream,
                     "checkpoint_id": checkpoint_id,
+                    "exit_code": checkpoint.exit_code,
                     "offset": start,
                     "length": end - start,
                     "total_bytes": total,

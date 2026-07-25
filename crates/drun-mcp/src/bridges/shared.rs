@@ -20,21 +20,23 @@ or switched to — none of them take a session_id.
 ## Reading command output
 
 `session_bash` does not return stdout/stderr text inline — it returns state:
-checkpoint_id, stdout_bytes/stderr_bytes (byte counts, not content), and which
-files changed. To read what a command actually printed, call
+checkpoint_id, exit_code, stdout_bytes/stderr_bytes (byte counts, not content),
+and which files changed. To read what a command actually printed, call
 `checkpoint_read_stdstreams` against that checkpoint:
 
 ```
 session_bash({{"command": "pytest -q"}})
-→ {{"checkpoint_id": 3, "stdout_bytes": 842, "stderr_bytes": 0, ...}}
+→ {{"checkpoint_id": 3, "exit_code": 0, "stdout_bytes": 842, "stderr_bytes": 0, ...}}
 
 checkpoint_read_stdstreams({{}})
-→ {{"stream": "stdout", "content": "...12 passed in 0.4s", ...}}
+→ {{"stream": "stdout", "exit_code": 0, "content": "...12 passed in 0.4s", ...}}
 ```
 
 `checkpoint_read_stdstreams` defaults to the current checkpoint's stdout; pass
 `{{"stream": "stderr"}}` for stderr, or `{{"checkpoint_id": N}}` for an older one.
-Don't treat the JSON from `session_bash` itself as the command's output.
+Don't treat the JSON from `session_bash` itself as the command's output, and
+don't treat non-empty stderr as failure — check `exit_code` instead; plenty of
+commands write warnings or progress to stderr on success.
 
 ## Core tools
 

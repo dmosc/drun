@@ -16,6 +16,8 @@ pub struct Checkpoint {
     pub label: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub command: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exit_code: Option<i32>,
 }
 
 impl Checkpoint {
@@ -27,6 +29,7 @@ impl Checkpoint {
             files,
             label: None,
             command: None,
+            exit_code: None,
         }
     }
 }
