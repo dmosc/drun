@@ -38,6 +38,3 @@ session_idle_timeout_secs = 14_400
 # Always snapshot on close — long sessions are expensive to redo from scratch.
 snapshot_on_close = true
 snapshots_dir = "/tmp/drun-snapshots"
-
-# Export large outputs here.
-export_root = "/tmp/drun-outputs"

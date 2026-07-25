@@ -415,15 +415,11 @@ impl DrunHandler {
         t: SessionExport,
     ) -> Result<CallToolResult, CallToolError> {
         let session_id = self.current_sessions.resolve(connection_id)?;
-        let export_root = self.config.get().export_root;
-        let output_dir = match &t.output_dir {
-            Some(dir) => Self::path_confined_to_root(
-                PathBuf::from(dir),
-                &export_root,
-                DrunError::export_denied,
-            )?,
-            None => export_root.join(&session_id),
-        };
+        let output_dir = PathBuf::from(&t.output_dir);
+        self.config
+            .get()
+            .check_mount_path(&output_dir)
+            .map_err(|e| DrunError::from_exec(e.into()).into_tool_err())?;
         self.with_session(&session_id, |session| {
             let exported = session
                 .export(&output_dir, t.keys)
@@ -544,7 +540,6 @@ impl DrunHandler {
                 "env_allowlist": config.env_allowlist,
                 "bash_command_denylist": config.bash_command_denylist,
                 "bash_command_allowlist": config.bash_command_allowlist,
-                "export_root": config.export_root.display().to_string(),
                 "snapshots_dir": config.snapshots_dir.display().to_string(),
                 "max_workspace_mb": config.max_workspace_mb,
                 "max_sessions": config.max_sessions,
@@ -1550,18 +1545,18 @@ mod tests {
             .handle_session_export(
                 CLIENT,
                 SessionExport {
-                    output_dir: Some("../escape".to_string()),
+                    output_dir: "../escape".to_string(),
                     keys: None,
                 },
             )
             .unwrap_err();
-        assert!(err.to_string().contains("export_denied"));
+        assert!(err.to_string().contains("mount_denied"));
     }
 
     #[test]
-    fn session_export_rejects_a_directory_outside_the_export_root() {
+    fn session_export_rejects_a_directory_outside_the_mount_allowlist() {
         let config = Config {
-            export_root: PathBuf::from("drun-export"),
+            mount_allowlist: vec![PathBuf::from("/allowed")],
             ..Config::default()
         };
         let handler = DrunHandler::new(config);
@@ -1570,19 +1565,19 @@ mod tests {
             .handle_session_export(
                 CLIENT,
                 SessionExport {
-                    output_dir: Some("/tmp/somewhere-else".to_string()),
+                    output_dir: "/tmp/somewhere-else".to_string(),
                     keys: None,
                 },
             )
             .unwrap_err();
-        assert!(err.to_string().contains("export_denied"));
+        assert!(err.to_string().contains("mount_denied"));
     }
 
     #[test]
-    fn session_export_writes_files_under_the_export_root() {
+    fn session_export_writes_files_under_an_allowed_mount_path() {
         let dir = tempfile::tempdir().unwrap();
         let config = Config {
-            export_root: dir.path().to_path_buf(),
+            mount_allowlist: vec![dir.path().to_path_buf()],
             ..Config::default()
         };
         let handler = DrunHandler::new(config);
@@ -1602,12 +1597,40 @@ mod tests {
             .handle_session_export(
                 CLIENT,
                 SessionExport {
-                    output_dir: Some(dir.path().join("sub").to_string_lossy().into_owned()),
+                    output_dir: dir.path().join("sub").to_string_lossy().into_owned(),
                     keys: Some(vec!["out.txt".to_string()]),
                 },
             )
             .unwrap();
         assert!(dir.path().join("sub/out.txt").exists());
+    }
+
+    #[test]
+    fn session_export_permits_any_path_when_the_mount_allowlist_is_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let handler = DrunHandler::new(Config::default());
+        insert_current_session(&handler, "s1");
+        {
+            let sessions = handler.sessions.lock().unwrap();
+            sessions
+                .get("s1")
+                .unwrap()
+                .lock()
+                .unwrap()
+                .write_file("out.txt", b"data".to_vec())
+                .unwrap();
+        }
+
+        handler
+            .handle_session_export(
+                CLIENT,
+                SessionExport {
+                    output_dir: dir.path().to_string_lossy().into_owned(),
+                    keys: Some(vec!["out.txt".to_string()]),
+                },
+            )
+            .unwrap();
+        assert!(dir.path().join("out.txt").exists());
     }
 
     #[test]
@@ -2375,38 +2398,6 @@ mod tests {
             )
             .unwrap();
         assert!(dir.path().join("custom.drun").exists());
-    }
-
-    #[test]
-    fn session_export_defaults_to_export_root_slash_session_id() {
-        let dir = tempfile::tempdir().unwrap();
-        let config = Config {
-            export_root: dir.path().to_path_buf(),
-            ..Config::default()
-        };
-        let handler = DrunHandler::new(config);
-        insert_current_session(&handler, "s1");
-        {
-            let sessions = handler.sessions.lock().unwrap();
-            sessions
-                .get("s1")
-                .unwrap()
-                .lock()
-                .unwrap()
-                .write_file("out.txt", b"data".to_vec())
-                .unwrap();
-        }
-
-        handler
-            .handle_session_export(
-                CLIENT,
-                SessionExport {
-                    output_dir: None,
-                    keys: Some(vec!["out.txt".to_string()]),
-                },
-            )
-            .unwrap();
-        assert!(dir.path().join("s1/out.txt").exists());
     }
 
     #[test]

@@ -23,8 +23,6 @@ pub struct Config {
     /// instead of loading into the workspace. Symlinked at execution time and
     /// never checkpointed. Set to [] to disable auto-detection.
     pub mount_overlay_paths: Vec<String>,
-    /// Directory that session exports must be written to.
-    pub export_root: PathBuf,
     /// Directory where session_snapshot writes .drun files.
     pub snapshots_dir: PathBuf,
     /// Automatically write a .drun snapshot when session_close is called.
@@ -72,7 +70,6 @@ impl Default for Config {
                 "__pycache__".to_string(),
                 ".git".to_string(),
             ],
-            export_root: PathBuf::from("drun-export"),
             snapshots_dir: PathBuf::from("drun-snapshots"),
             snapshot_on_close: false,
             env_allowlist: vec![],
@@ -96,6 +93,30 @@ impl Config {
                     .is_some(),
                 p => p == host,
             })
+    }
+
+    pub fn check_mount_path(&self, path: &Path) -> Result<(), crate::error::RunnerError> {
+        let has_dotdot = path
+            .components()
+            .any(|c| c == std::path::Component::ParentDir);
+        let allowed = !has_dotdot
+            && (self.mount_allowlist.is_empty()
+                || self
+                    .mount_allowlist
+                    .iter()
+                    .any(|prefix| path.starts_with(prefix)));
+        if allowed {
+            return Ok(());
+        }
+        Err(crate::error::RunnerError::mount_denied(format!(
+            "'{}' is not in the mount allowlist; permitted prefixes: {}",
+            path.display(),
+            self.mount_allowlist
+                .iter()
+                .map(|p| p.display().to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        )))
     }
 
     pub fn load() -> Self {
@@ -187,7 +208,6 @@ mod tests {
                 ".git"
             ]
         );
-        assert_eq!(config.export_root, PathBuf::from("drun-export"));
         assert_eq!(config.snapshots_dir, PathBuf::from("drun-snapshots"));
         assert!(!config.snapshot_on_close);
         assert_eq!(config.env_allowlist, Vec::<String>::new());
@@ -255,6 +275,40 @@ mod tests {
     }
 
     #[test]
+    fn check_mount_path_permits_anything_when_the_allowlist_is_empty() {
+        let config = Config::default();
+        assert!(config.check_mount_path(Path::new("/anywhere")).is_ok());
+    }
+
+    #[test]
+    fn check_mount_path_requires_a_matching_prefix_when_set() {
+        let config = Config {
+            mount_allowlist: vec![PathBuf::from("/allowed")],
+            ..Config::default()
+        };
+        assert!(
+            config
+                .check_mount_path(Path::new("/allowed/project/file.txt"))
+                .is_ok()
+        );
+        assert!(
+            config
+                .check_mount_path(Path::new("/elsewhere/file.txt"))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn check_mount_path_rejects_dotdot_components() {
+        let config = Config::default();
+        assert!(
+            config
+                .check_mount_path(Path::new("/allowed/../escape"))
+                .is_err()
+        );
+    }
+
+    #[test]
     fn any_matching_pattern_in_a_mixed_list_allows() {
         let config = Config {
             domain_allowlist: vec!["pypi.org".to_string(), "*.example.com".to_string()],
@@ -285,7 +339,6 @@ mod tests {
         assert!(config.bash_command_denylist.is_empty());
         assert!(config.bash_command_allowlist.is_empty());
         assert!(!config.snapshot_on_close);
-        assert_eq!(config.export_root, PathBuf::from("drun-export"));
         assert_eq!(config.snapshots_dir, PathBuf::from("drun-snapshots"));
         assert_eq!(
             config.mount_overlay_paths,

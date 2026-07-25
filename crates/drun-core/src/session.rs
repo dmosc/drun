@@ -107,25 +107,7 @@ impl Session {
             RunnerError::invalid_workspace_path(format!("path does not exist: {}", path.display()))
         })?;
         let config = self.config.get();
-        if !config.mount_allowlist.is_empty() {
-            let allowed = config
-                .mount_allowlist
-                .iter()
-                .any(|prefix| abs.starts_with(prefix));
-            if !allowed {
-                return Err(RunnerError::mount_denied(format!(
-                    "'{}' is not in the mount allowlist; permitted prefixes: {}",
-                    abs.display(),
-                    config
-                        .mount_allowlist
-                        .iter()
-                        .map(|p| p.display().to_string())
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                ))
-                .into());
-            }
-        }
+        config.check_mount_path(&abs)?;
 
         let (file_entries, overlay_entries) = if abs.is_dir() {
             Self::scan_mount_path(&abs, "", &config.mount_overlay_paths)?

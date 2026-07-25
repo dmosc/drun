@@ -32,9 +32,6 @@ max_sessions = 4
 
 bash_command_denylist = ["rm -rf", "curl", "wget"]
 
-# Results export here.
-export_root = "/tmp/drun-data-science"
-
 # Snapshots are off for exploratory work — turn on if sessions are long-running
 # and you want to be able to resume them.
 snapshot_on_close = false

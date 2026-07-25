@@ -44,8 +44,7 @@ The server enforces a set of policy restrictions on all sessions:
 | Config key               | What it restricts                                                                                                                                                                                                                                                                             |
 | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `domain_allowlist`       | Domains reachable via `session_fetch`. Supports exact hostnames and `*.example.com` wildcards, or `["*"]` for all.                                                                                                                                                                            |
-| `mount_allowlist`        | Host path prefixes that `session_mount` may read from (empty means all paths allowed there) — and, separately, host directories `session_bash`'s sandbox may read from directly, in addition to the workspace, overlays, and fixed system/PATH dirs (empty means no extra directories there). |
-| `export_root`            | Directory that `session_export` and `session_snapshot` may write into.                                                                                                                                                                                                                        |
+| `mount_allowlist`        | Host path prefixes that `session_mount` may read from and `session_export`/`session_commit` may write back to (empty means all paths allowed there) — and, separately, host directories `session_bash`'s sandbox may read from directly, in addition to the workspace, overlays, and fixed system/PATH dirs (empty means no extra directories there). |
 | `env_allowlist`          | Host environment variable names readable via `session_get_env`.                                                                                                                                                                                                                               |
 | `bash_command_denylist`  | Command substrings always rejected by `session_bash` before execution.                                                                                                                                                                                                                        |
 | `bash_command_allowlist` | Command substrings permitted by `session_bash`. Empty means all commands allowed (subject to the denylist).                                                                                                                                                                                   |
@@ -63,8 +62,7 @@ When no `DRUN_CONFIG` is set, drun applies the following defaults:
 | ---------------------------------- | -------------------------------------------------------- |
 | Outbound network (`session_bash`)  | None — fully unshared from the host network              |
 | Outbound network (`session_fetch`) | `pypi.org`, `files.pythonhosted.org`, `cdn.jsdelivr.net` |
-| Mount path restrictions            | None                                                     |
-| Export path restrictions           | `./drun-export`                                          |
+| Mount/export path restrictions     | None                                                     |
 | Env var exposure                   | None                                                     |
 | Command restrictions               | None                                                     |
 | Max workspace                      | 512 MB per session                                       |
@@ -75,7 +73,7 @@ When no `DRUN_CONFIG` is set, drun applies the following defaults:
 
 The default posture is conservative on network access, permissive on filesystem
 scope. If you are deploying drun in a shared environment, set `mount_allowlist`
-and `export_root` explicitly.
+explicitly.
 
 ---
 

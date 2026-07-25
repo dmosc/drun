@@ -41,6 +41,3 @@ bash_command_denylist = ["rm -rf", "curl", "wget", "nc"]
 # Preserve session state — financial analysis sessions are worth keeping.
 snapshot_on_close = true
 snapshots_dir = "/tmp/drun-snapshots"
-
-# All exported files (reports, charts) land here.
-export_root = "/tmp/drun-financial"

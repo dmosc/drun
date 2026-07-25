@@ -33,12 +33,13 @@ bash_timeout_ms = 30_000
 # Abandon idle sessions after 10 minutes.
 session_idle_timeout_secs = 600
 
-# Allow the agent to mount the examples directory so it can read
-# fibonacci_slow.py. Update this to the absolute path on your machine.
-mount_allowlist = ["/Users/oscar/Desktop/Projects/drun/examples"]
-
-# Benchmark results (results.md) are exported here after the run.
-export_root = "/tmp/drun-fibonacci-results"
+# Allow the agent to mount the examples directory (to read fibonacci_slow.py)
+# and to export results.md back out via session_export. Update these to
+# absolute paths on your machine.
+mount_allowlist = [
+    "/Users/oscar/Desktop/Projects/drun/examples",
+    "/tmp/drun-fibonacci-results",
+]
 
 # Bash commands containing these substrings are rejected before the command
 # reaches the sandbox. The Phase 1 bash probe tries "curl" and expects a

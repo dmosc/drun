@@ -127,13 +127,6 @@ impl DrunError {
         )
     }
 
-    pub fn export_denied(path: &str, allowed_root: &str) -> Self {
-        Self::new(
-            "export_denied",
-            format!("export to '{path}' is not permitted; must be under '{allowed_root}'"),
-        )
-    }
-
     pub fn snapshot_denied(path: &str, allowed_root: &str) -> Self {
         Self::new(
             "snapshot_denied",

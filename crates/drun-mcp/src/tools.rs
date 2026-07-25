@@ -220,19 +220,20 @@ pub struct SessionDeleteFile {
 
 #[mcp_tool(
     name = "session_export",
-    description = "Write sandbox-generated files from the active session to the host \
-                   filesystem. By default exports all files with no host origin (i.e. created \
-                   inside the sandbox, not from session_mount) into output_dir. Pass keys to \
-                   select specific files. output_dir defaults to ./drun-export/<session> in \
-                   the current working directory.",
+    description = "Write sandbox-generated files from the active session to a host directory. \
+                   By default exports all files with no host origin (i.e. created inside the \
+                   sandbox, not from session_mount) into output_dir. Pass keys to select \
+                   specific files. output_dir is subject to the same mount_allowlist as \
+                   session_mount — check get_config to see permitted prefixes.",
     idempotent_hint = false,
     destructive_hint = false,
     read_only_hint = false
 )]
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct SessionExport {
-    /// Absolute path to a directory on the host to write files into. Defaults to ./drun-export/<session_id>.
-    pub output_dir: Option<String>,
+    /// Absolute path to a directory on the host to write files into. Must be under one of the
+    /// server's mount_allowlist prefixes.
+    pub output_dir: String,
     /// Specific workspace-relative file keys to export. Omit to export all sandbox-generated files.
     pub keys: Option<Vec<String>>,
 }

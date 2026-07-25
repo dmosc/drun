@@ -70,8 +70,8 @@ def main():
     cp_bash = session.execute_bash("ls -1")
     print(f"[6] bash       — {cp_bash.stdout.strip()}")
 
-    # 7. Export workspace to the host (writes to export_root from config,
-    #    or the current directory if export_root is not set)
+    # 7. Export workspace to the host. The Python SDK writes wherever you
+    #    tell it to — mount_allowlist only confines the MCP session_export tool.
     export_dir = os.environ.get("EXPORT_DIR", "/tmp/drun-quickstart")
     exported = session.export(export_dir)
     print(f"[7] export     — {exported}")
