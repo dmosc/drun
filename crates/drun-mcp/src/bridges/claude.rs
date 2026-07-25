@@ -1,12 +1,13 @@
 #[cfg(test)]
 use std::path::Path;
-use std::{
-    io::Write,
-    path::PathBuf,
-    process::{Command, Stdio},
-};
+use std::{io::Write, path::PathBuf};
 
-use serde_json::{Map, Value, json};
+use serde_json::{Value, json};
+
+const CLI: super::shared::CliMcp = super::shared::CliMcp {
+    bin: "claude",
+    display_name: "Claude Code",
+};
 
 const REQUIRED_DENY: &[&str] = &[
     "Bash",
@@ -43,7 +44,7 @@ impl super::Bridge for Claude {
     }
 
     fn init(&self) {
-        register_mcp();
+        CLI.register();
 
         let project = ProjectInit {
             project_dir: std::env::current_dir().expect("cannot read current directory"),
@@ -59,19 +60,7 @@ impl super::Bridge for Claude {
     }
 
     fn deregister(&self) {
-        if !claude_available() {
-            return;
-        }
-
-        let status = Command::new("claude")
-            .args(["mcp", "remove", "--scope", "user", "drun"])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
-
-        if matches!(status, Ok(s) if s.success()) {
-            eprintln!("drun: removed from Claude Code (user scope).");
-        }
+        CLI.deregister();
     }
 }
 
@@ -88,69 +77,6 @@ fn rendered_default_settings() -> String {
     )
 }
 
-fn mcp_url() -> String {
-    format!("http://127.0.0.1:{}/sse", crate::mcp_port())
-}
-
-fn claude_available() -> bool {
-    match Command::new("claude")
-        .arg("--version")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-    {
-        Ok(_) => true,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
-        Err(_) => true,
-    }
-}
-
-fn already_registered(mcp_list_output: &str) -> bool {
-    mcp_list_output.lines().any(|l| l.starts_with("drun"))
-}
-
-fn register_mcp() {
-    let url = mcp_url();
-
-    if !claude_available() {
-        eprintln!("drun: Claude Code CLI not found. Add drun manually:");
-        eprintln!("  claude mcp add --scope user --transport sse drun {url}");
-        return;
-    }
-
-    let list_output = Command::new("claude")
-        .args(["mcp", "list"])
-        .output()
-        .ok()
-        .and_then(|o| String::from_utf8(o.stdout).ok())
-        .unwrap_or_default();
-
-    if already_registered(&list_output) {
-        eprintln!("drun: already registered in Claude Code, skipping.");
-        return;
-    }
-
-    let status = Command::new("claude")
-        .args([
-            "mcp",
-            "add",
-            "--scope",
-            "user",
-            "--transport",
-            "sse",
-            "drun",
-            &url,
-        ])
-        .status();
-
-    if matches!(status, Ok(s) if s.success()) {
-        eprintln!("drun: added to Claude Code (SSE → {url}, user scope).");
-    } else {
-        eprintln!("drun: failed to register with Claude Code. Add it manually:");
-        eprintln!("  claude mcp add --scope user --transport sse drun {url}");
-    }
-}
-
 struct ProjectInit {
     project_dir: PathBuf,
     drun_home: PathBuf,
@@ -162,39 +88,13 @@ impl ProjectInit {
     }
 
     fn write_settings(&self) {
-        let settings_dir = self.project_dir.join(".claude");
-        let settings_file = settings_dir.join("settings.json");
-
-        std::fs::create_dir_all(&settings_dir).expect("cannot create .claude/");
-
-        if !settings_file.exists() {
-            std::fs::write(&settings_file, rendered_default_settings())
-                .expect("cannot write settings.json");
-            eprintln!("drun: created .claude/settings.json");
-            return;
-        }
-
-        let existing =
-            std::fs::read_to_string(&settings_file).expect("cannot read existing settings.json");
-        match merge_settings(&existing) {
-            Ok(Some(merged)) => {
-                std::fs::write(&settings_file, merged).expect("cannot write settings.json");
-                eprintln!(
-                    "drun: updated .claude/settings.json — merged in drun's required permissions \
-                     (native tools are now blocked for this project)"
-                );
-            }
-            Ok(None) => {
-                eprintln!("drun: .claude/settings.json already configured for drun, skipping");
-            }
-            Err(e) => {
-                eprintln!(
-                    "drun: could not merge into existing .claude/settings.json ({e}) — leaving \
-                     it untouched. Native tools are NOT blocked until you add this yourself:\n{}",
-                    rendered_default_settings()
-                );
-            }
-        }
+        let settings_file = self.project_dir.join(".claude").join("settings.json");
+        super::shared::write_json_settings(
+            &settings_file,
+            ".claude/settings.json",
+            rendered_default_settings,
+            merge_settings,
+        );
     }
 
     fn write_claude_md(&self) {
@@ -236,8 +136,8 @@ fn merge_settings(existing: &str) -> Result<Option<String>, String> {
         return Err("'permissions' is not an object".to_string());
     };
 
-    let deny_changed = merge_string_array(permissions, "deny", REQUIRED_DENY)?;
-    let allow_changed = merge_string_array(permissions, "allow", REQUIRED_ALLOW)?;
+    let deny_changed = super::shared::merge_string_array(permissions, "deny", REQUIRED_DENY)?;
+    let allow_changed = super::shared::merge_string_array(permissions, "allow", REQUIRED_ALLOW)?;
 
     if !deny_changed && !allow_changed {
         return Ok(None);
@@ -245,26 +145,6 @@ fn merge_settings(existing: &str) -> Result<Option<String>, String> {
 
     let rendered = serde_json::to_string_pretty(&value).map_err(|e| e.to_string())?;
     Ok(Some(format!("{rendered}\n")))
-}
-
-fn merge_string_array(
-    obj: &mut Map<String, Value>,
-    key: &str,
-    required: &[&str],
-) -> Result<bool, String> {
-    let array = obj.entry(key).or_insert_with(|| json!([]));
-    let array = array
-        .as_array_mut()
-        .ok_or_else(|| format!("'{key}' is not an array"))?;
-
-    let mut changed = false;
-    for &item in required {
-        if !array.iter().any(|v| v.as_str() == Some(item)) {
-            array.push(Value::String(item.to_string()));
-            changed = true;
-        }
-    }
-    Ok(changed)
 }
 
 fn claude_md_content(project_path: &str) -> String {
@@ -288,17 +168,6 @@ mod tests {
             drun_home: drun_home.to_path_buf(),
             project_dir: project_dir.to_path_buf(),
         }
-    }
-
-    #[test]
-    fn already_registered_matches_a_leading_drun_line() {
-        assert!(already_registered(
-            "drun: http://127.0.0.1:7273/sse (SSE) - ✓ Connected\n"
-        ));
-        assert!(!already_registered(
-            "other-server: some-url - ✓ Connected\n"
-        ));
-        assert!(!already_registered(""));
     }
 
     #[test]

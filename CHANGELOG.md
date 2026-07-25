@@ -32,8 +32,8 @@ All notable changes to drun are documented here.
   `drun-mcp bridges list` / `drun-mcp bridges deregister-all` subcommands all
   read from `REGISTRY` generically; `uninstall.sh` now calls
   `drun-mcp bridges deregister-all` instead of naming providers itself. Adding a
-  future bridge (Gemini, Codex, ...) means one new module implementing `Bridge`
-  plus one line in `REGISTRY` — no changes anywhere else.
+  future bridge means one new module implementing `Bridge` plus one line in
+  `REGISTRY` — no changes anywhere else.
 - **`drun-mcp hermes init` now also writes `HERMES.md`** in the current
   directory (skipped if it already exists) — Hermes's own highest-priority
   [context file](https://github.com/NousResearch/hermes-agent/blob/main/website/docs/user-guide/features/context-files.md),
@@ -52,6 +52,29 @@ All notable changes to drun are documented here.
   `hermes_md_content` now differ only in their opening paragraph (which native
   tools/toolsets are blocked, and why); the "Getting started"/"Core
   tools"/allowlist-troubleshooting body is identical prose generated once.
+- Added **Gemini CLI** and **Codex CLI** bridges, filling in the two candidates
+  named in `bridges::REGISTRY`'s doc comment. `drun-mcp gemini init` runs
+  `gemini mcp add --scope user --transport sse` (project-scoped, like Claude
+  Code) and merges drun-overlapping tools into `.gemini/settings.json`'s
+  `excludeTools`, plus writes `GEMINI.md`. `drun-mcp codex init` edits
+  `~/.codex/config.toml` directly (machine-scoped, like Hermes) — registers
+  `[mcp_servers.drun]` and sets `features.shell_tool = false` — plus writes
+  `AGENTS.md`. Codex's TOML edit goes through `toml_edit::DocumentMut` (already
+  a dependency, via `config_cmd.rs`) rather than Hermes's line-surgery approach,
+  since TOML has a real format-preserving parser available; comments and
+  unrelated keys survive a genuine structural merge. Extracted the
+  `merge_string_array` (JSON-array merge, previously Claude-only) and
+  `atomic_write` (temp-file-then-rename, previously `config_cmd`-only) helpers
+  to be shared, since Gemini and Codex needed the exact same logic. Both new
+  bridges show up in `--help`, `drun-mcp bridges list`, and `deregister-all`
+  automatically via `REGISTRY` — no dispatch or bash changes needed.
+- **Extracted `bridges::shared::CliMcp`**: Claude Code's and Gemini CLI's
+  registration logic turned out to be identical (`<bin> mcp
+  add/list/remove --scope user --transport sse`) modulo the binary name, so
+  `bridges::claude` and `bridges::gemini` both now construct a
+  `CliMcp { bin, display_name }` and call `.register()`/`.deregister()`
+  instead of each carrying its own copy of the CLI-availability check,
+  registration flow, and manual-fallback messaging.
 
 ### Web UI
 

@@ -37,16 +37,16 @@ The drun framework can be consumed in the following ways:
 
 - **[Via Claude Code](#claude-code)**: drun's MCP tools replace Claude's native
   file/shell/network tools inside a sandboxed workspace.
+- **[Via Gemini CLI](#gemini-cli)**: same idea, for
+  [Gemini CLI](https://github.com/google-gemini/gemini-cli).
+- **[Via Codex CLI](#codex-cli)**: same idea, for
+  [OpenAI's Codex CLI](https://developers.openai.com/codex).
 - **[Via Hermes](#hermes)**: same idea, for local models run through
   [Hermes](https://github.com/NousResearch/hermes-agent).
 - **[Standalone CLI](#standalone-cli)**: a CLI agentic loop that's integrated
   with [Ollama](https://ollama.com/) and [LiteLLM](https://docs.litellm.ai/).
 - **[Using the Python SDK](#python-sdk)**: script sandboxed sessions directly,
   no LLM or daemon required.
-
-> NOTE: There are plans in the future to support additional model providers like
-> Codex and Gemini CLI. Consider this document as the official reference of
-> production-ready offerings.
 
 ### Installing
 
@@ -70,8 +70,12 @@ This installs and configures a few things (skips if not applicable):
 agent. Once it's done, point the binary at whichever bridge you use:
 
 ```bash
-# Run this from a project root to do per-project scoping for Claude Code.
+# Run from a project root — `claude`/`gemini` init are per-project scoped;
+# `codex`/`hermes` init also register machine-wide, but still need a per-project
+# run to drop their context file (AGENTS.md/HERMES.md) into this project.
 drun-mcp claude init
+drun-mcp gemini init
+drun-mcp codex init
 drun-mcp hermes init
 ```
 
@@ -79,8 +83,8 @@ drun-mcp hermes init
 and what it does). `drun-mcp bridges deregister-all` undoes every bridge that's
 currently registered in one call.
 
-See [Claude Code](#claude-code) and [Hermes](#hermes) for what each of these
-does.
+See [Claude Code](#claude-code), [Gemini CLI](#gemini-cli),
+[Codex CLI](#codex-cli), and [Hermes](#hermes) for what each of these does.
 
 Once installed, the following endpoints are available:
 
@@ -116,14 +120,15 @@ curl -fsSL https://raw.githubusercontent.com/dmosc/drun/main/uninstall.sh | bash
 
 1. Stops the background daemon and removes the `launchd` agent (macOS) or
    `systemd` user service (Linux).
-1. Unlinks the MCP from any bridge it was wired to (e.g. Claude Code, Hermes) —
-   via `drun-mcp bridges deregister-all`, which knows every bridge drun supports
-   without `uninstall.sh` having to name them.
+1. Unlinks the MCP from any bridge it was wired to (e.g. Claude Code, Gemini
+   CLI, Codex CLI, Hermes) — via `drun-mcp bridges deregister-all`, which knows
+   every bridge drun supports without `uninstall.sh` having to name them.
 1. Removes the drun MCP binary from `/usr/local/bin/drun-mcp`.
 1. Removes `.claude/settings.json` from each project so native Claude tools are
    restored automatically.
-1. Leaves `~/.drun/config.toml` and any `CLAUDE.md` files untouched; delete
-   these manually if not needed.
+1. Leaves `~/.drun/config.toml` and any per-project context files (`CLAUDE.md`,
+   `GEMINI.md`, `AGENTS.md`, `HERMES.md`) untouched; delete these manually if
+   not needed.
 
 ### Claude Code
 
@@ -176,6 +181,98 @@ them):
 
 ```bash
 drun-mcp claude deregister
+```
+
+### Gemini CLI
+
+#### Requirements
+
+- [Gemini CLI](https://github.com/google-gemini/gemini-cli).
+- The `drun-mcp` daemon [installed](#installing) above.
+
+#### Per-project setup
+
+From the root of any project you want drun to manage:
+
+```bash
+drun-mcp gemini init
+```
+
+This does two things:
+
+1. **Registers drun with Gemini CLI**
+   (`gemini mcp add --scope user --transport sse drun http://127.0.0.1:7273/sse`)
+   — a one-time, user-scope step; skipped if already registered. If the `gemini`
+   CLI isn't on `PATH`, it prints this command instead so you can run it
+   yourself once Gemini CLI is installed.
+2. **Creates two files in the current directory** (appends/skips if they already
+   exist):
+   - `.gemini/settings.json` — excludes drun-overlapping native tools
+     (`ShellTool`, `EditTool`, `WriteFileTool`, `ReadFileTool`, `GlobTool`,
+     `GrepTool`, `ReadManyFilesTool`, `LSTool`, `WebFetchTool`, `WebSearchTool`)
+     via `excludeTools`, for this workspace only.
+   - `GEMINI.md` — tells Gemini to use drun tools instead of native ones and how
+     to bootstrap a session (`create_session` then `session_mount`).
+
+Same as Claude Code, the tool restriction is per-project and the registration
+step is idempotent — re-running `drun-mcp gemini init` across projects doesn't
+re-register with Gemini CLI each time.
+
+To undo the global registration (leaving any per-project `.gemini/settings.json`
+and `GEMINI.md` files in place):
+
+```bash
+drun-mcp gemini deregister
+```
+
+### Codex CLI
+
+#### Requirements
+
+- [Codex CLI](https://developers.openai.com/codex).
+- The `drun-mcp` daemon [installed](#installing) above.
+
+#### Setup
+
+Run this from the root of any project you want drun to manage:
+
+```bash
+drun-mcp codex init
+```
+
+This does three things, all directly editing `~/.codex/config.toml` (a
+structural TOML merge via [`toml_edit`](https://docs.rs/toml_edit), so any
+comments or formatting you already have there survive untouched):
+
+1. **Creates `AGENTS.md` in the current directory** (skipped if it already
+   exists) — Codex's own auto-discovered context file, same role `CLAUDE.md`
+   plays for Claude Code.
+2. **Registers drun** under `[mcp_servers.drun]`, pointing at the daemon's
+   streamable-HTTP endpoint:
+
+   ```toml
+   [mcp_servers.drun]
+   url = "http://127.0.0.1:7273/mcp"
+   ```
+
+3. **Disables Codex's native shell tool** (`features.shell_tool = false`) so
+   Codex relies on drun's sandboxed `session_bash` instead of running commands
+   directly on the host. Because `config.toml` isn't project-scoped, this
+   applies to **every** Codex session on the machine, not just projects using
+   drun.
+
+No CLI availability check is needed here (unlike Claude Code, Gemini CLI, or
+Hermes) — this is a plain file edit, so it works whether or not the `codex`
+binary is on `PATH` yet.
+
+Steps 2 and 3 are machine-wide and idempotent — re-running `drun-mcp codex init`
+in a second project skips them and only step 1 (`AGENTS.md`) does anything new.
+
+To undo everything `codex init` did (deregisters drun and re-enables the shell
+tool; leaves any project's `AGENTS.md` in place):
+
+```bash
+drun-mcp codex deregister
 ```
 
 ### Hermes

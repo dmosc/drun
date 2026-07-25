@@ -172,14 +172,8 @@ fn add_to_array(config_path: &Path, key: &str, value: &str) -> Result<bool, Stri
         .ok_or_else(|| format!("'{key}' in {} is not an array", config_path.display()))?;
     array.push(value);
 
-    update_toml_config(config_path, doc.to_string())?;
+    crate::atomic_write(config_path, &doc.to_string())?;
     Ok(true)
-}
-
-fn update_toml_config(path: &Path, contents: String) -> Result<(), String> {
-    let tmp = path.with_extension("toml.tmp");
-    std::fs::write(&tmp, contents).map_err(|e| format!("cannot write {}: {e}", tmp.display()))?;
-    std::fs::rename(&tmp, path).map_err(|e| format!("cannot write {}: {e}", path.display()))
 }
 
 fn remove_domain_from(config_path: &Path, domain: &str) -> Result<bool, String> {
@@ -214,7 +208,7 @@ fn remove_from_array(config_path: &Path, key: &str, value: &str) -> Result<bool,
     };
     array.remove(idx);
 
-    update_toml_config(config_path, doc.to_string())?;
+    crate::atomic_write(config_path, &doc.to_string())?;
     Ok(true)
 }
 

@@ -36,6 +36,14 @@ pub(crate) fn drun_home() -> std::path::PathBuf {
     std::path::PathBuf::from(std::env::var("HOME").expect("HOME not set")).join(".drun")
 }
 
+/// Writes `contents` to `path` via a temp file + rename, so a reader never
+/// observes a half-written file.
+pub(crate) fn atomic_write(path: &std::path::Path, contents: &str) -> Result<(), String> {
+    let tmp = path.with_extension("tmp");
+    std::fs::write(&tmp, contents).map_err(|e| format!("cannot write {}: {e}", tmp.display()))?;
+    std::fs::rename(&tmp, path).map_err(|e| format!("cannot write {}: {e}", path.display()))
+}
+
 #[tokio::main]
 async fn main() -> SdkResult<()> {
     match std::env::args().nth(1).as_deref() {

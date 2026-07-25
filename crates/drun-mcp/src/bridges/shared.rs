@@ -1,4 +1,158 @@
-use std::path::Path;
+use std::{
+    io,
+    path::Path,
+    process::{Command, Stdio},
+};
+
+use serde_json::{Map, Value};
+
+/// A provider CLI exposing `<bin> mcp add|list|remove --scope user
+/// --transport sse <name> <url>` — the shape Claude Code and Gemini CLI both
+/// happen to share.
+pub(crate) struct CliMcp {
+    pub(crate) bin: &'static str,
+    pub(crate) display_name: &'static str,
+}
+
+impl CliMcp {
+    fn available(&self) -> bool {
+        match Command::new(self.bin)
+            .arg("--version")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+        {
+            Ok(_) => true,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => false,
+            Err(_) => true,
+        }
+    }
+
+    fn url(&self) -> String {
+        format!("http://127.0.0.1:{}/sse", crate::mcp_port())
+    }
+
+    fn is_registered(list_output: &str) -> bool {
+        list_output.lines().any(|l| l.starts_with("drun"))
+    }
+
+    fn add_command_hint(&self, url: &str) -> String {
+        format!(
+            "  {} mcp add --scope user --transport sse drun {url}",
+            self.bin
+        )
+    }
+
+    /// Registers drun as an SSE MCP server, user-scoped. Idempotent — checks
+    /// `<bin> mcp list` first. Prints the equivalent command instead of
+    /// running it if `bin` isn't on `PATH`, or if the add itself fails.
+    pub(crate) fn register(&self) {
+        let url = self.url();
+
+        if !self.available() {
+            eprintln!("drun: {} not found. Add drun manually:", self.display_name);
+            eprintln!("{}", self.add_command_hint(&url));
+            return;
+        }
+
+        let list_output = Command::new(self.bin)
+            .args(["mcp", "list"])
+            .output()
+            .ok()
+            .and_then(|o| String::from_utf8(o.stdout).ok())
+            .unwrap_or_default();
+
+        if Self::is_registered(&list_output) {
+            eprintln!(
+                "drun: already registered in {}, skipping.",
+                self.display_name
+            );
+            return;
+        }
+
+        let status = Command::new(self.bin)
+            .args([
+                "mcp",
+                "add",
+                "--scope",
+                "user",
+                "--transport",
+                "sse",
+                "drun",
+                &url,
+            ])
+            .status();
+
+        if matches!(status, Ok(s) if s.success()) {
+            eprintln!(
+                "drun: added to {} (SSE → {url}, user scope).",
+                self.display_name
+            );
+        } else {
+            eprintln!(
+                "drun: failed to register with {}. Add it manually:",
+                self.display_name
+            );
+            eprintln!("{}", self.add_command_hint(&url));
+        }
+    }
+
+    /// Undoes [`Self::register`]. No-op if `bin` isn't on `PATH`.
+    pub(crate) fn deregister(&self) {
+        if !self.available() {
+            return;
+        }
+
+        let status = Command::new(self.bin)
+            .args(["mcp", "remove", "--scope", "user", "drun"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+
+        if matches!(status, Ok(s) if s.success()) {
+            eprintln!("drun: removed from {} (user scope).", self.display_name);
+        }
+    }
+}
+
+/// Writes a per-project JSON settings file: creates it from `render_default()`
+/// if missing, otherwise merges drun's required keys into the existing file
+/// via `merge()`. Shared by bridges (Claude Code, Gemini CLI) whose
+/// native-tool-blocking config lives in such a file.
+pub(crate) fn write_json_settings(
+    settings_file: &Path,
+    label: &str,
+    render_default: impl Fn() -> String,
+    merge: impl Fn(&str) -> Result<Option<String>, String>,
+) {
+    if let Some(dir) = settings_file.parent() {
+        std::fs::create_dir_all(dir).expect("cannot create settings directory");
+    }
+
+    if !settings_file.exists() {
+        std::fs::write(settings_file, render_default()).expect("cannot write settings file");
+        eprintln!("drun: created {label}");
+        return;
+    }
+
+    let existing =
+        std::fs::read_to_string(settings_file).expect("cannot read existing settings file");
+    match merge(&existing) {
+        Ok(Some(merged)) => {
+            std::fs::write(settings_file, merged).expect("cannot write settings file");
+            eprintln!(
+                "drun: updated {label} — merged in drun's required settings (native tools are \
+                 now blocked for this project)"
+            );
+        }
+        Ok(None) => eprintln!("drun: {label} already configured for drun, skipping"),
+        Err(e) => eprintln!(
+            "drun: could not merge into existing {label} ({e}) — leaving it untouched. Native \
+             tools are NOT blocked until you add this yourself:\n{}",
+            render_default()
+        ),
+    }
+}
 
 pub(crate) fn drun_instructions_body(project_path: &str) -> String {
     format!(
@@ -111,9 +265,80 @@ pub(crate) fn allow_mount_path(drun_home: &Path, project_dir: &Path) {
     }
 }
 
+/// Adds any of `required` not already present in the JSON array at `key`
+/// (creating it if missing). Returns whether the array changed. Used by any
+/// bridge whose native-tool-blocking config is a JSON array under some key
+/// (Claude's `permissions.deny`/`.allow`, Gemini's `excludeTools`).
+pub(crate) fn merge_string_array(
+    obj: &mut Map<String, Value>,
+    key: &str,
+    required: &[&str],
+) -> Result<bool, String> {
+    let array = obj.entry(key).or_insert_with(|| Value::Array(Vec::new()));
+    let array = array
+        .as_array_mut()
+        .ok_or_else(|| format!("'{key}' is not an array"))?;
+
+    let mut changed = false;
+    for &item in required {
+        if !array.iter().any(|v| v.as_str() == Some(item)) {
+            array.push(Value::String(item.to_string()));
+            changed = true;
+        }
+    }
+    Ok(changed)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cli_mcp_is_registered_matches_a_leading_drun_line() {
+        assert!(CliMcp::is_registered(
+            "drun: http://127.0.0.1:7273/sse (SSE) - Ready\n"
+        ));
+        assert!(!CliMcp::is_registered("other-server: some-url - Ready\n"));
+        assert!(!CliMcp::is_registered(""));
+    }
+
+    #[test]
+    fn merge_string_array_creates_the_key_when_missing() {
+        let mut obj = Map::new();
+        let changed = merge_string_array(&mut obj, "excludeTools", &["ShellTool"]).unwrap();
+        assert!(changed);
+        assert_eq!(obj["excludeTools"][0], "ShellTool");
+    }
+
+    #[test]
+    fn merge_string_array_dedupes_against_existing_entries() {
+        let mut obj = Map::new();
+        obj.insert(
+            "excludeTools".into(),
+            Value::Array(vec!["ShellTool".into()]),
+        );
+        let changed = merge_string_array(&mut obj, "excludeTools", &["ShellTool"]).unwrap();
+        assert!(!changed);
+        assert_eq!(obj["excludeTools"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn merge_string_array_preserves_user_entries() {
+        let mut obj = Map::new();
+        obj.insert("excludeTools".into(), Value::Array(vec!["Custom".into()]));
+        merge_string_array(&mut obj, "excludeTools", &["ShellTool"]).unwrap();
+        let array = obj["excludeTools"].as_array().unwrap();
+        assert!(array.contains(&Value::String("Custom".into())));
+        assert!(array.contains(&Value::String("ShellTool".into())));
+    }
+
+    #[test]
+    fn merge_string_array_errors_when_key_is_not_an_array() {
+        let mut obj = Map::new();
+        obj.insert("excludeTools".into(), Value::String("oops".into()));
+        let err = merge_string_array(&mut obj, "excludeTools", &["ShellTool"]).unwrap_err();
+        assert!(err.contains("not an array"));
+    }
 
     #[test]
     fn drun_instructions_body_includes_the_project_path() {

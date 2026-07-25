@@ -1,4 +1,6 @@
 pub mod claude;
+pub mod codex;
+pub mod gemini;
 pub mod hermes;
 mod shared;
 
@@ -23,12 +25,13 @@ impl Scope {
 
 /// A single agentic coding tool drun can wire itself into.
 ///
-/// Implementations live in their own module (see `claude`, `hermes`) and are
-/// exposed on the CLI by name — `drun-mcp <name> init` / `drun-mcp <name>
-/// deregister` — via `REGISTRY` below, which both `main`'s dispatch and
-/// `drun-mcp bridges list`/`deregister-all` read generically. Adding a new
-/// bridge (Gemini, Codex, ...) means adding a new module that implements this
-/// trait and one line in `REGISTRY` — no other file needs to change.
+/// Implementations live in their own module (see `claude`, `gemini`, `codex`,
+/// `hermes`) and are exposed on the CLI by name — `drun-mcp <name> init` /
+/// `drun-mcp <name> deregister` — via `REGISTRY` below, which both `main`'s
+/// dispatch and `drun-mcp bridges list`/`deregister-all` read generically.
+/// Adding a new bridge (Cline, Amazon Q Developer CLI, ...) means adding a new
+/// module that implements this trait and one line in `REGISTRY` — no other
+/// file needs to change.
 pub trait Bridge {
     /// Stable identifier used on the CLI (`drun-mcp <name> init`).
     fn name(&self) -> &'static str;
@@ -47,7 +50,12 @@ pub trait Bridge {
 }
 
 /// Every bridge drun knows about. Display and dispatch order.
-pub const REGISTRY: &[&dyn Bridge] = &[&claude::Claude, &hermes::Hermes];
+pub const REGISTRY: &[&dyn Bridge] = &[
+    &claude::Claude,
+    &gemini::Gemini,
+    &codex::Codex,
+    &hermes::Hermes,
+];
 
 /// Looks up a bridge by its CLI name (`drun-mcp <name> ...`).
 pub fn find(name: &str) -> Option<&'static dyn Bridge> {
