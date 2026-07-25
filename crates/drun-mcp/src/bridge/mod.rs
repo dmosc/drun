@@ -129,7 +129,7 @@ pub trait Bridge {
             return;
         }
 
-        match crate::config_cmd::add_path_to(&config_path, project_dir) {
+        match crate::ConfigCmd::add_path_to(&config_path, project_dir) {
             Ok(true) => eprintln!("drun: added '{}' to mount_allowlist", project_dir.display()),
             Ok(false) => {}
             Err(e) => eprintln!(

@@ -268,7 +268,7 @@ impl DrunHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::response::text;
+    use crate::ResponseBuilder;
 
     fn session_map(entries: Vec<(&str, Session)>) -> SessionMap {
         let mut map = HashMap::new();
@@ -354,7 +354,7 @@ mod tests {
     fn with_session_returns_session_not_found_for_unknown_id() {
         let handler = DrunHandler::new(Config::default());
         let err = handler
-            .with_session("missing", |_session| Ok(text("ok")))
+            .with_session("missing", |_session| Ok(ResponseBuilder::text("ok")))
             .unwrap_err();
         assert!(err.to_string().contains("session_not_found"));
     }
@@ -362,7 +362,8 @@ mod tests {
     #[test]
     fn with_session_runs_closure_and_returns_its_result() {
         let (handler, session_id) = handler_with_session();
-        let result = handler.with_session(&session_id, |_session| Ok(text("hello")));
+        let result =
+            handler.with_session(&session_id, |_session| Ok(ResponseBuilder::text("hello")));
         assert!(result.is_ok());
     }
 
@@ -379,7 +380,7 @@ mod tests {
         let _guard = session_arc.lock().unwrap(); // simulate an in-flight call
 
         let err = handler
-            .with_session(&session_id, |_session| Ok(text("ok")))
+            .with_session(&session_id, |_session| Ok(ResponseBuilder::text("ok")))
             .unwrap_err();
         assert!(err.to_string().contains("session_busy"));
     }
@@ -408,7 +409,8 @@ mod tests {
         // Repeated calls must keep recovering and succeeding, not
         // permanently report session_busy.
         for _ in 0..2 {
-            let result = handler.with_session(&session_id, |_session| Ok(text("ok")));
+            let result =
+                handler.with_session(&session_id, |_session| Ok(ResponseBuilder::text("ok")));
             assert!(
                 result.is_ok(),
                 "a poisoned session must recover, not stay busy forever"
@@ -436,7 +438,8 @@ mod tests {
         assert!(session_arc.is_poisoned());
 
         for _ in 0..2 {
-            let result = handler.with_session_mut(&session_id, |_session| Ok(text("ok")));
+            let result =
+                handler.with_session_mut(&session_id, |_session| Ok(ResponseBuilder::text("ok")));
             assert!(
                 result.is_ok(),
                 "a poisoned session must recover, not stay busy forever"
@@ -448,7 +451,7 @@ mod tests {
     fn with_session_mut_returns_session_not_found_for_unknown_id() {
         let handler = DrunHandler::new(Config::default());
         let err = handler
-            .with_session_mut("missing", |_session| Ok(text("ok")))
+            .with_session_mut("missing", |_session| Ok(ResponseBuilder::text("ok")))
             .unwrap_err();
         assert!(err.to_string().contains("session_not_found"));
     }
@@ -466,7 +469,7 @@ mod tests {
         let _guard = session_arc.lock().unwrap();
 
         let err = handler
-            .with_session_mut(&session_id, |_session| Ok(text("ok")))
+            .with_session_mut(&session_id, |_session| Ok(ResponseBuilder::text("ok")))
             .unwrap_err();
         assert!(err.to_string().contains("session_busy"));
     }
@@ -486,7 +489,7 @@ mod tests {
         }
 
         handler
-            .with_session_mut(&session_id, |_session| Ok(text("ok")))
+            .with_session_mut(&session_id, |_session| Ok(ResponseBuilder::text("ok")))
             .unwrap();
 
         let session_arc = handler
@@ -522,7 +525,7 @@ mod tests {
             .insert(session_id.clone(), Arc::new(Mutex::new(session)));
 
         let err = handler
-            .with_session_mut(&session_id, |_session| Ok(text("ok")))
+            .with_session_mut(&session_id, |_session| Ok(ResponseBuilder::text("ok")))
             .unwrap_err();
         assert!(err.to_string().contains("session_idle"));
     }
@@ -542,7 +545,8 @@ mod tests {
             .unwrap()
             .insert(session_id.clone(), Arc::new(Mutex::new(session)));
 
-        let result = handler.with_session_mut(&session_id, |_session| Ok(text("ok")));
+        let result =
+            handler.with_session_mut(&session_id, |_session| Ok(ResponseBuilder::text("ok")));
         assert!(result.is_ok());
     }
 
@@ -562,7 +566,8 @@ mod tests {
             .unwrap()
             .insert(session_id.clone(), Arc::new(Mutex::new(session)));
 
-        let result = handler.with_session_mut(&session_id, |_session| Ok(text("ok")));
+        let result =
+            handler.with_session_mut(&session_id, |_session| Ok(ResponseBuilder::text("ok")));
         assert!(result.is_ok());
     }
 }

@@ -1,9 +1,9 @@
 //! MCP tool dispatch: implements ServerHandler to route each tool call to the
 //! appropriate Session method, wrapping results as MCP CallToolResult responses.
 
+use crate::ResponseBuilder;
 use crate::errors::DrunError;
 use crate::handler::{self, DrunHandler};
-use crate::response::{file_content, json, text};
 use crate::state::{
     CheckpointSummary, SessionState, SessionSummary, SessionTreeNode, SnapshotEntry,
 };
@@ -108,7 +108,7 @@ impl DrunHandler {
         self.insert_session(session_id.clone(), session)
             .map_err(|max| DrunError::session_limit_reached(max).into_tool_err())?;
         self.current_sessions.set(connection_id, session_id);
-        Ok(json(&state))
+        Ok(ResponseBuilder::json(&state))
     }
 
     fn handle_session_switch(
@@ -120,7 +120,7 @@ impl DrunHandler {
         self.current_sessions
             .set(connection_id, t.session_id.clone());
         let session = Self::lock_recovering(&t.session_id, &arc);
-        Ok(json(&SessionState::compute(
+        Ok(ResponseBuilder::json(&SessionState::compute(
             &t.session_id,
             &session,
             None,
@@ -148,13 +148,16 @@ impl DrunHandler {
         self.insert_session(fork_id.clone(), forked_session)
             .map_err(|max| DrunError::session_limit_reached(max).into_tool_err())?;
         self.current_sessions.set(connection_id, fork_id);
-        Ok(json(&state))
+        Ok(ResponseBuilder::json(&state))
     }
 
     fn handle_session_list(&self, connection_id: &str) -> Result<CallToolResult, CallToolError> {
         let sessions = self.sessions.lock().unwrap().clone();
         let current_id = self.current_sessions.get(connection_id);
-        Ok(json(&SessionSummary::all(&sessions, current_id.as_deref())))
+        Ok(ResponseBuilder::json(&SessionSummary::all(
+            &sessions,
+            current_id.as_deref(),
+        )))
     }
 
     fn handle_session_close(&self, connection_id: &str) -> Result<CallToolResult, CallToolError> {
@@ -165,12 +168,12 @@ impl DrunHandler {
             }
             handler::CloseSessionError::Io(err) => DrunError::internal(err).into_tool_err(),
         })?;
-        Ok(text(format!("closed {session_id}")))
+        Ok(ResponseBuilder::text(format!("closed {session_id}")))
     }
 
     fn handle_session_history(&self, connection_id: &str) -> Result<CallToolResult, CallToolError> {
         self.with_current_session(connection_id, |_session_id, session| {
-            Ok(json(&CheckpointSummary::history(session)))
+            Ok(ResponseBuilder::json(&CheckpointSummary::history(session)))
         })
     }
 
@@ -179,7 +182,7 @@ impl DrunHandler {
         connection_id: &str,
     ) -> Result<CallToolResult, CallToolError> {
         self.with_current_session(connection_id, |session_id, session| {
-            Ok(json(&SessionState::compute(
+            Ok(ResponseBuilder::json(&SessionState::compute(
                 session_id,
                 session,
                 None,
@@ -209,7 +212,7 @@ impl DrunHandler {
                             let _ = progress_tx.send(chunk);
                         })
                         .map_err(|e| DrunError::from_exec(e).into_tool_err())?;
-                    Ok(json(&SessionState::compute(
+                    Ok(ResponseBuilder::json(&SessionState::compute(
                         &session_id,
                         session,
                         Some(&previous_files),
@@ -239,7 +242,7 @@ impl DrunHandler {
             session
                 .rollback(checkpoint_id)
                 .map_err(|e| DrunError::from_exec(e).into_tool_err())?;
-            Ok(json(&SessionState::compute(
+            Ok(ResponseBuilder::json(&SessionState::compute(
                 session_id,
                 session,
                 Some(&previous_files),
@@ -260,7 +263,7 @@ impl DrunHandler {
                 .get(&t.path)
                 .ok_or_else(|| DrunError::file_not_found(&t.path).into_tool_err())?;
             if t.offset.is_none() && t.limit.is_none() {
-                return Ok(file_content(&t.path, all_bytes.as_slice()));
+                return Ok(ResponseBuilder::file_content(&t.path, all_bytes.as_slice()));
             }
             let total = all_bytes.len();
             let start = (t.offset.unwrap_or(0) as usize).min(total);
@@ -273,7 +276,7 @@ impl DrunHandler {
                 Ok(s) => (s.to_string(), "text"),
                 Err(_) => (BASE64.encode(slice), "base64"),
             };
-            Ok(text(
+            Ok(ResponseBuilder::text(
                 serde_json::json!({
                     "offset": start,
                     "length": slice.len(),
@@ -304,7 +307,7 @@ impl DrunHandler {
             session
                 .write_file(&t.path, bytes)
                 .map_err(|e| DrunError::from_exec(e).into_tool_err())?;
-            Ok(json(&SessionState::compute(
+            Ok(ResponseBuilder::json(&SessionState::compute(
                 session_id,
                 session,
                 Some(&previous_files),
@@ -323,7 +326,7 @@ impl DrunHandler {
             session
                 .delete_file(&t.path)
                 .map_err(|e| DrunError::from_exec(e).into_tool_err())?;
-            Ok(json(&SessionState::compute(
+            Ok(ResponseBuilder::json(&SessionState::compute(
                 session_id,
                 session,
                 Some(&previous_files),
@@ -342,7 +345,7 @@ impl DrunHandler {
             session
                 .mount(std::path::Path::new(&t.path))
                 .map_err(|e| DrunError::from_exec(e).into_tool_err())?;
-            Ok(json(&SessionState::compute(
+            Ok(ResponseBuilder::json(&SessionState::compute(
                 session_id,
                 session,
                 Some(&previous_files),
@@ -368,7 +371,7 @@ impl DrunHandler {
             let diff = session
                 .diff(from, to)
                 .map_err(|e| DrunError::from_exec(e).into_tool_err())?;
-            Ok(text(if diff.is_empty() {
+            Ok(ResponseBuilder::text(if diff.is_empty() {
                 "no changes".into()
             } else {
                 diff
@@ -389,7 +392,7 @@ impl DrunHandler {
                 .iter()
                 .map(|p| p.to_string_lossy().into_owned())
                 .collect();
-            Ok(json(&SessionState::compute(
+            Ok(ResponseBuilder::json(&SessionState::compute(
                 session_id,
                 session,
                 None,
@@ -400,11 +403,14 @@ impl DrunHandler {
 
     fn handle_session_tree(&self) -> Result<CallToolResult, CallToolError> {
         let sessions = self.sessions.lock().unwrap().clone();
-        Ok(json(&SessionTreeNode::forest(&sessions, &self.live_output)))
+        Ok(ResponseBuilder::json(&SessionTreeNode::forest(
+            &sessions,
+            &self.live_output,
+        )))
     }
 
     fn handle_list_snapshots(&self) -> Result<CallToolResult, CallToolError> {
-        Ok(json(&SnapshotEntry::catalog(
+        Ok(ResponseBuilder::json(&SnapshotEntry::catalog(
             &self.config.get().snapshots_dir,
         )))
     }
@@ -428,7 +434,7 @@ impl DrunHandler {
                 .iter()
                 .map(|p| p.to_string_lossy().into_owned())
                 .collect();
-            Ok(text(
+            Ok(ResponseBuilder::text(
                 serde_json::json!({
                     "output_dir": output_dir.to_string_lossy(),
                     "exported_files": paths,
@@ -514,7 +520,7 @@ impl DrunHandler {
             session
                 .write_file(&save_path, body_bytes.to_vec())
                 .map_err(|e| DrunError::from_exec(e).into_tool_err())?;
-            Ok(text(
+            Ok(ResponseBuilder::text(
                 serde_json::json!({
                     "status": status,
                     "bytes": bytes_len,
@@ -528,7 +534,7 @@ impl DrunHandler {
 
     fn handle_get_config(&self) -> Result<CallToolResult, CallToolError> {
         let config = self.config.get();
-        Ok(text(
+        Ok(ResponseBuilder::text(
             serde_json::json!({
                 "domain_allowlist": config.domain_allowlist,
                 "mount_allowlist": config
@@ -577,7 +583,7 @@ impl DrunHandler {
                 .snapshot()
                 .write(&output_path)
                 .map_err(|e| DrunError::internal(e).into_tool_err())?;
-            Ok(text(
+            Ok(ResponseBuilder::text(
                 serde_json::json!({
                     "snapshot_path": output_path.to_string_lossy(),
                 })
@@ -597,7 +603,7 @@ impl DrunHandler {
             return Err(DrunError::env_var_denied(&t.name).into_tool_err());
         }
         let value = std::env::var(&t.name).unwrap_or_default();
-        Ok(text(
+        Ok(ResponseBuilder::text(
             serde_json::json!({ "name": t.name, "value": value }).to_string(),
         ))
     }
@@ -617,7 +623,7 @@ impl DrunHandler {
         self.insert_session(session_id.clone(), restored)
             .map_err(|max| DrunError::session_limit_reached(max).into_tool_err())?;
         self.current_sessions.set(connection_id, session_id);
-        Ok(json(&state))
+        Ok(ResponseBuilder::json(&state))
     }
 
     fn handle_session_label(
@@ -627,7 +633,7 @@ impl DrunHandler {
     ) -> Result<CallToolResult, CallToolError> {
         self.with_current_session_mut(connection_id, |session_id, session| {
             session.set_label(t.label);
-            Ok(json(&SessionState::compute(
+            Ok(ResponseBuilder::json(&SessionState::compute(
                 session_id,
                 session,
                 None,
@@ -649,7 +655,7 @@ impl DrunHandler {
             session
                 .set_checkpoint_label(checkpoint_id, t.label)
                 .map_err(|e| DrunError::from_exec(e).into_tool_err())?;
-            Ok(json(&CheckpointSummary::history(session)))
+            Ok(ResponseBuilder::json(&CheckpointSummary::history(session)))
         })
     }
 
@@ -666,7 +672,7 @@ impl DrunHandler {
                     t.label,
                 )
                 .map_err(|e| DrunError::from_exec(e).into_tool_err())?;
-            Ok(json(&CheckpointSummary::history(session)))
+            Ok(ResponseBuilder::json(&CheckpointSummary::history(session)))
         })
     }
 
@@ -688,7 +694,7 @@ impl DrunHandler {
             session
                 .merge_from(&source, source_checkpoint_id, t.keys)
                 .map_err(|e| DrunError::from_exec(e).into_tool_err())?;
-            Ok(json(&SessionState::compute(
+            Ok(ResponseBuilder::json(&SessionState::compute(
                 &session_id,
                 session,
                 None,
@@ -706,7 +712,7 @@ impl DrunHandler {
             session
                 .drop_checkpoints(t.from_checkpoint_id as usize, t.to_checkpoint_id as usize)
                 .map_err(|e| DrunError::from_exec(e).into_tool_err())?;
-            Ok(json(&CheckpointSummary::history(session)))
+            Ok(ResponseBuilder::json(&CheckpointSummary::history(session)))
         })
     }
 
@@ -744,7 +750,7 @@ impl DrunHandler {
                 .limit
                 .map(|l| start.saturating_add(l as usize).min(total))
                 .unwrap_or(total);
-            Ok(text(
+            Ok(ResponseBuilder::text(
                 serde_json::json!({
                     "stream": stream,
                     "checkpoint_id": checkpoint_id,

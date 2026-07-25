@@ -2,214 +2,218 @@ use std::path::{Path, PathBuf};
 
 use toml_edit::{Array, DocumentMut, Item, Value};
 
-pub fn run(args: &[String]) {
-    match args.first().map(String::as_str) {
-        Some("add-domain") => match args.get(1) {
-            Some(domain) => add_domain(domain),
-            None => usage_and_exit("drun-mcp config add-domain <domain>"),
-        },
-        Some("add-path") => match args.get(1) {
-            Some(path) => add_path(path),
-            None => usage_and_exit("drun-mcp config add-path <path>"),
-        },
-        Some("remove-domain") => match args.get(1) {
-            Some(domain) => remove_domain(domain),
-            None => usage_and_exit("drun-mcp config remove-domain <domain>"),
-        },
-        Some("remove-path") => match args.get(1) {
-            Some(path) => remove_path(path),
-            None => usage_and_exit("drun-mcp config remove-path <path>"),
-        },
-        Some("list") => list(),
-        _ => usage_and_exit(
-            "drun-mcp config <add-domain|add-path|remove-domain|remove-path|list> [args]",
-        ),
-    }
-}
+pub(crate) struct ConfigCmd;
 
-fn usage_and_exit(usage: &str) -> ! {
-    eprintln!("usage: {usage}");
-    std::process::exit(1);
-}
-
-fn config_path() -> PathBuf {
-    crate::Env.drun_home().join("config.toml")
-}
-
-fn add_domain(domain: &str) {
-    let path = config_path();
-    match add_domain_to(&path, domain) {
-        Ok(true) => eprintln!(
-            "drun: added '{domain}' to domain_allowlist in {}",
-            path.display()
-        ),
-        Ok(false) => eprintln!("drun: '{domain}' already in domain_allowlist, skipping"),
-        Err(e) => {
-            eprintln!("drun: {e}");
-            std::process::exit(1);
+impl ConfigCmd {
+    pub(crate) fn run(args: &[String]) {
+        match args.first().map(String::as_str) {
+            Some("add-domain") => match args.get(1) {
+                Some(domain) => Self::add_domain(domain),
+                None => Self::usage_and_exit("drun-mcp config add-domain <domain>"),
+            },
+            Some("add-path") => match args.get(1) {
+                Some(path) => Self::add_path(path),
+                None => Self::usage_and_exit("drun-mcp config add-path <path>"),
+            },
+            Some("remove-domain") => match args.get(1) {
+                Some(domain) => Self::remove_domain(domain),
+                None => Self::usage_and_exit("drun-mcp config remove-domain <domain>"),
+            },
+            Some("remove-path") => match args.get(1) {
+                Some(path) => Self::remove_path(path),
+                None => Self::usage_and_exit("drun-mcp config remove-path <path>"),
+            },
+            Some("list") => Self::list(),
+            _ => Self::usage_and_exit(
+                "drun-mcp config <add-domain|add-path|remove-domain|remove-path|list> [args]",
+            ),
         }
     }
-}
 
-fn add_path(path_arg: &str) {
-    let abs = match Path::new(path_arg).canonicalize() {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!("drun: cannot resolve path '{path_arg}': {e}");
-            std::process::exit(1);
-        }
-    };
-    let path = config_path();
-    match add_path_to(&path, &abs) {
-        Ok(true) => eprintln!(
-            "drun: added '{}' to mount_allowlist in {}",
-            abs.display(),
-            path.display()
-        ),
-        Ok(false) => eprintln!(
-            "drun: '{}' already in mount_allowlist, skipping",
-            abs.display()
-        ),
-        Err(e) => {
-            eprintln!("drun: {e}");
-            std::process::exit(1);
+    fn usage_and_exit(usage: &str) -> ! {
+        eprintln!("usage: {usage}");
+        std::process::exit(1);
+    }
+
+    fn config_path() -> PathBuf {
+        crate::Env.drun_home().join("config.toml")
+    }
+
+    fn add_domain(domain: &str) {
+        let path = Self::config_path();
+        match Self::add_domain_to(&path, domain) {
+            Ok(true) => eprintln!(
+                "drun: added '{domain}' to domain_allowlist in {}",
+                path.display()
+            ),
+            Ok(false) => eprintln!("drun: '{domain}' already in domain_allowlist, skipping"),
+            Err(e) => {
+                eprintln!("drun: {e}");
+                std::process::exit(1);
+            }
         }
     }
-}
 
-fn remove_domain(domain: &str) {
-    let path = config_path();
-    match remove_domain_from(&path, domain) {
-        Ok(true) => eprintln!(
-            "drun: removed '{domain}' from domain_allowlist in {}",
-            path.display()
-        ),
-        Ok(false) => eprintln!("drun: '{domain}' not in domain_allowlist, skipping"),
-        Err(e) => {
-            eprintln!("drun: {e}");
-            std::process::exit(1);
+    fn add_path(path_arg: &str) {
+        let abs = match Path::new(path_arg).canonicalize() {
+            Ok(p) => p,
+            Err(e) => {
+                eprintln!("drun: cannot resolve path '{path_arg}': {e}");
+                std::process::exit(1);
+            }
+        };
+        let path = Self::config_path();
+        match Self::add_path_to(&path, &abs) {
+            Ok(true) => eprintln!(
+                "drun: added '{}' to mount_allowlist in {}",
+                abs.display(),
+                path.display()
+            ),
+            Ok(false) => eprintln!(
+                "drun: '{}' already in mount_allowlist, skipping",
+                abs.display()
+            ),
+            Err(e) => {
+                eprintln!("drun: {e}");
+                std::process::exit(1);
+            }
         }
     }
-}
 
-fn remove_path(path_arg: &str) {
-    // Unlike `add-path`, don't require the path to still exist on disk —
-    // removing a stale entry for something that's since been deleted should
-    // still work. Canonicalize on a best-effort basis so a path that *is*
-    // still present matches however it was originally stored.
-    let value = Path::new(path_arg)
-        .canonicalize()
-        .map(|p| p.to_string_lossy().into_owned())
-        .unwrap_or_else(|_| path_arg.to_string());
-    let path = config_path();
-    match remove_path_from(&path, &value) {
-        Ok(true) => eprintln!(
-            "drun: removed '{value}' from mount_allowlist in {}",
-            path.display()
-        ),
-        Ok(false) => eprintln!("drun: '{value}' not in mount_allowlist, skipping"),
-        Err(e) => {
-            eprintln!("drun: {e}");
-            std::process::exit(1);
+    fn remove_domain(domain: &str) {
+        let path = Self::config_path();
+        match Self::remove_domain_from(&path, domain) {
+            Ok(true) => eprintln!(
+                "drun: removed '{domain}' from domain_allowlist in {}",
+                path.display()
+            ),
+            Ok(false) => eprintln!("drun: '{domain}' not in domain_allowlist, skipping"),
+            Err(e) => {
+                eprintln!("drun: {e}");
+                std::process::exit(1);
+            }
         }
     }
-}
 
-fn list() {
-    let path = config_path();
-    let config = drun_core::Config::load_from(Some(&path));
-    println!("domain_allowlist:");
-    for domain in &config.domain_allowlist {
-        println!("  - {domain}");
-    }
-    println!("mount_allowlist:");
-    if config.mount_allowlist.is_empty() {
-        println!("  (empty; all paths permitted)");
-    } else {
-        for path in &config.mount_allowlist {
-            println!("  - {}", path.display());
+    fn remove_path(path_arg: &str) {
+        // Unlike `add-path`, don't require the path to still exist on disk —
+        // removing a stale entry for something that's since been deleted should
+        // still work. Canonicalize on a best-effort basis so a path that *is*
+        // still present matches however it was originally stored.
+        let value = Path::new(path_arg)
+            .canonicalize()
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_else(|_| path_arg.to_string());
+        let path = Self::config_path();
+        match Self::remove_path_from(&path, &value) {
+            Ok(true) => eprintln!(
+                "drun: removed '{value}' from mount_allowlist in {}",
+                path.display()
+            ),
+            Ok(false) => eprintln!("drun: '{value}' not in mount_allowlist, skipping"),
+            Err(e) => {
+                eprintln!("drun: {e}");
+                std::process::exit(1);
+            }
         }
     }
-}
 
-fn add_domain_to(config_path: &Path, domain: &str) -> Result<bool, String> {
-    add_to_array(config_path, "domain_allowlist", domain)
-}
-
-pub(crate) fn add_path_to(config_path: &Path, path: &Path) -> Result<bool, String> {
-    let value = path
-        .to_str()
-        .ok_or_else(|| format!("non-UTF-8 path: {}", path.display()))?;
-    add_to_array(config_path, "mount_allowlist", value)
-}
-
-fn add_to_array(config_path: &Path, key: &str, value: &str) -> Result<bool, String> {
-    if !config_path.exists() {
-        return Err(format!(
-            "no config found at {} — run install.sh first",
-            config_path.display()
-        ));
-    }
-    let contents = std::fs::read_to_string(config_path)
-        .map_err(|e| format!("cannot read {}: {e}", config_path.display()))?;
-    let mut doc = contents
-        .parse::<DocumentMut>()
-        .map_err(|e| format!("cannot parse {}: {e}", config_path.display()))?;
-
-    let already_present = doc
-        .get(key)
-        .and_then(Item::as_array)
-        .is_some_and(|arr| arr.iter().any(|v| v.as_str() == Some(value)));
-    if already_present {
-        return Ok(false);
+    fn list() {
+        let path = Self::config_path();
+        let config = drun_core::Config::load_from(Some(&path));
+        println!("domain_allowlist:");
+        for domain in &config.domain_allowlist {
+            println!("  - {domain}");
+        }
+        println!("mount_allowlist:");
+        if config.mount_allowlist.is_empty() {
+            println!("  (empty; all paths permitted)");
+        } else {
+            for path in &config.mount_allowlist {
+                println!("  - {}", path.display());
+            }
+        }
     }
 
-    let entry = doc
-        .entry(key)
-        .or_insert_with(|| Item::Value(Value::Array(Array::new())));
-    let array = entry
-        .as_array_mut()
-        .ok_or_else(|| format!("'{key}' in {} is not an array", config_path.display()))?;
-    array.push(value);
-
-    crate::FileManager::write(config_path, &doc.to_string())?;
-    Ok(true)
-}
-
-fn remove_domain_from(config_path: &Path, domain: &str) -> Result<bool, String> {
-    remove_from_array(config_path, "domain_allowlist", domain)
-}
-
-fn remove_path_from(config_path: &Path, path: &str) -> Result<bool, String> {
-    remove_from_array(config_path, "mount_allowlist", path)
-}
-
-/// Removes the first entry equal to `value` from the array at `key`,
-/// preserving every comment and formatting already in the file. Returns
-/// `Ok(false)` without writing if `value` isn't present.
-fn remove_from_array(config_path: &Path, key: &str, value: &str) -> Result<bool, String> {
-    if !config_path.exists() {
-        return Err(format!(
-            "no config found at {} — run install.sh first",
-            config_path.display()
-        ));
+    fn add_domain_to(config_path: &Path, domain: &str) -> Result<bool, String> {
+        Self::add_to_array(config_path, "domain_allowlist", domain)
     }
-    let contents = std::fs::read_to_string(config_path)
-        .map_err(|e| format!("cannot read {}: {e}", config_path.display()))?;
-    let mut doc = contents
-        .parse::<DocumentMut>()
-        .map_err(|e| format!("cannot parse {}: {e}", config_path.display()))?;
 
-    let Some(array) = doc.get_mut(key).and_then(Item::as_array_mut) else {
-        return Ok(false);
-    };
-    let Some(idx) = array.iter().position(|v| v.as_str() == Some(value)) else {
-        return Ok(false);
-    };
-    array.remove(idx);
+    pub(crate) fn add_path_to(config_path: &Path, path: &Path) -> Result<bool, String> {
+        let value = path
+            .to_str()
+            .ok_or_else(|| format!("non-UTF-8 path: {}", path.display()))?;
+        Self::add_to_array(config_path, "mount_allowlist", value)
+    }
 
-    crate::FileManager::write(config_path, &doc.to_string())?;
-    Ok(true)
+    fn add_to_array(config_path: &Path, key: &str, value: &str) -> Result<bool, String> {
+        if !config_path.exists() {
+            return Err(format!(
+                "no config found at {} — run install.sh first",
+                config_path.display()
+            ));
+        }
+        let contents = std::fs::read_to_string(config_path)
+            .map_err(|e| format!("cannot read {}: {e}", config_path.display()))?;
+        let mut doc = contents
+            .parse::<DocumentMut>()
+            .map_err(|e| format!("cannot parse {}: {e}", config_path.display()))?;
+
+        let already_present = doc
+            .get(key)
+            .and_then(Item::as_array)
+            .is_some_and(|arr| arr.iter().any(|v| v.as_str() == Some(value)));
+        if already_present {
+            return Ok(false);
+        }
+
+        let entry = doc
+            .entry(key)
+            .or_insert_with(|| Item::Value(Value::Array(Array::new())));
+        let array = entry
+            .as_array_mut()
+            .ok_or_else(|| format!("'{key}' in {} is not an array", config_path.display()))?;
+        array.push(value);
+
+        crate::FileManager::write(config_path, &doc.to_string())?;
+        Ok(true)
+    }
+
+    fn remove_domain_from(config_path: &Path, domain: &str) -> Result<bool, String> {
+        Self::remove_from_array(config_path, "domain_allowlist", domain)
+    }
+
+    fn remove_path_from(config_path: &Path, path: &str) -> Result<bool, String> {
+        Self::remove_from_array(config_path, "mount_allowlist", path)
+    }
+
+    /// Removes the first entry equal to `value` from the array at `key`,
+    /// preserving every comment and formatting already in the file. Returns
+    /// `Ok(false)` without writing if `value` isn't present.
+    fn remove_from_array(config_path: &Path, key: &str, value: &str) -> Result<bool, String> {
+        if !config_path.exists() {
+            return Err(format!(
+                "no config found at {} — run install.sh first",
+                config_path.display()
+            ));
+        }
+        let contents = std::fs::read_to_string(config_path)
+            .map_err(|e| format!("cannot read {}: {e}", config_path.display()))?;
+        let mut doc = contents
+            .parse::<DocumentMut>()
+            .map_err(|e| format!("cannot parse {}: {e}", config_path.display()))?;
+
+        let Some(array) = doc.get_mut(key).and_then(Item::as_array_mut) else {
+            return Ok(false);
+        };
+        let Some(idx) = array.iter().position(|v| v.as_str() == Some(value)) else {
+            return Ok(false);
+        };
+        array.remove(idx);
+
+        crate::FileManager::write(config_path, &doc.to_string())?;
+        Ok(true)
+    }
 }
 
 #[cfg(test)]
@@ -235,7 +239,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = write_sample_config(dir.path());
 
-        let added = add_domain_to(&path, "example.com").unwrap();
+        let added = ConfigCmd::add_domain_to(&path, "example.com").unwrap();
         assert!(added);
 
         let content = std::fs::read_to_string(&path).unwrap();
@@ -250,7 +254,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = write_sample_config(dir.path());
 
-        add_domain_to(&path, "example.com").unwrap();
+        ConfigCmd::add_domain_to(&path, "example.com").unwrap();
 
         let config = drun_core::Config::load_from(Some(&path));
         assert!(config.domain_allowlist.contains(&"example.com".to_string()));
@@ -261,8 +265,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = write_sample_config(dir.path());
 
-        assert!(add_domain_to(&path, "example.com").unwrap());
-        assert!(!add_domain_to(&path, "example.com").unwrap());
+        assert!(ConfigCmd::add_domain_to(&path, "example.com").unwrap());
+        assert!(!ConfigCmd::add_domain_to(&path, "example.com").unwrap());
 
         let content = std::fs::read_to_string(&path).unwrap();
         assert_eq!(content.matches("example.com").count(), 1);
@@ -274,7 +278,7 @@ mod tests {
         let path = write_sample_config(dir.path());
         let mount_dir = tempfile::tempdir().unwrap();
 
-        let added = add_path_to(&path, mount_dir.path()).unwrap();
+        let added = ConfigCmd::add_path_to(&path, mount_dir.path()).unwrap();
         assert!(added);
 
         let content = std::fs::read_to_string(&path).unwrap();
@@ -287,17 +291,17 @@ mod tests {
         let path = write_sample_config(dir.path());
         let mount_dir = tempfile::tempdir().unwrap();
 
-        assert!(add_path_to(&path, mount_dir.path()).unwrap());
-        assert!(!add_path_to(&path, mount_dir.path()).unwrap());
+        assert!(ConfigCmd::add_path_to(&path, mount_dir.path()).unwrap());
+        assert!(!ConfigCmd::add_path_to(&path, mount_dir.path()).unwrap());
     }
 
     #[test]
     fn remove_domain_deletes_the_entry_and_preserves_comments() {
         let dir = tempfile::tempdir().unwrap();
         let path = write_sample_config(dir.path());
-        add_domain_to(&path, "example.com").unwrap();
+        ConfigCmd::add_domain_to(&path, "example.com").unwrap();
 
-        let removed = remove_domain_from(&path, "example.com").unwrap();
+        let removed = ConfigCmd::remove_domain_from(&path, "example.com").unwrap();
         assert!(removed);
 
         let content = std::fs::read_to_string(&path).unwrap();
@@ -311,7 +315,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = write_sample_config(dir.path());
 
-        assert!(!remove_domain_from(&path, "example.com").unwrap());
+        assert!(!ConfigCmd::remove_domain_from(&path, "example.com").unwrap());
     }
 
     #[test]
@@ -320,9 +324,9 @@ mod tests {
         let path = write_sample_config(dir.path());
         let mount_dir = tempfile::tempdir().unwrap();
         let value = mount_dir.path().to_str().unwrap();
-        add_path_to(&path, mount_dir.path()).unwrap();
+        ConfigCmd::add_path_to(&path, mount_dir.path()).unwrap();
 
-        let removed = remove_path_from(&path, value).unwrap();
+        let removed = ConfigCmd::remove_path_from(&path, value).unwrap();
         assert!(removed);
 
         let content = std::fs::read_to_string(&path).unwrap();
@@ -334,7 +338,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = write_sample_config(dir.path());
 
-        assert!(!remove_path_from(&path, "/nonexistent").unwrap());
+        assert!(!ConfigCmd::remove_path_from(&path, "/nonexistent").unwrap());
     }
 
     #[test]
@@ -342,7 +346,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("config.toml");
 
-        let err = remove_domain_from(&path, "example.com").unwrap_err();
+        let err = ConfigCmd::remove_domain_from(&path, "example.com").unwrap_err();
         assert!(err.contains("install.sh"));
     }
 
@@ -351,7 +355,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("config.toml");
 
-        let err = add_domain_to(&path, "example.com").unwrap_err();
+        let err = ConfigCmd::add_domain_to(&path, "example.com").unwrap_err();
         assert!(err.contains("install.sh"));
     }
 
@@ -361,7 +365,7 @@ mod tests {
         let path = dir.path().join("config.toml");
         std::fs::write(&path, "this is not valid toml {{{").unwrap();
 
-        assert!(add_domain_to(&path, "example.com").is_err());
+        assert!(ConfigCmd::add_domain_to(&path, "example.com").is_err());
     }
 
     #[test]
@@ -370,7 +374,7 @@ mod tests {
         let path = dir.path().join("config.toml");
         std::fs::write(&path, "domain_allowlist = \"not-an-array\"\n").unwrap();
 
-        let err = add_domain_to(&path, "example.com").unwrap_err();
+        let err = ConfigCmd::add_domain_to(&path, "example.com").unwrap_err();
         assert!(err.contains("not an array"));
     }
 
@@ -380,7 +384,7 @@ mod tests {
         let path = dir.path().join("config.toml");
         std::fs::write(&path, "this is not valid toml {{{").unwrap();
 
-        assert!(remove_domain_from(&path, "example.com").is_err());
+        assert!(ConfigCmd::remove_domain_from(&path, "example.com").is_err());
     }
 
     #[test]
@@ -389,6 +393,6 @@ mod tests {
         let path = dir.path().join("config.toml");
         std::fs::write(&path, "# no domain_allowlist key at all\n").unwrap();
 
-        assert!(!remove_domain_from(&path, "example.com").unwrap());
+        assert!(!ConfigCmd::remove_domain_from(&path, "example.com").unwrap());
     }
 }

@@ -11,9 +11,11 @@ mod state;
 mod tools;
 mod web;
 
+pub(crate) use config_cmd::ConfigCmd;
 pub(crate) use env::Env;
 pub(crate) use file_manager::FileManager;
 use handler::DrunHandler;
+pub(crate) use response::ResponseBuilder;
 use rust_mcp_sdk::{
     ToMcpServerHandler,
     error::SdkResult,
@@ -40,7 +42,7 @@ async fn main() -> SdkResult<()> {
         }
         Some("config") => {
             let rest: Vec<String> = std::env::args().skip(2).collect();
-            config_cmd::run(&rest);
+            ConfigCmd::run(&rest);
             return Ok(());
         }
         Some("--help" | "-h") => {

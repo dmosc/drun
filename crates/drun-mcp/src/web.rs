@@ -1,6 +1,6 @@
+use crate::ResponseBuilder;
 use crate::handler::{CloseSessionError, DrunHandler, SessionMap};
 use crate::live_output::LiveEntry;
-use crate::response::mime_type_for_extension;
 use crate::state;
 use axum::{
     Router,
@@ -393,7 +393,7 @@ impl WebServer {
 
     fn file_response(path: &str, bytes: &[u8]) -> Response {
         let mut headers = HeaderMap::new();
-        if let Some(mime_type) = mime_type_for_extension(path) {
+        if let Some(mime_type) = ResponseBuilder::mime_type_for_extension(path) {
             headers.insert("content-type", HeaderValue::from_static(mime_type));
             return (StatusCode::OK, headers, bytes.to_vec()).into_response();
         }
