@@ -1,5 +1,5 @@
 use std::{
-    io,
+    io::{self, Write},
     path::Path,
     process::{Command, Stdio},
 };
@@ -245,6 +245,24 @@ pub(crate) fn write_project_instructions(project_dir: &Path, filename: &str, con
     }
 }
 
+pub(crate) fn register_project(drun_home: &Path, project_dir: &Path) {
+    std::fs::create_dir_all(drun_home).expect("cannot create ~/.drun");
+    let registry = drun_home.join("projects");
+    let project_path = project_dir.to_str().expect("non-UTF-8 project path");
+
+    let existing = std::fs::read_to_string(&registry).unwrap_or_default();
+    if existing.lines().any(|l| l == project_path) {
+        return;
+    }
+
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&registry)
+        .expect("cannot open project registry");
+    writeln!(file, "{project_path}").expect("cannot write to project registry");
+}
+
 /// Adds `project_dir` to `mount_allowlist` in `drun_home`'s config.toml, if
 /// that config already exists (i.e. drun-mcp itself has been installed) —
 /// a no-op otherwise, since there's nothing to update yet.
@@ -387,6 +405,37 @@ mod tests {
             std::fs::read_to_string(dir.path().join("HERMES.md")).unwrap(),
             "custom"
         );
+    }
+
+    #[test]
+    fn register_project_appends_the_project_path() {
+        let drun_home = tempfile::tempdir().unwrap();
+        let project_dir = tempfile::tempdir().unwrap();
+
+        register_project(drun_home.path(), project_dir.path());
+
+        let registry = std::fs::read_to_string(drun_home.path().join("projects")).unwrap();
+        assert!(
+            registry
+                .lines()
+                .any(|l| l == project_dir.path().to_str().unwrap())
+        );
+    }
+
+    #[test]
+    fn register_project_does_not_duplicate_an_already_registered_path() {
+        let drun_home = tempfile::tempdir().unwrap();
+        let project_dir = tempfile::tempdir().unwrap();
+
+        register_project(drun_home.path(), project_dir.path());
+        register_project(drun_home.path(), project_dir.path());
+
+        let registry = std::fs::read_to_string(drun_home.path().join("projects")).unwrap();
+        let occurrences = registry
+            .lines()
+            .filter(|l| *l == project_dir.path().to_str().unwrap())
+            .count();
+        assert_eq!(occurrences, 1);
     }
 
     #[test]

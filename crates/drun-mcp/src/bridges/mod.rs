@@ -30,8 +30,10 @@ impl Scope {
 /// `drun-mcp <name> deregister` — via `REGISTRY` below, which both `main`'s
 /// dispatch and `drun-mcp bridges list`/`deregister-all` read generically.
 /// Adding a new bridge (Cline, Amazon Q Developer CLI, ...) means adding a new
-/// module that implements this trait and one line in `REGISTRY` — no other
-/// file needs to change.
+/// module that implements this trait and one line in `REGISTRY` — every CLI
+/// entry point picks it up automatically. The one exception: if it writes a
+/// per-project settings file (like Claude's/Gemini's), add that filename to
+/// `BRIDGE_SETTINGS_FILES` in `uninstall.sh` too, so uninstalling removes it.
 pub trait Bridge {
     /// Stable identifier used on the CLI (`drun-mcp <name> init`).
     fn name(&self) -> &'static str;

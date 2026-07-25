@@ -39,11 +39,8 @@ impl super::Bridge for Gemini {
     }
 
     fn init(&self) {
-        CLI.register();
-
         let project_dir = std::env::current_dir().expect("cannot read current directory");
         let project_path = project_dir.to_str().expect("non-UTF-8 project path");
-
         write_settings(&project_dir);
         super::shared::write_project_instructions(
             &project_dir,
@@ -51,7 +48,8 @@ impl super::Bridge for Gemini {
             &gemini_md_content(project_path),
         );
         super::shared::allow_mount_path(&crate::drun_home(), &project_dir);
-
+        super::shared::register_project(&crate::drun_home(), &project_dir);
+        CLI.register();
         eprintln!("drun: initialized for {project_path}");
     }
 

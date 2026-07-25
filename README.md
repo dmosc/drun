@@ -124,8 +124,8 @@ curl -fsSL https://raw.githubusercontent.com/dmosc/drun/main/uninstall.sh | bash
    CLI, Codex CLI, Hermes) — via `drun-mcp bridges deregister-all`, which knows
    every bridge drun supports without `uninstall.sh` having to name them.
 1. Removes the drun MCP binary from `/usr/local/bin/drun-mcp`.
-1. Removes `.claude/settings.json` from each project so native Claude tools are
-   restored automatically.
+1. Removes `.claude/settings.json` and `.gemini/settings.json` from every
+   project drun was initialized in, so native tools are restored automatically.
 1. Leaves `~/.drun/config.toml` and any per-project context files (`CLAUDE.md`,
    `GEMINI.md`, `AGENTS.md`, `HERMES.md`) untouched; delete these manually if
    not needed.

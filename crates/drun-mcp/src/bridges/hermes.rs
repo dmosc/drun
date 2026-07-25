@@ -43,7 +43,7 @@ impl super::Bridge for Hermes {
             &hermes_md_content(project_path),
         );
         super::shared::allow_mount_path(&crate::drun_home(), &project_dir);
-
+        super::shared::register_project(&crate::drun_home(), &project_dir);
         if !hermes_available() {
             let path = hermes_config_path();
             eprintln!(
@@ -53,9 +53,9 @@ impl super::Bridge for Hermes {
             eprint!("{}", rendered_mcp_entry(&mcp_http_url()));
             return;
         }
-
         register_mcp();
         restrict_toolsets();
+        eprintln!("drun: initialized for {project_path}");
     }
 
     fn deregister(&self) {

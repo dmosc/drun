@@ -37,20 +37,28 @@ deregister_bridges() {
 }
 
 # ── per-project cleanup ───────────────────────────────────────────────────────
+BRIDGE_SETTINGS_FILES=(".claude/settings.json" ".gemini/settings.json")
+BRIDGE_CONTEXT_FILES=("CLAUDE.md" "GEMINI.md" "AGENTS.md" "HERMES.md")
 
 cleanup_project_settings() {
   [[ ! -f "$DRUN_REGISTRY" ]] && return
 
   while IFS= read -r project_dir; do
     [[ -z "$project_dir" ]] && continue
-    local settings_file="$project_dir/.claude/settings.json"
-    if [[ -f "$settings_file" ]]; then
-      rm -f "$settings_file"
-      rmdir "$project_dir/.claude" 2>/dev/null || true
-      echo "Removed .claude/settings.json from $project_dir."
-    fi
-    [[ -f "$project_dir/CLAUDE.md" ]] && \
-      echo "Left CLAUDE.md at $project_dir/CLAUDE.md — delete manually if not needed."
+
+    for settings_file in "${BRIDGE_SETTINGS_FILES[@]}"; do
+      local full_path="$project_dir/$settings_file"
+      if [[ -f "$full_path" ]]; then
+        rm -f "$full_path"
+        rmdir "$(dirname "$full_path")" 2>/dev/null || true
+        echo "Removed $settings_file from $project_dir."
+      fi
+    done
+
+    for context_file in "${BRIDGE_CONTEXT_FILES[@]}"; do
+      [[ -f "$project_dir/$context_file" ]] && \
+        echo "Left $context_file at $project_dir/$context_file — delete manually if not needed."
+    done
   done < "$DRUN_REGISTRY"
 
   rm -f "$DRUN_REGISTRY"

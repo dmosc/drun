@@ -1,6 +1,6 @@
 #[cfg(test)]
 use std::path::Path;
-use std::{io::Write, path::PathBuf};
+use std::path::PathBuf;
 
 use serde_json::{Value, json};
 
@@ -44,18 +44,15 @@ impl super::Bridge for Claude {
     }
 
     fn init(&self) {
-        CLI.register();
-
         let project = ProjectInit {
             project_dir: std::env::current_dir().expect("cannot read current directory"),
             drun_home: crate::drun_home(),
         };
-
         project.write_settings();
         project.write_claude_md();
-        project.register_project();
         project.allow_mount_path();
-
+        project.register_project();
+        CLI.register();
         eprintln!("drun: initialized for {}", project.project_dir.display());
     }
 
@@ -107,21 +104,7 @@ impl ProjectInit {
     }
 
     fn register_project(&self) {
-        std::fs::create_dir_all(&self.drun_home).expect("cannot create ~/.drun");
-        let registry = self.drun_home.join("projects");
-        let project_path = self.project_dir.to_str().expect("non-UTF-8 project path");
-
-        let existing = std::fs::read_to_string(&registry).unwrap_or_default();
-        if existing.lines().any(|l| l == project_path) {
-            return;
-        }
-
-        let mut file = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&registry)
-            .expect("cannot open ~/.drun/projects");
-        writeln!(file, "{project_path}").expect("cannot write to project registry");
+        super::shared::register_project(&self.drun_home, &self.project_dir);
     }
 }
 
@@ -326,7 +309,7 @@ mod tests {
     }
 
     #[test]
-    fn register_project_appends_the_project_path() {
+    fn register_project_delegates_to_the_shared_implementation() {
         let drun_home = tempfile::tempdir().unwrap();
         let project_dir = tempfile::tempdir().unwrap();
 
@@ -338,21 +321,5 @@ mod tests {
                 .lines()
                 .any(|l| l == project_dir.path().to_str().unwrap())
         );
-    }
-
-    #[test]
-    fn register_project_does_not_duplicate_an_already_registered_path() {
-        let drun_home = tempfile::tempdir().unwrap();
-        let project_dir = tempfile::tempdir().unwrap();
-
-        project_init(drun_home.path(), project_dir.path()).register_project();
-        project_init(drun_home.path(), project_dir.path()).register_project();
-
-        let registry = std::fs::read_to_string(drun_home.path().join("projects")).unwrap();
-        let occurrences = registry
-            .lines()
-            .filter(|l| *l == project_dir.path().to_str().unwrap())
-            .count();
-        assert_eq!(occurrences, 1);
     }
 }

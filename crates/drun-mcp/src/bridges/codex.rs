@@ -35,7 +35,7 @@ impl super::Bridge for Codex {
             &agents_md_content(project_path),
         );
         super::shared::allow_mount_path(&crate::drun_home(), &project_dir);
-
+        super::shared::register_project(&crate::drun_home(), &project_dir);
         let path = config_path();
         let mut doc = match load_doc() {
             Ok(doc) => doc,
@@ -61,13 +61,14 @@ impl super::Bridge for Codex {
         }
         match crate::atomic_write(&path, &doc.to_string()) {
             Ok(()) => eprintln!(
-                "drun: updated {} — registered the MCP server (HTTP → {}) and disabled the \
-                 native shell tool. Both apply machine-wide, not just this project.",
+                "drun: updated {} — registered the MCP server (HTTP → {}) and disabled the native \
+             shell tool. Both apply machine-wide, not just this project.",
                 path.display(),
                 mcp_url()
             ),
             Err(e) => eprintln!("drun: could not write {} ({e})", path.display()),
         }
+        eprintln!("drun: initialized for {project_path}");
     }
 
     fn deregister(&self) {
