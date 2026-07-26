@@ -87,9 +87,16 @@ impl Sandbox {
         // `allowed_read_paths` — not the whole host filesystem. File writes
         // are limited to the workspace, scratch dir, /private/tmp, and
         // /dev/null.
+        //
+        // temp_dir() returns the /var/... symlink form, but the sandbox
+        // checks against the resolved /private/var/... path.
+        let temp_dir = std::env::temp_dir()
+            .canonicalize()
+            .unwrap_or_else(|_| std::env::temp_dir());
         let read_subpaths: String = self
             .allowed_read_paths()
             .iter()
+            .chain(std::iter::once(&temp_dir))
             .map(|p| format!("    (subpath \"{}\")\n", p.display()))
             .collect();
         let profile = format!(
@@ -112,7 +119,7 @@ impl Sandbox {
             read_subpaths,
             self.workspace.display(),
             self.scratch.display(),
-            std::env::temp_dir().display()
+            temp_dir.display()
         );
 
         let mut cmd = Command::new("sandbox-exec");
