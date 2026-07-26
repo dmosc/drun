@@ -101,6 +101,7 @@ impl Sandbox {
                  (subpath \"{}\")\n\
                  (subpath \"{}\")\n\
                  (subpath \"/private/tmp\")\n\
+                 (subpath \"{}\")\n\
                  (literal \"/dev/null\"))\n\
              (allow process-exec*)\n\
              (allow process-fork)\n\
@@ -110,7 +111,8 @@ impl Sandbox {
              (allow sysctl-read)\n",
             read_subpaths,
             self.workspace.display(),
-            self.scratch.display()
+            self.scratch.display(),
+            std::env::temp_dir().display()
         );
 
         let mut cmd = Command::new("sandbox-exec");
