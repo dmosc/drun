@@ -11,6 +11,8 @@ pub(crate) struct CheckpointSummary {
     command: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     exit_code: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool: Option<String>,
     stdout_bytes: usize,
     stderr_bytes: usize,
     file_count: usize,
@@ -37,6 +39,7 @@ impl CheckpointSummary {
                     label: checkpoint.label.clone(),
                     command: checkpoint.command.clone(),
                     exit_code: checkpoint.exit_code,
+                    tool: checkpoint.tool.clone(),
                     stdout_bytes: checkpoint.stdout.len(),
                     stderr_bytes: checkpoint.stderr.len(),
                     file_count: checkpoint.files.len(),
@@ -75,6 +78,7 @@ mod tests {
                     label: None,
                     command: None,
                     exit_code: None,
+                    tool: None,
                     files: HashMap::new(),
                 },
                 CheckpointRecord {
@@ -84,6 +88,7 @@ mod tests {
                     label: None,
                     command,
                     exit_code: None,
+                    tool: None,
                     files: HashMap::new(),
                 },
             ],

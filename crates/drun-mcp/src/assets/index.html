@@ -451,7 +451,7 @@
     /* ── Columns ───────────────────────────────────────────────────────── */
     .columns-grid {
       display: grid;
-      grid-template-columns: 190px minmax(220px, 1fr) minmax(260px, 1.3fr);
+      grid-template-columns: 240px minmax(220px, 1fr) minmax(260px, 1.3fr);
       gap: 10px;
       align-items: start;
     }
@@ -561,6 +561,13 @@
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+    }
+
+    .cp-row-tool {
+      color: var(--text-dim);
+      flex-shrink: 0;
+      font-size: 10px;
+      opacity: 0.75;
     }
 
     .cp-row-delta {
@@ -1221,10 +1228,14 @@
           hist.files_removed_count > 0 ? `<span class="sigil-r">-${hist.files_removed_count}</span>` : '',
         ].join('') : '';
 
+        const toolHtml = hist?.tool
+          ? `<span class="cp-row-tool" title="Created by ${escHtml(hist.tool)}">${escHtml(hist.tool)}</span>` : '';
+
         return `
           <div class="cp-row ${isHead ? 'is-head' : ''} ${isSelected ? 'selected' : ''}"
                onclick="onCheckpointClick(${checkpoint.checkpoint_id})">
             <span class="cp-row-num">#${checkpoint.checkpoint_id}</span>
+            ${toolHtml}
             <span class="cp-row-label">${checkpoint.label ? escHtml(checkpoint.label) : ''}</span>
             <span class="cp-row-delta">${delta}</span>
           </div>`;
@@ -1257,6 +1268,7 @@
       const treeCp = session?.checkpoints.find(c => c.checkpoint_id === cpId);
       const hist = viewState.checkpointHistory.find(h => h.checkpoint_id === cpId);
       const labelSuffix = treeCp?.label ? ` · "${escHtml(treeCp.label)}"` : '';
+      const toolSuffix = hist?.tool ? ` · ${escHtml(hist.tool)}` : '';
       const rollbackHidden = treeCp?.is_current ? 'style="display:none"' : '';
 
       const forkButtons = (treeCp?.forks || []).map(f => `
@@ -1264,7 +1276,7 @@
       `).join('');
 
       bar.innerHTML = `
-        <span class="mono-id">Checkpoint #${cpId}${labelSuffix}</span>
+        <span class="mono-id">Checkpoint #${cpId}${labelSuffix}${toolSuffix}</span>
         <div class="context-actions">
           ${forkButtons}
           <button class="btn" onclick="onForkFromHereClick()">Fork from here</button>

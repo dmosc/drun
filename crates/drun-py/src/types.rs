@@ -19,6 +19,8 @@ pub struct DrunCheckpoint {
     pub command: Option<String>,
     #[pyo3(get)]
     pub exit_code: Option<i32>,
+    #[pyo3(get)]
+    pub tool: Option<String>,
 }
 
 impl DrunCheckpoint {
@@ -35,6 +37,7 @@ impl DrunCheckpoint {
             label: c.label.clone(),
             command: c.command.clone(),
             exit_code: c.exit_code,
+            tool: c.tool.clone(),
         }
     }
 }
@@ -56,6 +59,7 @@ mod tests {
             label: Some("milestone".to_string()),
             command: Some("echo hi".to_string()),
             exit_code: Some(0),
+            tool: Some("session_bash".to_string()),
         };
         let py_checkpoint = DrunCheckpoint::from_checkpoint(&checkpoint);
 
@@ -69,5 +73,6 @@ mod tests {
         assert_eq!(py_checkpoint.label.as_deref(), Some("milestone"));
         assert_eq!(py_checkpoint.command.as_deref(), Some("echo hi"));
         assert_eq!(py_checkpoint.exit_code, Some(0));
+        assert_eq!(py_checkpoint.tool.as_deref(), Some("session_bash"));
     }
 }

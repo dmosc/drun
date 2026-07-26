@@ -151,7 +151,14 @@ impl Session {
         let arc = self.interner.intern_bytes(content);
         files.insert(path.to_string(), arc);
         self.check_workspace_size(&files)?;
-        self.push_checkpoint(files, String::new(), String::new(), None, None)?;
+        self.push_checkpoint(
+            files,
+            String::new(),
+            String::new(),
+            None,
+            None,
+            "session_write_file",
+        )?;
         Ok(())
     }
 
@@ -160,7 +167,14 @@ impl Session {
         if files.remove(path).is_none() {
             return Err(RunnerError::file_not_found_in_current(path).into());
         }
-        self.push_checkpoint(files, String::new(), String::new(), None, None)
+        self.push_checkpoint(
+            files,
+            String::new(),
+            String::new(),
+            None,
+            None,
+            "session_delete_file",
+        )
     }
 
     pub fn execute_bash(
@@ -209,6 +223,7 @@ impl Session {
             stderr,
             Some(command.to_string()),
             exit_code,
+            "session_bash",
         )
     }
 
@@ -305,6 +320,7 @@ impl Session {
             label,
             command: (!combined_command.is_empty()).then_some(combined_command),
             exit_code: terminal_exit_code,
+            tool: Some("session_checkpoint_squash".to_string()),
         };
         let removed_count = to_id - from_id;
         self.checkpoints
@@ -385,7 +401,14 @@ impl Session {
             }
         }
         self.check_workspace_size(&merged)?;
-        self.push_checkpoint(merged, String::new(), String::new(), None, None)
+        self.push_checkpoint(
+            merged,
+            String::new(),
+            String::new(),
+            None,
+            None,
+            "session_merge",
+        )
     }
 
     pub fn export(
@@ -499,6 +522,7 @@ impl Session {
         stderr: String,
         command: Option<String>,
         exit_code: Option<i32>,
+        tool: &str,
     ) -> anyhow::Result<&Checkpoint> {
         self.check_checkpoint_limit()?;
         let discarding_forward_history = self.checkpoints.len() > self.checkpoint_idx + 1;
@@ -514,6 +538,7 @@ impl Session {
             label: None,
             command,
             exit_code,
+            tool: Some(tool.to_string()),
         });
         self.checkpoint_idx = id;
         if discarding_forward_history {
@@ -1084,6 +1109,7 @@ mod tests {
                 label: None,
                 command: None,
                 exit_code: None,
+                tool: None,
             }
         );
     }
