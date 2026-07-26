@@ -3,8 +3,8 @@ use crate::errors::DrunError;
 use crate::handler::DrunHandler;
 use crate::state::SessionState;
 use crate::tools::{
-    SessionCommit, SessionDeleteFile, SessionExport, SessionMount, SessionReadFile,
-    SessionWriteFile,
+    SessionCommit, SessionDeleteFile, SessionExport, SessionExtractText, SessionMount,
+    SessionReadFile, SessionWriteFile,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use rust_mcp_sdk::schema::{CallToolResult, schema_utils::CallToolError};
@@ -111,6 +111,25 @@ impl DrunHandler {
                 Some(&previous_files),
                 vec![],
             )))
+        })
+    }
+
+    pub(super) fn handle_session_extract_text(
+        &self,
+        connection_id: &str,
+        t: SessionExtractText,
+    ) -> Result<CallToolResult, CallToolError> {
+        self.with_current_session_mut(connection_id, |_session_id, session| {
+            let saved_to = session
+                .extract_text(&t.path, t.save_to.as_deref(), Some(&t.description))
+                .map_err(|e| DrunError::from_exec(e).into_tool_err())?;
+            Ok(ResponseBuilder::text(
+                serde_json::json!({
+                    "saved_to": saved_to,
+                    "checkpoint_id": session.current().id,
+                })
+                .to_string(),
+            ))
         })
     }
 
@@ -469,6 +488,50 @@ mod tests {
     }
 
     #[test]
+    fn session_extract_text_returns_file_not_found_for_a_missing_source() {
+        let handler = DrunHandler::new(Config::default());
+        insert_current_session(&handler, "s1");
+        let err = handler
+            .handle_session_extract_text(
+                CLIENT,
+                SessionExtractText {
+                    path: "missing.pdf".to_string(),
+                    save_to: None,
+                    description: "test".to_string(),
+                },
+            )
+            .unwrap_err();
+        assert!(err.to_string().contains("file_not_found"));
+    }
+
+    #[test]
+    fn session_extract_text_returns_unsupported_extraction_format_for_a_non_pdf() {
+        let handler = DrunHandler::new(Config::default());
+        insert_current_session(&handler, "s1");
+        {
+            let sessions = handler.sessions.lock().unwrap();
+            sessions
+                .get("s1")
+                .unwrap()
+                .lock()
+                .unwrap()
+                .write_file("notes.docx", b"whatever".to_vec(), None)
+                .unwrap();
+        }
+        let err = handler
+            .handle_session_extract_text(
+                CLIENT,
+                SessionExtractText {
+                    path: "notes.docx".to_string(),
+                    save_to: None,
+                    description: "test".to_string(),
+                },
+            )
+            .unwrap_err();
+        assert!(err.to_string().contains("unsupported_extraction_format"));
+    }
+
+    #[test]
     fn session_commit_writes_back_a_changed_mounted_file_to_the_host() {
         let source = tempfile::tempdir().unwrap();
         let host_file = source.path().join("a.txt");
@@ -480,7 +543,9 @@ mod tests {
             let sessions = handler.sessions.lock().unwrap();
             let mut session = sessions.get("s1").unwrap().lock().unwrap();
             session.mount(&host_file).unwrap();
-            session.write_file("a.txt", b"changed".to_vec(), None).unwrap();
+            session
+                .write_file("a.txt", b"changed".to_vec(), None)
+                .unwrap();
         }
 
         let result = handler

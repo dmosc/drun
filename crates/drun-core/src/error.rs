@@ -8,6 +8,8 @@ pub enum RunnerError {
     InvalidWorkspacePath(String),
     MountDenied(String),
     WorkspaceSizeExceeded { actual_bytes: u64, limit_bytes: u64 },
+    UnsupportedExtractionFormat(String),
+    ExtractionFailed(String),
 }
 
 impl RunnerError {
@@ -53,6 +55,14 @@ impl RunnerError {
             limit_bytes,
         }
     }
+
+    pub fn unsupported_extraction_format(extension: &str) -> Self {
+        Self::UnsupportedExtractionFormat(format!("no text extractor for '.{extension}' files"))
+    }
+
+    pub fn extraction_failed(path: &str, cause: impl std::fmt::Display) -> Self {
+        Self::ExtractionFailed(format!("failed to extract text from '{path}': {cause}"))
+    }
 }
 
 impl std::fmt::Display for RunnerError {
@@ -75,6 +85,8 @@ impl std::fmt::Display for RunnerError {
                 f,
                 "workspace size {actual_bytes} bytes exceeds limit of {limit_bytes} bytes"
             ),
+            Self::UnsupportedExtractionFormat(msg) => write!(f, "{msg}"),
+            Self::ExtractionFailed(msg) => write!(f, "{msg}"),
         }
     }
 }

@@ -2,6 +2,7 @@ mod checkpoint;
 pub mod config;
 pub mod error;
 mod executor;
+mod extract;
 mod interner;
 mod mounts;
 mod sandbox;

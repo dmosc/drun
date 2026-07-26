@@ -145,6 +145,14 @@ impl DrunError {
         Self::new("internal_error", message.to_string())
     }
 
+    pub fn unsupported_extraction_format(message: impl Into<String>) -> Self {
+        Self::new("unsupported_extraction_format", message)
+    }
+
+    pub fn extraction_failed(message: impl Into<String>) -> Self {
+        Self::new("extraction_failed", message)
+    }
+
     pub fn from_exec(e: anyhow::Error) -> Self {
         match e.downcast_ref::<RunnerError>() {
             Some(RunnerError::Timeout { timeout_ms }) => Self::execution_timeout(*timeout_ms),
@@ -160,6 +168,10 @@ impl DrunError {
                 actual_bytes,
                 limit_bytes,
             }) => Self::workspace_size_exceeded(*actual_bytes, *limit_bytes),
+            Some(RunnerError::UnsupportedExtractionFormat(msg)) => {
+                Self::unsupported_extraction_format(msg.clone())
+            }
+            Some(RunnerError::ExtractionFailed(msg)) => Self::extraction_failed(msg.clone()),
             None => Self::internal(e),
         }
     }

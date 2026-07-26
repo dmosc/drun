@@ -140,6 +140,27 @@ pub struct SessionMount {
 }
 
 #[mcp_tool(
+    name = "session_extract_text",
+    description = "Extract plain text from a binary document already in the workspace \
+                   (currently PDF only) and save it as a new file — session_bash can't read \
+                   PDF bytes directly, so mount or session_fetch the file first, then call \
+                   this before processing it. Runs in-process, no network or sandbox involved. \
+                   Defaults save_to to path with .txt appended; read the result with \
+                   session_read_file.",
+    idempotent_hint = false,
+    destructive_hint = false,
+    read_only_hint = false
+)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct SessionExtractText {
+    /// Session-relative path to the source document (e.g. report.pdf).
+    pub path: String,
+    /// Session-relative path to save the extracted text to. Defaults to path + ".txt".
+    pub save_to: Option<String>,
+    pub description: String,
+}
+
+#[mcp_tool(
     name = "session_list",
     description = "List all active sessions with their checkpoint count and parent references. \
                    is_current marks the session active for this connection.",
@@ -524,6 +545,7 @@ tool_box!(
         SessionWriteFile,
         SessionDeleteFile,
         SessionMount,
+        SessionExtractText,
         SessionDiff,
         SessionCommit,
         SessionExport,

@@ -1,6 +1,7 @@
 use crate::config::ConfigHandle;
 use crate::error::RunnerError;
 use crate::executor::{BashExecutor, BashOutput};
+use crate::extract::TextExtractor;
 use crate::interner::Interner;
 use crate::mounts::MountTable;
 use crate::snapshot::SessionSnapshot;
@@ -171,6 +172,37 @@ impl Session {
             description,
         )?;
         Ok(())
+    }
+
+    // Used to extract text content from files in the session (e.g. a PDF).
+    pub fn extract_text(
+        &mut self,
+        path: &str,
+        save_to: Option<&str>,
+        description: Option<&str>,
+    ) -> anyhow::Result<String> {
+        let bytes = self.checkpoints[self.checkpoint_idx]
+            .files
+            .get(path)
+            .ok_or_else(|| RunnerError::file_not_found_in_current(path))?
+            .clone();
+        let text = TextExtractor::extract(path, &bytes)?;
+        let save_path = save_to
+            .map(str::to_string)
+            .unwrap_or_else(|| format!("{path}.txt"));
+        self.validate_file_path(&save_path)?;
+
+        let mut files = self.checkpoints[self.checkpoint_idx].files.clone();
+        let arc = self.interner.intern_bytes(text.into_bytes());
+        files.insert(save_path.clone(), arc);
+        self.check_workspace_size(&files)?;
+        self.push_checkpoint(
+            files,
+            CommandOutcome::default(),
+            "session_extract_text",
+            description,
+        )?;
+        Ok(save_path)
     }
 
     pub fn delete_file(
@@ -798,6 +830,56 @@ mod tests {
         session.delete_file("a.txt", None).unwrap();
         assert_eq!(session.current().command, None);
         assert_eq!(session.current().exit_code, None);
+    }
+
+    #[test]
+    fn extract_text_writes_the_extracted_text_as_a_new_checkpoint_file() {
+        let mut session = new_session();
+        session
+            .write_file(
+                "report.pdf",
+                TextExtractor::minimal_pdf_with_text("Hi"),
+                None,
+            )
+            .unwrap();
+        let saved_to = session.extract_text("report.pdf", None, None).unwrap();
+        assert_eq!(saved_to, "report.pdf.txt");
+        let extracted = session.current().files.get("report.pdf.txt").unwrap();
+        assert!(String::from_utf8_lossy(extracted).contains("Hi"));
+    }
+
+    #[test]
+    fn extract_text_honors_an_explicit_save_to_path() {
+        let mut session = new_session();
+        session
+            .write_file(
+                "report.pdf",
+                TextExtractor::minimal_pdf_with_text("Hi"),
+                None,
+            )
+            .unwrap();
+        let saved_to = session
+            .extract_text("report.pdf", Some("out/report.txt"), None)
+            .unwrap();
+        assert_eq!(saved_to, "out/report.txt");
+        assert!(session.current().files.contains_key("out/report.txt"));
+    }
+
+    #[test]
+    fn extract_text_returns_file_not_found_for_a_missing_source() {
+        let mut session = new_session();
+        let err = session.extract_text("missing.pdf", None, None).unwrap_err();
+        assert!(err.to_string().contains("not in current checkpoint"));
+    }
+
+    #[test]
+    fn extract_text_rejects_an_unsupported_extension() {
+        let mut session = new_session();
+        session
+            .write_file("notes.docx", b"whatever".to_vec(), None)
+            .unwrap();
+        let err = session.extract_text("notes.docx", None, None).unwrap_err();
+        assert!(err.to_string().contains("docx"));
     }
 
     #[test]
