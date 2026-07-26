@@ -48,6 +48,10 @@ impl WebServer {
         Router::new()
             .route("/", get(Self::handle_index))
             .route("/api/status", get(Self::handle_status))
+            .route(
+                "/api/config",
+                get(Self::handle_get_config).put(Self::handle_put_config),
+            )
             .route("/api/sessions/tree", get(Self::handle_session_tree))
             .route(
                 "/api/sessions/{session_id}/live",
@@ -115,6 +119,41 @@ impl WebServer {
             app.mcp_port,
             app.web_port,
         ))
+    }
+
+    async fn handle_get_config(State(app): State<AppState>) -> Response {
+        let Some(path) = app.handler.config.path().map(ToOwned::to_owned) else {
+            return (
+                StatusCode::NOT_FOUND,
+                "no config file (DRUN_CONFIG is unset)",
+            )
+                .into_response();
+        };
+        match std::fs::read_to_string(&path) {
+            Ok(contents) => contents.into_response(),
+            Err(e) => (
+                StatusCode::NOT_FOUND,
+                format!("cannot read {}: {e}", path.display()),
+            )
+                .into_response(),
+        }
+    }
+
+    async fn handle_put_config(State(app): State<AppState>, body: String) -> Response {
+        let Some(path) = app.handler.config.path().map(ToOwned::to_owned) else {
+            return (
+                StatusCode::NOT_FOUND,
+                "no config file (DRUN_CONFIG is unset)",
+            )
+                .into_response();
+        };
+        if let Err(e) = toml::from_str::<drun_core::Config>(&body) {
+            return (StatusCode::BAD_REQUEST, format!("invalid config: {e}")).into_response();
+        }
+        match crate::FileManager::write(&path, &body) {
+            Ok(()) => StatusCode::OK.into_response(),
+            Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+        }
     }
 
     async fn handle_index() -> Response {

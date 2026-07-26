@@ -171,6 +171,10 @@ impl ConfigHandle {
             None => self.fixed.clone(),
         }
     }
+
+    pub fn path(&self) -> Option<&Path> {
+        self.path.as_deref()
+    }
 }
 
 impl From<Config> for ConfigHandle {

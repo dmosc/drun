@@ -165,6 +165,11 @@
       line-height: 1.5;
     }
 
+    .daemon-row-first {
+      justify-content: space-between;
+      align-items: center;
+    }
+
     .daemon-row-label {
       flex-shrink: 0;
       width: 80px;
@@ -175,6 +180,75 @@
       font-family: var(--mono);
       color: var(--text-dim);
       word-break: break-word;
+    }
+
+    /* ── Config modal ──────────────────────────────────────────────────── */
+    #config-modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.6);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+
+    #config-modal-overlay.hidden {
+      display: none;
+    }
+
+    #config-modal {
+      background: var(--s1);
+      border: 1px solid var(--border-hi);
+      border-radius: var(--radius);
+      width: min(640px, 90vw);
+      max-height: 80vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    #config-modal-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    #config-modal-textarea {
+      flex: 1;
+      min-height: 320px;
+      margin: 12px 14px;
+      padding: 10px;
+      background: var(--s2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 12px;
+      line-height: 1.5;
+      resize: vertical;
+    }
+
+    #config-modal-error {
+      margin: 0 14px 10px;
+      color: var(--red);
+      font-size: 11.5px;
+    }
+
+    #config-modal-error:empty {
+      display: none;
+    }
+
+    #config-modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      padding: 10px 14px;
+      border-top: 1px solid var(--border);
     }
 
     /* ── Page body ─────────────────────────────────────────────────────── */
@@ -864,6 +938,21 @@
 
   <div id="daemon-panel" class="hidden"></div>
 
+  <div id="config-modal-overlay" class="hidden" onclick="if (event.target === this) closeConfigModal()">
+    <div id="config-modal">
+      <div id="config-modal-head">
+        <span>Edit configuration</span>
+        <button class="btn" onclick="closeConfigModal()">✕</button>
+      </div>
+      <textarea id="config-modal-textarea" spellcheck="false"></textarea>
+      <div id="config-modal-error"></div>
+      <div id="config-modal-actions">
+        <button class="btn" onclick="closeConfigModal()">Cancel</button>
+        <button class="btn" id="config-modal-save" onclick="onSaveConfigClick()">Save</button>
+      </div>
+    </div>
+  </div>
+
   <div id="page-body">
     <section id="sessions-section">
       <div class="section-label">Sessions</div>
@@ -1099,7 +1188,49 @@
         const res = await fetch(`/api/sessions/${sessionId}`, { method: 'DELETE' });
         if (!res.ok && res.status !== 404) throw new Error(`${res.status} deleting ${sessionId}`);
       },
+
+      getConfig: () => fetchText('/api/config'),
+
+      async saveConfig(contents) {
+        const res = await fetch('/api/config', { method: 'PUT', body: contents });
+        if (!res.ok) throw new Error(await res.text());
+      },
     };
+
+    // ── Config modal ─────────────────────────────────────────────────────────
+
+    async function onEditConfigClick() {
+      const textarea = document.getElementById('config-modal-textarea');
+      const error = document.getElementById('config-modal-error');
+      error.textContent = '';
+      textarea.value = 'Loading…';
+      document.getElementById('config-modal-overlay').classList.remove('hidden');
+      try {
+        textarea.value = await Api.getConfig();
+      } catch (e) {
+        error.textContent = `Failed to load config: ${e.message}`;
+      }
+    }
+
+    function closeConfigModal() {
+      document.getElementById('config-modal-overlay').classList.add('hidden');
+    }
+
+    async function onSaveConfigClick() {
+      const textarea = document.getElementById('config-modal-textarea');
+      const error = document.getElementById('config-modal-error');
+      const btn = document.getElementById('config-modal-save');
+      error.textContent = '';
+      btn.disabled = true;
+      try {
+        await Api.saveConfig(textarea.value);
+        closeConfigModal();
+      } catch (e) {
+        error.textContent = e.message;
+      } finally {
+        btn.disabled = false;
+      }
+    }
 
     // ── Clipboard ────────────────────────────────────────────────────────────
 
@@ -1179,10 +1310,13 @@
         ['Mounts', status.mount_allowlist.length ? escHtml(status.mount_allowlist.join(', ')) : 'All host paths allowed'],
       ];
 
-      panel.innerHTML = rows.map(([label, value]) => `
-        <div class="daemon-row">
-          <span class="daemon-row-label">${label}</span>
-          <span class="daemon-row-value">${value}</span>
+      panel.innerHTML = rows.map(([label, value], i) => `
+        <div class="daemon-row${i === 0 ? ' daemon-row-first' : ''}">
+          <span>
+            <span class="daemon-row-label">${label}</span>
+            <span class="daemon-row-value">${value}</span>
+          </span>
+          ${i === 0 ? `<button class="btn" onclick="onEditConfigClick()">Edit configuration</button>` : ''}
         </div>`).join('');
     }
 
