@@ -45,16 +45,42 @@ applied at daemon startup, so changing either still needs a restart —
 
 ---
 
-## `session_bash` command times out (`execution_timeout`)
+## `session_bash` or `session_package_install` times out (`execution_timeout`)
 
 The default `bash_timeout_ms` (30 seconds) is tight for slow or long-running
 commands (large downloads via a mounted overlay, big builds, training loops).
+`session_package_install` has its own separate timeout,
+`package_install_timeout_ms` (default 3 minutes), since installs can be slower
+than typical shell commands.
 
-**Fix:** Increase `bash_timeout_ms` in your `config.toml`:
+**Fix:** Increase the relevant timeout in your `config.toml`:
 
 ```toml
-bash_timeout_ms = 300000   # 5 minutes
+bash_timeout_ms = 300000              # 5 minutes
+package_install_timeout_ms = 300000   # 5 minutes
 ```
+
+---
+
+## `package_install_disabled`: `session_package_install` not enabled
+
+`session_package_install` is disabled by default because, unlike every other
+tool, its sandbox has network access (see
+[docs/security.md](security.md#2-package-installs-session_package_install)).
+
+**Fix:** Set `package_install_enabled = true` in `config.toml`.
+
+---
+
+## `unsupported_package_manager` / `invalid_package_spec`
+
+`session_package_install` only supports `"pip"` and `"npm"` as `package_manager`
+values, and rejects package specifiers that start with `-` or contain shell
+metacharacters (flag-injection prevention — a spec is passed straight to the
+installer's argv, never through a shell).
+
+**Fix:** Use a supported manager, and pass plain package specifiers (e.g.
+`"requests"`, `"numpy==1.26.4"`, `"left-pad@1.3.0"`), not extra CLI flags.
 
 ---
 
@@ -120,9 +146,11 @@ bash_command_denylist = ["curl", "wget", "nc"]
 
 ## `fetch_denied`: domain not in allowlist
 
-`session_fetch` is the only network-capable tool — `session_bash` has no network
-access at all, on either platform. `session_fetch` is restricted to the server's
-domain allowlist, which by default only permits PyPI's CDNs.
+`session_fetch` is restricted to the server's domain allowlist, which by default
+only permits PyPI's CDNs. `session_bash` has no network access at all, on either
+platform; `session_package_install` (if enabled) has unrestricted network access
+instead of a domain allowlist — see
+[docs/security.md](security.md#2-package-installs-session_package_install).
 
 **Error:** `fetch_denied` with a message naming the blocked domain
 
@@ -158,9 +186,9 @@ Crossing the idle timeout does not immediately destroy the session; it is a
 two-stage process:
 
 1. Once a session has been idle longer than `session_idle_timeout_secs`, calls
-   that would do new work (`session_bash`, `session_write_file`,
-   `session_mount`, `session_rollback`, `session_merge`, label/squash/drop,
-   etc.) start returning `session_idle` instead of running.
+   that would do new work (`session_bash`, `session_package_install`,
+   `session_write_file`, `session_mount`, `session_rollback`, `session_merge`,
+   label/squash/drop, etc.) start returning `session_idle` instead of running.
 2. Read and recovery calls like `get_session_state`, `session_history`,
    `session_read_file`, `session_diff`, `session_commit`, `session_export`,
    `session_snapshot` and/ or `checkpoint_read_stdstreams`, keep working on an

@@ -67,15 +67,7 @@ create_config() {
   fi
 
   cat > "$DRUN_CONFIG" <<EOF
-# drun configuration — all fields are optional; these are the defaults.
-#
-# To add or remove a domain or path without hand-editing this file (and to
-# restart the daemon automatically afterward), use:
-#   drun-mcp config add-domain <domain>     /  drun-mcp config remove-domain <domain>
-#   drun-mcp config add-path <path>         /  drun-mcp config remove-path <path>
-
-# Domains agents may reach via session_fetch. PyPI domains are always added
-# on top of whatever you list here.
+# Domains agents may reach via session_fetch.
 domain_allowlist = []
 
 # Timeout for session_fetch HTTP requests (full response), in milliseconds.
@@ -118,6 +110,13 @@ env_allowlist = []
 
 # Timeout for session_bash calls, in milliseconds.
 bash_timeout_ms = 30_000
+
+# Enables session_package_install (pip/npm installs). Disabled by default since
+# it gives the sandboxed install process network access.
+package_install_enabled = false
+
+# Timeout for session_package_install calls, in milliseconds.
+package_install_timeout_ms = 180_000
 
 # Shell command substrings that are always denied.
 bash_command_denylist = []

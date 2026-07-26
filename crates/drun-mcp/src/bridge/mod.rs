@@ -259,6 +259,13 @@ commands write warnings or progress to stderr on success.
 - **`session_mount`** — load a host file or directory into the session
 - **`session_fetch`** — make HTTP requests from the sandbox (subject to the
   server's domain_allowlist — check with `get_config` first)
+- **`session_extract_text`** — pull plain text out of a binary document already
+  in the session (e.g. a PDF) and save it as a new file
+- **`session_package_install`** — install `pip`/`npm` packages so later
+  `session_bash` calls can import them. Disabled by default; if it returns
+  `package_install_disabled`, tell the user to set
+  `package_install_enabled = true` in `~/.drun/config.toml` (no CLI helper for
+  this one — hand-edit, then it applies on your next call, no restart)
 - **`session_export`** — write session files back out to the host
 - **`session_diff`** / **`session_rollback`** / **`session_fork`** — inspect and
   navigate checkpoint history (session_rollback is destructive past the rollback

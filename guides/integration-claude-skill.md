@@ -93,6 +93,9 @@ misdirect the call onto the wrong session.
 - `session_export` — write sandbox-created files back out to the host
 - `session_commit` — write changed _mounted_ files back to their original host
   paths
+- `session_extract_text` — pull plain text out of a binary document already in
+  the session (e.g. a PDF) and save it as a new workspace file. Runs in-process,
+  no sandbox or network involved.
 
 **Reading command output**
 
@@ -136,6 +139,11 @@ older checkpoint's output.
 - `session_fetch` — the _only_ outbound-HTTP gateway. Saves the response body as
   a workspace file (never returned inline). Target domain must be in the
   server's allowlist — check with `get_config`.
+- `session_package_install` — install `pip`/`npm` packages so subsequent
+  `session_bash` calls can import them (`PYTHONPATH`/`NODE_PATH` set for you).
+  Disabled by default (`package_install_enabled = false`) — unlike
+  `session_bash`, its sandbox has network access, though confined to a
+  disposable staging directory, never the session's own files.
 - `session_get_env` — read a host env var, but only ones in the server's
   `env_allowlist` (this is how you pass secrets in without hardcoding)
 
@@ -150,6 +158,8 @@ fields and their defaults:
 - `env_allowlist` — env vars `session_get_env` may read (empty = none)
 - `bash_command_denylist` / `bash_command_allowlist` — command policy
 - `bash_timeout_ms` (30s), `fetch_timeout_ms` (60s), `connect_timeout_ms` (30s)
+- `package_install_enabled` (false) — enables `session_package_install`;
+  `package_install_timeout_ms` (3min)
 - `max_workspace_mb` (512), `max_sessions` (50), `max_checkpoints` (200),
   `session_idle_timeout_secs` (3600)
 

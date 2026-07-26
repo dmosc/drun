@@ -69,12 +69,13 @@ All notable changes to drun are documented here.
   bridges show up in `--help`, `drun-mcp bridges list`, and `deregister-all`
   automatically via `REGISTRY` — no dispatch or bash changes needed.
 - **Extracted `bridges::shared::CliMcp`**: Claude Code's and Gemini CLI's
-  registration logic turned out to be identical (`<bin> mcp
-  add/list/remove --scope user --transport sse`) modulo the binary name, so
-  `bridges::claude` and `bridges::gemini` both now construct a
-  `CliMcp { bin, display_name }` and call `.register()`/`.deregister()`
-  instead of each carrying its own copy of the CLI-availability check,
-  registration flow, and manual-fallback messaging.
+  registration logic turned out to be identical
+  (`<bin> mcp
+  add/list/remove --scope user --transport sse`) modulo the binary
+  name, so `bridges::claude` and `bridges::gemini` both now construct a
+  `CliMcp { bin, display_name }` and call `.register()`/`.deregister()` instead
+  of each carrying its own copy of the CLI-availability check, registration
+  flow, and manual-fallback messaging.
 
 ### Web UI
 
@@ -212,6 +213,41 @@ All notable changes to drun are documented here.
   `maturin build` that this now produces `drun_sandbox-0.3.5-*.whl` with the
   correct version and its `chat`/`test` extras and `drun` console-script entry
   point intact.
+
+### `session_package_install`
+
+- Added a new tool for installing `pip`/`npm` packages mid-session, for when an
+  agent discovers it needs an unanticipated dependency with no human in the loop
+  to pre-install and mount one (the existing `session_mount` +
+  `mount_overlay_paths` route still covers the "operator already knows what's
+  needed" case). Disabled by default (`package_install_enabled = false`, new
+  `package_install_timeout_ms` config field, default 3 minutes) since, unlike
+  every other tool, its sandbox has network access.
+- `PackageManager` (`crates/drun-core/src/package_manager.rs`) is the one place
+  that knows pip from npm — how to invoke each installer, where its installs
+  land in the workspace, and which env var (`PYTHONPATH`/`NODE_PATH`) later
+  `session_bash` calls need set. `Sandbox` and `executor.rs` stay generic.
+  Installed packages are merged into the current checkpoint under
+  `.packages/<manager>/...`, so they survive rollback/fork/snapshot like any
+  other file change.
+- The install process runs with network access but confined to a disposable
+  staging directory, never the real session workspace, so even unrestricted
+  egress can't be used to exfiltrate session files. Hardened further on macOS:
+  the SBPL profile now denies loopback specifically
+  (`(deny network-outbound (remote ip "localhost:*"))`) ahead of the general
+  `(allow network*)`, so a malicious package's install-time code can't attack
+  other local services on the same machine (e.g. an unauthenticated local dev
+  database) — verified with a real `sandbox-exec` probe that loopback is refused
+  while real registry traffic still succeeds. Linux's `bwrap` path has no
+  equivalent carve-out (would need a real network namespace plus `nftables`/a
+  proxy); see [docs/security.md](docs/security.md) for the full writeup,
+  including the remaining gap (neither sandbox can filter by hostname or
+  specific IP, so a cloud metadata endpoint or other internal address is still
+  reachable).
+- Package specifiers are validated before anything runs (rejects a leading `-`
+  and shell metacharacters), unsupported managers are rejected, and the install
+  binary must already be on the daemon's `$PATH` (checked via `which` before
+  spawning, same precedent as the existing `bwrap`-missing check).
 
 ---
 

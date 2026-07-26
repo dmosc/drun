@@ -5,10 +5,12 @@ self-contained `.toml` file you can point `DRUN_CONFIG` at; each Python script
 is a working example you can run immediately.
 
 `session_bash` (the only execution tool) runs in a sandbox with **no network
-access and no package-install mechanism**, on either platform. Examples that
-need external data fetch it on the host (via `urllib`, before the session is
-created, or via the MCP-only `session_fetch` tool) and push it into the session
-with `write_file`/`session_write_file` or `--mount`.
+access**, on either platform. Examples that need external data fetch it on the
+host (via `urllib`, before the session is created, or via the MCP-only
+`session_fetch` tool) and push it into the session with
+`write_file`/`session_write_file` or `--mount`. `session_package_install` is a
+separate, disabled-by-default tool for installing `pip`/`npm` packages
+mid-session — see the main README's Configuration section.
 
 ---
 
@@ -325,9 +327,10 @@ are only the ones that differ meaningfully from the defaults — unset fields fa
 back to the built-in values documented in the main README.
 
 > **`session_bash` has no network access, ever.** `domain_allowlist` only
-> governs `session_fetch` (an MCP-only, host-side tool). There is no package
-> install mechanism in either path — sandbox code must use the standard library,
-> or rely on data/packages mounted in by the host.
+> governs `session_fetch` (an MCP-only, host-side tool). Sandbox code must use
+> the standard library, rely on data/packages mounted in by the host, or use
+> `session_package_install` (disabled by default; none of these recipes enable
+> it).
 
 ### `financial_analysis.toml` — live market and filing data
 

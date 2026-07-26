@@ -34,20 +34,57 @@ grants no extra sandbox reads — it only relaxes the `session_mount` check belo
 it never falls back to "the whole host is readable."
 
 There is no network access from inside `session_bash` on either platform — not
-even to allowlisted domains. The only outbound network path is `session_fetch`,
-which runs on the host (not in the sandbox) and is gated by `domain_allowlist`.
+even to allowlisted domains. `session_fetch` and `session_package_install` are
+the only outbound network paths — see below.
 
-### 2. Operator allowlists (runtime policy)
+### 2. Package installs (`session_package_install`)
+
+Disabled by default (`package_install_enabled = false`). When enabled, it runs
+`pip`/`npm` with a different sandbox trade-off than `session_bash`: network
+access is allowed (registries need it), but the process is confined to a
+disposable staging directory, never the session workspace — so even unrestricted
+egress can't be used to exfiltrate session files. Installed packages are merged
+into the session's checkpoint (under `.packages/<manager>/`) only after the
+install succeeds.
+
+- **macOS** — the SBPL profile adds `(allow network*)` but also
+  `(deny network-outbound (remote ip "localhost:*"))`, so the sandboxed install
+  process cannot connect to services bound to loopback on the same machine (e.g.
+  an unauthenticated local dev database), while registry traffic to the real
+  internet is untouched.
+- **Linux** — `bwrap` has no equivalent per-destination filter (that would need
+  a real network namespace plus `nftables` or a filtering proxy), so
+  `session_package_install` shares the host's network namespace outright,
+  loopback included.
+
+**This is not domain-scoped.** Neither SBPL nor bwrap can filter network access
+by hostname or specific IP — SBPL's `(remote ip ...)` only recognizes the
+literal tokens `*` or `localhost`. So while a malicious package's install-time
+code can't reach the session's files, it can still reach anything else the host
+can reach over the network except (on macOS) loopback — including a cloud
+metadata endpoint or other internal/RFC1918 addresses if the daemon runs
+somewhere those are reachable. Treat enabling this the same as running an
+arbitrary `pip`/`npm install` locally: fine on a personal machine or trusted CI
+runner, and something to reconsider before enabling on a host with
+network-reachable internal services.
+
+Package specifiers are validated before anything runs (rejecting flag injection
+like a leading `-` and shell metacharacters), and the install binary
+(`python3`/`npm`) must already exist on the daemon's `$PATH` — there is no
+bundled interpreter.
+
+### 3. Operator allowlists (runtime policy)
 
 The server enforces a set of policy restrictions on all sessions:
 
-| Config key               | What it restricts                                                                                                                                                                                                                                                                             |
-| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `domain_allowlist`       | Domains reachable via `session_fetch`. Supports exact hostnames and `*.example.com` wildcards, or `["*"]` for all.                                                                                                                                                                            |
-| `mount_allowlist`        | Host path prefixes that `session_mount` may read from and `session_export`/`session_commit` may write back to (empty means all paths allowed there) — and, separately, host directories `session_bash`'s sandbox may read from directly, in addition to the workspace, overlays, and fixed system/PATH dirs (empty means no extra directories there). |
-| `env_allowlist`          | Host environment variable names readable via `session_get_env`.                                                                                                                                                                                                                               |
-| `bash_command_denylist`  | Command substrings always rejected by `session_bash` before execution.                                                                                                                                                                                                                        |
-| `bash_command_allowlist` | Command substrings permitted by `session_bash`. Empty means all commands allowed (subject to the denylist).                                                                                                                                                                                   |
+| Config key                | What it restricts                                                                                                                                                                                                                                                                                                                                     |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `domain_allowlist`        | Domains reachable via `session_fetch`. Supports exact hostnames and `*.example.com` wildcards, or `["*"]` for all.                                                                                                                                                                                                                                    |
+| `mount_allowlist`         | Host path prefixes that `session_mount` may read from and `session_export`/`session_commit` may write back to (empty means all paths allowed there) — and, separately, host directories `session_bash`'s sandbox may read from directly, in addition to the workspace, overlays, and fixed system/PATH dirs (empty means no extra directories there). |
+| `env_allowlist`           | Host environment variable names readable via `session_get_env`.                                                                                                                                                                                                                                                                                       |
+| `bash_command_denylist`   | Command substrings always rejected by `session_bash` before execution.                                                                                                                                                                                                                                                                                |
+| `bash_command_allowlist`  | Command substrings permitted by `session_bash`. Empty means all commands allowed (subject to the denylist).                                                                                                                                                                                                                                           |
+| `package_install_enabled` | Whether `session_package_install` is available at all. Disabled by default since, unlike every other tool, its sandbox has network access.                                                                                                                                                                                                            |
 
 Agents operate within whatever the operator configured. They cannot expand their
 own permissions at runtime.
@@ -62,6 +99,7 @@ When no `DRUN_CONFIG` is set, drun applies the following defaults:
 | ---------------------------------- | -------------------------------------------------------- |
 | Outbound network (`session_bash`)  | None — fully unshared from the host network              |
 | Outbound network (`session_fetch`) | `pypi.org`, `files.pythonhosted.org`, `cdn.jsdelivr.net` |
+| `session_package_install`          | Disabled                                                 |
 | Mount/export path restrictions     | None                                                     |
 | Env var exposure                   | None                                                     |
 | Command restrictions               | None                                                     |
@@ -70,6 +108,7 @@ When no `DRUN_CONFIG` is set, drun applies the following defaults:
 | Max checkpoints                    | 200 per session                                          |
 | Idle session timeout               | 1 hour                                                   |
 | `session_bash` timeout             | 30 seconds                                               |
+| `session_package_install` timeout  | 3 minutes                                                |
 
 The default posture is conservative on network access, permissive on filesystem
 scope. If you are deploying drun in a shared environment, set `mount_allowlist`
@@ -105,6 +144,10 @@ through the symlink is rejected by the OS sandbox, not by drun's own logic.
 Mounting an untrusted directory whose name doesn't match `mount_overlay_paths`
 loads its full contents into the session's in-memory workspace.
 
+`session_package_install`'s network access is unrestricted except for loopback
+on macOS (see above) — there is no domain allowlist equivalent to
+`session_fetch`'s for it, and no equivalent loopback carve-out on Linux at all.
+
 ---
 
 ## Threat model summary
@@ -123,6 +166,11 @@ loads its full contents into the session's in-memory workspace.
 - Path traversal via crafted workspace keys
 - Unauthorized outbound HTTP via `session_fetch` (domain allowlist enforced on
   the host before any request is made)
+- A malicious `session_package_install` package exfiltrating session files (its
+  network access is confined to a disposable staging directory that is never the
+  session workspace)
+- `session_package_install` attacking other local services on the same machine
+  via loopback (denied on macOS; see Known limitations for the Linux gap)
 
 **drun does not protect against:**
 
@@ -136,3 +184,6 @@ loads its full contents into the session's in-memory workspace.
   same OS process
 - Multi-tenant workloads where sessions from different users must be mutually
   isolated at the OS level — all sessions share the same OS process and user
+- `session_package_install` reaching a cloud metadata endpoint or other
+  internal/RFC1918 addresses — neither SBPL nor bwrap can filter network access
+  by hostname or specific IP, only "all" vs. (on macOS) "all except loopback"
