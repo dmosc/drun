@@ -923,6 +923,9 @@
       daemonStatus: null,
       daemonPanelOpen: false,
       liveOutput: null,   // { running, command, output } for the selected session
+      // { path, mode, fileState } last rendered by renderFilesPreview, so the 2s
+      // poll doesn't rebuild an unchanged iframe/audio/video and restart playback.
+      lastRenderedPreview: null,
     };
 
     // ── Helpers ──────────────────────────────────────────────────────────────
@@ -1436,6 +1439,7 @@
       const preview = document.getElementById('files-preview');
 
       if (!viewState.selectedFilePath) {
+        viewState.lastRenderedPreview = null;
         preview.innerHTML =
           `<div class="file-preview-head"><span class="mono-id">Diff from previous checkpoint</span></div>`
           + diffBlockHtml(cached?.diff, 'No changes from the previous checkpoint');
@@ -1469,6 +1473,17 @@
       } else {
         bodyHtml = `<div class="file-preview-body"><pre class="output-pre">${escHtml(fileState.content)}</pre></div>`;
       }
+
+      // Skip the rewrite when nothing changed since the last render; otherwise
+      // every 2s poll tick recreates the iframe/audio/video element which
+      // causes an undesirable flicker effect.
+      const last = viewState.lastRenderedPreview;
+      const unchanged = last
+        && last.path === viewState.selectedFilePath
+        && last.mode === viewState.filePreviewMode
+        && last.fileState === fileState;
+      if (unchanged) return;
+      viewState.lastRenderedPreview = { path: viewState.selectedFilePath, mode: viewState.filePreviewMode, fileState };
 
       preview.innerHTML = head + bodyHtml;
     }
