@@ -45,25 +45,19 @@ impl Sandbox {
 
     #[cfg(target_os = "macos")]
     const SYSTEM_READ_PATHS: &'static [&'static str] = &[
-        "/usr",
-        "/bin",
-        "/sbin",
-        "/opt",
-        "/System",
-        "/Library",
-        "/etc",
-        "/dev",
-        "/private/tmp",
+        "/usr", "/bin", "/sbin", "/opt", "/System", "/Library", "/etc", "/dev",
     ];
 
     #[cfg(target_os = "linux")]
     const SYSTEM_READ_PATHS: &'static [&'static str] =
         &["/usr", "/bin", "/sbin", "/lib", "/lib64", "/opt", "/etc"];
 
+    // Paths the sandboxed process may look at but never modify: fixed OS
+    // directories, whatever's on PATH, and any host paths explicitly mounted
+    // in for this session.
     #[cfg(any(target_os = "macos", target_os = "linux"))]
-    fn allowed_read_paths(&self) -> Vec<PathBuf> {
-        let mut candidates: Vec<PathBuf> = vec![self.workspace.clone(), self.scratch.clone()];
-        candidates.extend(self.read_paths.iter().cloned());
+    fn read_only_paths(&self) -> Vec<PathBuf> {
+        let mut candidates = self.read_paths.clone();
         candidates.extend(Self::SYSTEM_READ_PATHS.iter().map(PathBuf::from));
         if let Ok(path_var) = std::env::var("PATH") {
             candidates.extend(std::env::split_paths(&path_var));
@@ -76,50 +70,62 @@ impl Sandbox {
             .collect()
     }
 
+    // Paths the sandboxed process may both read and write.
+    #[cfg(target_os = "macos")]
+    fn read_write_paths(&self) -> Vec<PathBuf> {
+        let canonicalize = |p: PathBuf| p.canonicalize().unwrap_or(p);
+        vec![
+            self.workspace.clone(),
+            self.scratch.clone(),
+            canonicalize(PathBuf::from("/tmp")),
+        ]
+    }
+
+    #[cfg(target_os = "linux")]
+    fn read_write_paths(&self) -> Vec<PathBuf> {
+        vec![self.workspace.clone(), self.scratch.clone()]
+    }
+
+    // xcrun/clang keep a cache file under the real per-user Darwin temp dir
+    // regardless of the TMPDIR override in `SCRATCH_ENV_VARS`.
+    #[cfg(target_os = "macos")]
+    fn xcrun_cache_rule(&self) -> String {
+        let temp_dir = std::env::temp_dir()
+            .canonicalize()
+            .unwrap_or_else(|_| std::env::temp_dir());
+        let escaped = temp_dir.display().to_string().replace('.', "\\.");
+        format!("    (regex #\"^{escaped}/xcrun_db.*$\")\n")
+    }
+
+    #[cfg(target_os = "macos")]
+    fn sbpl_subpaths<'a>(paths: impl Iterator<Item = &'a PathBuf>) -> String {
+        paths
+            .map(|p| format!("    (subpath \"{}\")\n", p.display()))
+            .collect()
+    }
+
     #[cfg(target_os = "macos")]
     pub(crate) fn command(&self, command: &str) -> anyhow::Result<Command> {
         // Apple Sandbox Profile Language (SBPL): a Scheme-like DSL interpreted
         // by the macOS kernel. "deny default" blocks everything not
         // explicitly allowed.
-        //
-        // File contents can only be read from the workspace, scratch dir, any
-        // mounted overlays, and the fixed/PATH system directories in
-        // `allowed_read_paths` — not the whole host filesystem. File writes
-        // are limited to the workspace, scratch dir, /private/tmp, and
-        // /dev/null.
-        //
-        // temp_dir() returns the /var/... symlink form, but the sandbox
-        // checks against the resolved /private/var/... path.
-        let temp_dir = std::env::temp_dir()
-            .canonicalize()
-            .unwrap_or_else(|_| std::env::temp_dir());
-        let read_subpaths: String = self
-            .allowed_read_paths()
-            .iter()
-            .chain(std::iter::once(&temp_dir))
-            .map(|p| format!("    (subpath \"{}\")\n", p.display()))
-            .collect();
+        let read_only = self.read_only_paths();
+        let read_write = self.read_write_paths();
+        let xcrun_rule = self.xcrun_cache_rule();
+        let read_subpaths = Self::sbpl_subpaths(read_only.iter().chain(read_write.iter()));
+        let write_subpaths = Self::sbpl_subpaths(read_write.iter());
         let profile = format!(
             "(version 1)\n\
              (deny default)\n\
              (allow file-read-metadata)\n\
-             (allow file-read* (literal \"/\")\n{})\n\
-             (allow file-write*\n\
-                 (subpath \"{}\")\n\
-                 (subpath \"{}\")\n\
-                 (subpath \"/private/tmp\")\n\
-                 (subpath \"{}\")\n\
-                 (literal \"/dev/null\"))\n\
+             (allow file-read* (literal \"/\")\n{read_subpaths}{xcrun_rule})\n\
+             (allow file-write*\n{write_subpaths}{xcrun_rule}    (literal \"/dev/null\"))\n\
              (allow process-exec*)\n\
              (allow process-fork)\n\
              (allow signal)\n\
              (allow mach-lookup)\n\
              (allow mach-priv-host-port)\n\
-             (allow sysctl-read)\n",
-            read_subpaths,
-            self.workspace.display(),
-            self.scratch.display(),
-            temp_dir.display()
+             (allow sysctl-read)\n"
         );
 
         let mut cmd = Command::new("sandbox-exec");
@@ -134,8 +140,6 @@ impl Sandbox {
 
     #[cfg(target_os = "linux")]
     pub(crate) fn command(&self, command: &str) -> anyhow::Result<Command> {
-        let workspace_str = self.workspace.to_string_lossy().into_owned();
-        let scratch_str = self.scratch.to_string_lossy().into_owned();
         which::which("bwrap").map_err(|_| {
             anyhow::anyhow!(
                 "bwrap not found; install bubblewrap (e.g. `apt install bubblewrap`) \
@@ -144,24 +148,15 @@ impl Sandbox {
         })?;
         let mut cmd = Command::new("bwrap");
         cmd.args(["--dev", "/dev", "--proc", "/proc"]);
-        // Read-only binds are limited to the workspace, scratch dir, any
-        // mounted overlays, and the fixed/PATH system directories in
-        // `allowed_read_paths` — not the whole host root like a blanket
-        // `--ro-bind / /` would give.
-        for path in self.allowed_read_paths() {
-            if path == self.workspace || path == self.scratch {
-                continue; // bound read-write below instead
-            }
+        for path in self.read_only_paths() {
             let path_str = path.to_string_lossy().into_owned();
-            cmd.arg("--ro-bind").arg(&path_str).arg(&path_str);
+            cmd.arg("--ro-bind").arg(path_str.clone()).arg(path_str);
+        }
+        for path in self.read_write_paths() {
+            let path_str = path.to_string_lossy().into_owned();
+            cmd.arg("--bind").arg(path_str.clone()).arg(path_str);
         }
         cmd.args([
-            "--bind",
-            &workspace_str,
-            &workspace_str, // writable workspace
-            "--bind",
-            &scratch_str,
-            &scratch_str, // writable scratch dir (see SCRATCH_ENV_VARS)
             "--tmpfs",
             "/tmp",              // isolated /tmp
             "--unshare-net",     // no network access
