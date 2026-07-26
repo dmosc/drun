@@ -244,6 +244,7 @@ impl Sandbox {
 }
 
 #[cfg(test)]
+#[cfg(target_os = "macos")]
 mod tests {
     use super::*;
     use std::net::TcpListener;
@@ -255,7 +256,6 @@ mod tests {
     // profile text, so it fails if sandbox-exec's actual enforcement ever
     // drifts from what the generated SBPL claims.
     #[test]
-    #[cfg(target_os = "macos")]
     fn plain_command_and_networked_command_both_deny_loopback() {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
@@ -300,7 +300,6 @@ mod tests {
     // wider network egress networked_command exists for.
     #[test]
     #[ignore]
-    #[cfg(target_os = "macos")]
     fn networked_command_still_reaches_the_real_internet() {
         let workspace = tempfile::tempdir().unwrap();
         let scratch = tempfile::tempdir().unwrap();
