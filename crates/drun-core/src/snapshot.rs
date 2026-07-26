@@ -1,11 +1,15 @@
 //! Session persistence: encode/decode the full checkpoint history to/from a
 //! zstd-compressed .drun file, plus a lightweight .drun.meta sidecar.
 
-use crate::CheckpointRef;
+use crate::interner::Interner;
+use crate::mounts::MountTable;
+use crate::session::Session;
+use crate::{Checkpoint, CheckpointRef, ConfigHandle, FileMap};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 const MAGIC: &[u8; 4] = b"DRUN";
 const COMPRESSION_LEVEL: i32 = 3;
@@ -81,6 +85,98 @@ impl SessionSnapshot {
         };
         std::fs::write(path.with_extension("drun.meta"), meta.encode()?)?;
         Ok(())
+    }
+
+    /// Encodes `session`'s full checkpoint history, deduplicating identical
+    /// blobs by pointer identity so shared content is stored once.
+    pub(crate) fn from_session(session: &Session) -> Self {
+        let mut blob_ptr_to_index: HashMap<usize, usize> = HashMap::new();
+        let mut blobs: Vec<Vec<u8>> = Vec::new();
+
+        let checkpoints = session
+            .history()
+            .iter()
+            .map(|checkpoint| {
+                let files = checkpoint
+                    .files
+                    .iter()
+                    .map(|(key, arc)| {
+                        let ptr = Arc::as_ptr(arc) as usize;
+                        let blob_index = *blob_ptr_to_index.entry(ptr).or_insert_with(|| {
+                            let idx = blobs.len();
+                            blobs.push((**arc).clone());
+                            idx
+                        });
+                        (key.clone(), blob_index)
+                    })
+                    .collect();
+                CheckpointRecord {
+                    id: checkpoint.id,
+                    stdout: checkpoint.stdout.clone(),
+                    stderr: checkpoint.stderr.clone(),
+                    label: checkpoint.label.clone(),
+                    command: checkpoint.command.clone(),
+                    exit_code: checkpoint.exit_code,
+                    files,
+                }
+            })
+            .collect();
+
+        Self {
+            checkpoint_idx: session.checkpoint_idx(),
+            parent: session.parent.clone(),
+            label: session.label.clone(),
+            origins: session.mounts().origins().clone(),
+            overlays: session.mounts().overlays().clone(),
+            blobs,
+            checkpoints,
+        }
+    }
+
+    /// Rebuilds a `Session` from a decoded snapshot, re-seeding the interner
+    /// so already-shared blobs stay deduplicated, and dropping any origin or
+    /// overlay whose host path has since disappeared.
+    pub(crate) fn restore(self, config: ConfigHandle) -> Result<Session> {
+        let blob_arcs: Vec<Arc<Vec<u8>>> = self.blobs.into_iter().map(Arc::new).collect();
+        let checkpoints: Vec<Checkpoint> = self
+            .checkpoints
+            .into_iter()
+            .map(|record| {
+                let files: FileMap = record
+                    .files
+                    .into_iter()
+                    .map(|(key, blob_index)| (key, Arc::clone(&blob_arcs[blob_index])))
+                    .collect();
+                Checkpoint {
+                    id: record.id,
+                    stdout: record.stdout,
+                    stderr: record.stderr,
+                    label: record.label,
+                    command: record.command,
+                    exit_code: record.exit_code,
+                    files,
+                }
+            })
+            .collect();
+
+        let mut interner = Interner::default();
+        for checkpoint in &checkpoints {
+            for arc in checkpoint.files.values() {
+                interner.seed(arc);
+            }
+        }
+
+        let mounts = MountTable::from_raw(self.origins, self.overlays).prune_missing();
+
+        Ok(Session::from_parts(
+            config,
+            checkpoints,
+            self.checkpoint_idx,
+            mounts,
+            interner,
+            self.label,
+            self.parent,
+        ))
     }
 }
 
