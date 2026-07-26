@@ -509,7 +509,7 @@
     }
 
     #output-body {
-      max-height: 480px;
+      max-height: 700px;
       padding: 10px;
     }
 
@@ -605,6 +605,10 @@
       margin-bottom: 4px;
     }
 
+    .output-section-head:not(:first-child) {
+      margin-top: 12px;
+    }
+
     .output-pre {
       font-family: var(--mono);
       font-size: 12px;
@@ -615,7 +619,7 @@
     }
 
     .output-pre-scroll {
-      max-height: 200px;
+      max-height: 450px;
       overflow-y: auto;
     }
 
@@ -926,6 +930,9 @@
       // { path, mode, fileState } last rendered by renderFilesPreview, so the 2s
       // poll doesn't rebuild an unchanged iframe/audio/video and restart playback.
       lastRenderedPreview: null,
+      // { cached, command } last rendered by renderOutputColumn, so the 2s poll
+      // doesn't rebuild the output pane and reset its scroll position.
+      lastRenderedOutput: null,
     };
 
     // ── Helpers ──────────────────────────────────────────────────────────────
@@ -1110,6 +1117,11 @@
         document.body.removeChild(textarea);
       }
       flashButton(btn);
+    }
+
+    function copySectionOutput(btn) {
+      const pre = btn.closest('.output-section-head').nextElementSibling;
+      copyToClipboard(pre.textContent, btn);
     }
 
     function flashButton(btn) {
@@ -1319,24 +1331,42 @@
 
     function renderOutputColumn(cached, hist) {
       const body = document.getElementById('output-body');
-      if (!cached) { body.innerHTML = '<div class="loading-note">Loading…</div>'; return; }
+      if (!cached) {
+        viewState.lastRenderedOutput = null;
+        body.innerHTML = '<div class="loading-note">Loading…</div>';
+        return;
+      }
 
-      const commandHtml = hist?.command ? `
+      // Skip the rewrite when nothing changed since the last render.
+      const command = hist?.command ?? null;
+      const last = viewState.lastRenderedOutput;
+      if (last && last.cached === cached && last.command === command) return;
+      viewState.lastRenderedOutput = { cached, command };
+
+      const commandHtml = command ? `
         <div class="output-section-head">
           <span class="output-label" style="margin:0">Command</span>
-          <button class="btn btn-link" onclick="copyToClipboard('${escHtml(hist.command)}', this)">Copy command</button>
+          <button class="btn btn-link" onclick="copySectionOutput(this)">Copy command</button>
         </div>
-        <pre class="output-pre output-command output-pre-scroll">${escHtml(hist.command)}</pre>` : '';
+        <pre class="output-pre output-command output-pre-scroll">${escHtml(command)}</pre>` : '';
 
       const stdoutHtml = cached.stdout
-        ? `<pre class="output-pre output-pre-scroll">${escHtml(cached.stdout)}</pre>`
-        : '<span class="output-empty">No output</span>';
+        ? `<div class="output-section-head">
+            <span class="output-label" style="margin:0">Stdout</span>
+            <button class="btn btn-link" onclick="copySectionOutput(this)">Copy stdout</button>
+          </div>
+          <pre class="output-pre output-pre-scroll">${escHtml(cached.stdout)}</pre>`
+        : `<div class="output-label">Stdout</div><span class="output-empty">No output</span>`;
 
       const stderrHtml = cached.stderr
-        ? `<div class="output-label" style="color:var(--red)">Stderr</div><pre class="output-pre output-pre-scroll">${escHtml(cached.stderr)}</pre>`
+        ? `<div class="output-section-head">
+            <span class="output-label" style="margin:0;color:var(--red)">Stderr</span>
+            <button class="btn btn-link" onclick="copySectionOutput(this)">Copy stderr</button>
+          </div>
+          <pre class="output-pre output-pre-scroll">${escHtml(cached.stderr)}</pre>`
         : '';
 
-      body.innerHTML = `${commandHtml}<div class="output-label">Stdout</div>${stdoutHtml}${stderrHtml}`;
+      body.innerHTML = `${commandHtml}${stdoutHtml}${stderrHtml}`;
     }
 
     // ── Rendering: files column ───────────────────────────────────────────────
