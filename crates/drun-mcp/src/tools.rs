@@ -52,7 +52,8 @@ pub struct SessionSwitch {
                    registered as mount_overlay_paths (node_modules, venvs, etc.) are symlinked \
                    in automatically. File changes are captured as a new checkpoint. Command \
                    policy (denylist/allowlist) is enforced by server config. Network is \
-                   blocked — use session_fetch first for external data.",
+                   blocked — use session_fetch first for external data, or \
+                   session_package_install to install a package.",
     idempotent_hint = false,
     destructive_hint = false,
     read_only_hint = false
@@ -61,6 +62,29 @@ pub struct SessionSwitch {
 pub struct SessionBash {
     /// Shell command to run (passed to sh -c).
     pub command: String,
+    pub description: String,
+}
+
+#[mcp_tool(
+    name = "session_package_install",
+    description = "Install packages so subsequent session_bash calls can import them. Unlike \
+                   session_bash, this reaches the network — but only to install into a \
+                   disposable staging area, never the session's own files, so a malicious \
+                   package can't use that network access to exfiltrate anything from the \
+                   workspace. Installed packages persist as a new checkpoint and are \
+                   automatically importable afterward (PYTHONPATH/NODE_PATH are set for you). \
+                   Disabled by default; the server operator must set package_install_enabled = \
+                   true. Supported package_manager values: \"pip\", \"npm\".",
+    idempotent_hint = false,
+    destructive_hint = false,
+    read_only_hint = false
+)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct SessionPackageInstall {
+    /// Package manager to install with: "pip" or "npm".
+    pub package_manager: String,
+    /// Package specifiers to install (e.g. "requests", "left-pad@1.3.0").
+    pub packages: Vec<String>,
     pub description: String,
 }
 
@@ -329,12 +353,13 @@ pub struct SessionCommit {
     name = "get_config",
     description = "Return the server's operator-configured limits and allowlists: which domains \
                    session_fetch may reach, which host paths session_mount may load, which env \
-                   vars session_get_env may read, the bash command policy, and resource limits \
-                   (workspace size, checkpoint count, timeouts). Call this before your first \
-                   session_fetch or session_mount to see what's available instead of discovering \
-                   it through denied calls. Note the allowlists default oppositely when empty: \
-                   an empty domain_allowlist permits no domains, while an empty mount_allowlist \
-                   permits any host path.",
+                   vars session_get_env may read, the bash command policy, whether \
+                   session_package_install is enabled, and resource limits (workspace size, \
+                   checkpoint count, timeouts). Call this before your first session_fetch, \
+                   session_mount, or session_package_install to see what's available instead of \
+                   discovering it through denied calls. Note the allowlists default oppositely \
+                   when empty: an empty domain_allowlist permits no domains, while an empty \
+                   mount_allowlist permits any host path.",
     idempotent_hint = true,
     destructive_hint = false,
     read_only_hint = true
@@ -540,6 +565,7 @@ tool_box!(
         SessionHistory,
         GetSessionState,
         SessionBash,
+        SessionPackageInstall,
         SessionRollback,
         SessionReadFile,
         SessionWriteFile,

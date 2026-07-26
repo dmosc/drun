@@ -37,6 +37,8 @@ impl DrunHandler {
                 "bash_timeout_ms": config.bash_timeout_ms,
                 "fetch_timeout_ms": config.fetch_timeout_ms,
                 "connect_timeout_ms": config.connect_timeout_ms,
+                "package_install_enabled": config.package_install_enabled,
+                "package_install_timeout_ms": config.package_install_timeout_ms,
             })
             .to_string(),
         ))

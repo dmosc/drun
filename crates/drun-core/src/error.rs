@@ -10,6 +10,9 @@ pub enum RunnerError {
     WorkspaceSizeExceeded { actual_bytes: u64, limit_bytes: u64 },
     UnsupportedExtractionFormat(String),
     ExtractionFailed(String),
+    PackageInstallDisabled,
+    UnsupportedPackageManager(String),
+    InvalidPackageSpec(String),
 }
 
 impl RunnerError {
@@ -63,6 +66,18 @@ impl RunnerError {
     pub fn extraction_failed(path: &str, cause: impl std::fmt::Display) -> Self {
         Self::ExtractionFailed(format!("failed to extract text from '{path}': {cause}"))
     }
+
+    pub fn package_install_disabled() -> Self {
+        Self::PackageInstallDisabled
+    }
+
+    pub fn unsupported_package_manager(name: &str) -> Self {
+        Self::UnsupportedPackageManager(format!("unsupported package manager '{name}'"))
+    }
+
+    pub fn invalid_package_spec(message: impl Into<String>) -> Self {
+        Self::InvalidPackageSpec(message.into())
+    }
 }
 
 impl std::fmt::Display for RunnerError {
@@ -87,6 +102,12 @@ impl std::fmt::Display for RunnerError {
             ),
             Self::UnsupportedExtractionFormat(msg) => write!(f, "{msg}"),
             Self::ExtractionFailed(msg) => write!(f, "{msg}"),
+            Self::PackageInstallDisabled => write!(
+                f,
+                "session_package_install is disabled; set package_install_enabled = true in server config"
+            ),
+            Self::UnsupportedPackageManager(msg) => write!(f, "{msg}"),
+            Self::InvalidPackageSpec(msg) => write!(f, "{msg}"),
         }
     }
 }

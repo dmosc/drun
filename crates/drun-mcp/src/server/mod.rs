@@ -7,6 +7,7 @@ mod config_snapshot;
 mod execution;
 mod fetch;
 mod file_ops;
+mod package_install;
 mod session_ops;
 #[cfg(test)]
 mod test_support;
@@ -56,6 +57,10 @@ impl ServerHandler for DrunHandler {
             DrunTools::GetSessionState(_) => self.handle_get_session_state(&connection_id),
             DrunTools::SessionBash(t) => {
                 self.handle_session_bash(&connection_id, t, runtime, progress_token)
+                    .await
+            }
+            DrunTools::SessionPackageInstall(t) => {
+                self.handle_session_package_install(&connection_id, t, runtime, progress_token)
                     .await
             }
             DrunTools::SessionRollback(t) => self.handle_session_rollback(&connection_id, t),

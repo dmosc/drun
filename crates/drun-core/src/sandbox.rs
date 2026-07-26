@@ -1,6 +1,9 @@
 //! Sandbox execution for shell commands. On macOS uses sandbox-exec with an
 //! SBPL profile; on Linux uses bubblewrap (bwrap). Both strategies confine
-//! the command to the session workspace with no network access.
+//! the command to the session workspace with no network access, except
+//! `networked_command`, which trades network confinement for filesystem
+//! confinement to whatever directory it's pointed at (on macOS, loopback is
+//! still denied — see `sbpl_profile`; on Linux there's no such carve-out).
 
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
@@ -104,32 +107,47 @@ impl Sandbox {
             .collect()
     }
 
+    // Apple Sandbox Profile Language (SBPL): a Scheme-like DSL interpreted by
+    // the macOS kernel. "deny default" blocks everything not explicitly
+    // allowed. `allow_network` is only ever set by `networked_command` —
+    // `command` (session_bash) always omits it.
     #[cfg(target_os = "macos")]
-    pub(crate) fn command(&self, command: &str) -> anyhow::Result<Command> {
-        // Apple Sandbox Profile Language (SBPL): a Scheme-like DSL interpreted
-        // by the macOS kernel. "deny default" blocks everything not
-        // explicitly allowed.
+    fn sbpl_profile(&self, allow_network: bool) -> String {
         let read_only = self.read_only_paths();
         let read_write = self.read_write_paths();
         let xcrun_rule = self.xcrun_cache_rule();
         let read_subpaths = Self::sbpl_subpaths(read_only.iter().chain(read_write.iter()));
         let write_subpaths = Self::sbpl_subpaths(read_write.iter());
-        let profile = format!(
+        let network_rule = if allow_network {
+            // Block local loopback interface but allow egress network.
+            "(deny network-outbound (remote ip \"localhost:*\"))\n(allow network*)\n"
+        } else {
+            ""
+        };
+        format!(
             "(version 1)\n\
              (deny default)\n\
              (allow file-read-metadata)\n\
              (allow file-read* (literal \"/\")\n{read_subpaths}{xcrun_rule})\n\
              (allow file-write*\n{write_subpaths}{xcrun_rule}    (literal \"/dev/null\"))\n\
+             {network_rule}\
              (allow process-exec*)\n\
              (allow process-fork)\n\
              (allow signal)\n\
              (allow mach-lookup)\n\
              (allow mach-priv-host-port)\n\
              (allow sysctl-read)\n"
-        );
+        )
+    }
 
+    #[cfg(target_os = "macos")]
+    pub(crate) fn command(&self, command: &str) -> anyhow::Result<Command> {
         let mut cmd = Command::new("sandbox-exec");
-        cmd.arg("-p").arg(profile).arg("sh").arg("-c").arg(command);
+        cmd.arg("-p")
+            .arg(self.sbpl_profile(false))
+            .arg("sh")
+            .arg("-c")
+            .arg(command);
         self.apply_scratch_env(&mut cmd);
         // New process group set globally allows cleanup workflows to wipe out
         // all spawned processes and subprocesses, ensuring that none remains
@@ -138,8 +156,29 @@ impl Sandbox {
         Ok(cmd)
     }
 
+    // Runs argv directly (no shell) with network allowed (except loopback,
+    // see sbpl_profile), still confined to this Sandbox's workspace/scratch.
+    // SBPL can't filter network access by hostname, so this is unrestricted
+    // egress to anything non-local — callers keep the blast radius small by
+    // pointing it at a disposable directory, never the real session
+    // workspace.
+    #[cfg(target_os = "macos")]
+    pub(crate) fn networked_command(&self, argv: &[String]) -> anyhow::Result<Command> {
+        let Some((program, args)) = argv.split_first() else {
+            anyhow::bail!("networked_command requires a non-empty argv");
+        };
+        let mut cmd = Command::new("sandbox-exec");
+        cmd.arg("-p")
+            .arg(self.sbpl_profile(true))
+            .arg(program)
+            .args(args);
+        self.apply_scratch_env(&mut cmd);
+        cmd.process_group(0);
+        Ok(cmd)
+    }
+
     #[cfg(target_os = "linux")]
-    pub(crate) fn command(&self, command: &str) -> anyhow::Result<Command> {
+    fn bwrap_command(&self) -> anyhow::Result<Command> {
         which::which("bwrap").map_err(|_| {
             anyhow::anyhow!(
                 "bwrap not found; install bubblewrap (e.g. `apt install bubblewrap`) \
@@ -156,9 +195,14 @@ impl Sandbox {
             let path_str = path.to_string_lossy().into_owned();
             cmd.arg("--bind").arg(path_str.clone()).arg(path_str);
         }
+        cmd.arg("--tmpfs").arg("/tmp"); // isolated /tmp
+        Ok(cmd)
+    }
+
+    #[cfg(target_os = "linux")]
+    pub(crate) fn command(&self, command: &str) -> anyhow::Result<Command> {
+        let mut cmd = self.bwrap_command()?;
         cmd.args([
-            "--tmpfs",
-            "/tmp",              // isolated /tmp
             "--unshare-net",     // no network access
             "--die-with-parent", // clean up if parent process exits
             "--",
@@ -174,8 +218,108 @@ impl Sandbox {
         Ok(cmd)
     }
 
+    // Unlike macOS's sbpl_profile, this doesn't deny loopback: bwrap has no
+    // per-destination network filter short of a real network namespace plus
+    // nftables/a proxy, which is out of scope here. Shares the host's
+    // network namespace outright (no --unshare-net), so on Linux this is
+    // unrestricted egress including to other local services.
+    #[cfg(target_os = "linux")]
+    pub(crate) fn networked_command(&self, argv: &[String]) -> anyhow::Result<Command> {
+        let mut cmd = self.bwrap_command()?;
+        cmd.arg("--die-with-parent").arg("--").args(argv);
+        self.apply_scratch_env(&mut cmd);
+        cmd.process_group(0);
+        Ok(cmd)
+    }
+
     #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     pub(crate) fn command(&self, _command: &str) -> anyhow::Result<Command> {
         anyhow::bail!("session_bash is not supported on this platform")
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    pub(crate) fn networked_command(&self, _argv: &[String]) -> anyhow::Result<Command> {
+        anyhow::bail!("session_package_install is not supported on this platform")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::TcpListener;
+
+    // The security-critical property of this module: session_bash's sandbox
+    // must never reach the network — including loopback — while
+    // networked_command's must deny loopback specifically but not the wider
+    // network. Runs against a real local listener rather than asserting on
+    // profile text, so it fails if sandbox-exec's actual enforcement ever
+    // drifts from what the generated SBPL claims.
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn plain_command_and_networked_command_both_deny_loopback() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        // A denied connect() attempt never reaches this listener, so it
+        // stays available to accept the one connection a false positive
+        // would make.
+        std::thread::spawn(move || {
+            let _ = listener.accept();
+            let _ = listener.accept();
+        });
+
+        let workspace = tempfile::tempdir().unwrap();
+        let scratch = tempfile::tempdir().unwrap();
+        let sandbox = Sandbox::new(workspace.path(), scratch.path(), vec![]);
+        let probe = format!("nc -z -w2 127.0.0.1 {port}");
+
+        let denied = sandbox.command(&probe).unwrap().status().unwrap();
+        assert!(
+            !denied.success(),
+            "session_bash's sandbox must not reach the network"
+        );
+
+        let denied = sandbox
+            .networked_command(&[
+                "nc".to_string(),
+                "-z".to_string(),
+                "-w2".to_string(),
+                "127.0.0.1".to_string(),
+                port.to_string(),
+            ])
+            .unwrap()
+            .status()
+            .unwrap();
+        assert!(
+            !denied.success(),
+            "networked_command's sandbox must not reach loopback"
+        );
+    }
+
+    // Needs real outbound internet access, so it's excluded from the default
+    // run — verifies the loopback-deny rule above doesn't also block the
+    // wider network egress networked_command exists for.
+    #[test]
+    #[ignore]
+    #[cfg(target_os = "macos")]
+    fn networked_command_still_reaches_the_real_internet() {
+        let workspace = tempfile::tempdir().unwrap();
+        let scratch = tempfile::tempdir().unwrap();
+        let sandbox = Sandbox::new(workspace.path(), scratch.path(), vec![]);
+
+        let allowed = sandbox
+            .networked_command(&[
+                "nc".to_string(),
+                "-z".to_string(),
+                "-w5".to_string(),
+                "1.1.1.1".to_string(),
+                "443".to_string(),
+            ])
+            .unwrap()
+            .status()
+            .unwrap();
+        assert!(
+            allowed.success(),
+            "networked_command's sandbox must still reach the real internet"
+        );
     }
 }

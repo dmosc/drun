@@ -5,6 +5,7 @@ mod executor;
 mod extract;
 mod interner;
 mod mounts;
+mod package_manager;
 mod sandbox;
 mod session;
 mod snapshot;

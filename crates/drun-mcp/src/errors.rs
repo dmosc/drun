@@ -72,7 +72,10 @@ impl DrunError {
     pub fn execution_timeout(timeout_ms: u64) -> Self {
         Self::new(
             "execution_timeout",
-            format!("execution exceeded the {timeout_ms}ms timeout; increase bash_timeout_ms in server config"),
+            format!(
+                "execution exceeded the {timeout_ms}ms timeout; increase the corresponding \
+                 timeout (bash_timeout_ms or package_install_timeout_ms) in server config"
+            ),
         )
         .with_detail(serde_json::json!({ "timeout_ms": timeout_ms }))
     }
@@ -153,6 +156,21 @@ impl DrunError {
         Self::new("extraction_failed", message)
     }
 
+    pub fn package_install_disabled() -> Self {
+        Self::new(
+            "package_install_disabled",
+            "session_package_install is disabled; set package_install_enabled = true in server config",
+        )
+    }
+
+    pub fn unsupported_package_manager(message: impl Into<String>) -> Self {
+        Self::new("unsupported_package_manager", message)
+    }
+
+    pub fn invalid_package_spec(message: impl Into<String>) -> Self {
+        Self::new("invalid_package_spec", message)
+    }
+
     pub fn from_exec(e: anyhow::Error) -> Self {
         match e.downcast_ref::<RunnerError>() {
             Some(RunnerError::Timeout { timeout_ms }) => Self::execution_timeout(*timeout_ms),
@@ -172,6 +190,11 @@ impl DrunError {
                 Self::unsupported_extraction_format(msg.clone())
             }
             Some(RunnerError::ExtractionFailed(msg)) => Self::extraction_failed(msg.clone()),
+            Some(RunnerError::PackageInstallDisabled) => Self::package_install_disabled(),
+            Some(RunnerError::UnsupportedPackageManager(msg)) => {
+                Self::unsupported_package_manager(msg.clone())
+            }
+            Some(RunnerError::InvalidPackageSpec(msg)) => Self::invalid_package_spec(msg.clone()),
             None => Self::internal(e),
         }
     }

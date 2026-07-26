@@ -45,6 +45,10 @@ pub struct Config {
     pub bash_command_allowlist: Vec<String>,
     /// TCP port for the embedded web UI. Set to None to disable the web server.
     pub web_port: Option<u16>,
+    /// Enables session_package_install.
+    pub package_install_enabled: bool,
+    /// Timeout for session_package_install calls in milliseconds.
+    pub package_install_timeout_ms: u64,
 }
 
 impl Default for Config {
@@ -77,6 +81,8 @@ impl Default for Config {
             bash_command_denylist: vec![],
             bash_command_allowlist: vec![],
             web_port: Some(7274),
+            package_install_enabled: false,
+            package_install_timeout_ms: 180_000,
         }
     }
 }
@@ -219,6 +225,8 @@ mod tests {
         assert_eq!(config.bash_command_denylist, Vec::<String>::new());
         assert_eq!(config.bash_command_allowlist, Vec::<String>::new());
         assert_eq!(config.web_port, Some(7274));
+        assert!(!config.package_install_enabled);
+        assert_eq!(config.package_install_timeout_ms, 180_000);
     }
 
     #[test]

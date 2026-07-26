@@ -2,6 +2,7 @@
 //! overlay symlinks, enforces the timeout, and tracks every in-flight child's
 //! process group so the daemon can kill them all on shutdown.
 
+use crate::package_manager::PackageManager;
 use crate::sandbox::Sandbox;
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read};
@@ -71,7 +72,27 @@ impl BashExecutor {
         let scratch_dir = tempfile::TempDir::new()?;
         let child = Sandbox::new(workspace_dir, scratch_dir.path(), read_paths)
             .command(command)?
+            .envs(PackageManager::workspace_env_vars(workspace_dir))
             .current_dir(workspace_dir)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()?;
+        Self::run_child(child, timeout_ms, on_stdout)
+    }
+
+    pub(crate) fn run_networked(
+        staging_dir: &Path,
+        argv: &[String],
+        timeout_ms: u64,
+        on_stdout: &mut dyn FnMut(String),
+    ) -> anyhow::Result<BashOutput> {
+        if let Some(program) = argv.first() {
+            which::which(program).map_err(|_| anyhow::anyhow!("'{program}' not found on PATH"))?;
+        }
+        let scratch_dir = tempfile::TempDir::new()?;
+        let child = Sandbox::new(staging_dir, scratch_dir.path(), vec![])
+            .networked_command(argv)?
+            .current_dir(staging_dir)
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .spawn()?;
@@ -203,6 +224,21 @@ impl BashExecutor {
 mod tests {
     use super::*;
     use std::time::Duration;
+
+    #[test]
+    fn run_networked_rejects_a_program_missing_from_path_before_spawning_anything() {
+        let staging_dir = tempfile::tempdir().unwrap();
+        let result = BashExecutor::run_networked(
+            staging_dir.path(),
+            &["definitely-not-a-real-binary".to_string()],
+            5_000,
+            &mut |_| {},
+        );
+        match result {
+            Ok(_) => panic!("expected a missing-binary error"),
+            Err(e) => assert!(e.to_string().contains("definitely-not-a-real-binary")),
+        }
+    }
 
     #[test]
     fn descendant_pids_finds_a_grandchild_process() {

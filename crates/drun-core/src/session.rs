@@ -4,6 +4,7 @@ use crate::executor::{BashExecutor, BashOutput};
 use crate::extract::TextExtractor;
 use crate::interner::Interner;
 use crate::mounts::MountTable;
+use crate::package_manager::PackageManager;
 use crate::snapshot::SessionSnapshot;
 use crate::workspace::Workspace;
 use crate::{Checkpoint, CheckpointRef, FileMap};
@@ -280,6 +281,58 @@ impl Session {
                 exit_code,
             },
             "session_bash",
+            description,
+        )
+    }
+
+    pub fn install_package(
+        &mut self,
+        package_manager: &str,
+        packages: &[String],
+        on_stdout: &mut dyn FnMut(String),
+        description: Option<&str>,
+    ) -> anyhow::Result<&Checkpoint> {
+        // Verify that package installation is allowed.
+        if !self.config.get().package_install_enabled {
+            return Err(RunnerError::package_install_disabled().into());
+        }
+        let pm = PackageManager::parse(package_manager)?;
+        if packages.is_empty() {
+            return Err(RunnerError::invalid_package_spec("no packages given").into());
+        }
+        for pkg in packages {
+            PackageManager::validate_package_spec(pkg)?;
+        }
+
+        let staging_dir = tempfile::TempDir::new()?;
+        let target_dir = staging_dir.path().join(pm.install_dir());
+        std::fs::create_dir_all(&target_dir)?;
+        let argv = pm.install_argv(&target_dir, packages);
+
+        let timeout_ms = self.config.get().package_install_timeout_ms;
+        let BashOutput {
+            stdout,
+            stderr,
+            exit_code,
+        } = BashExecutor::run_networked(staging_dir.path(), &argv, timeout_ms, on_stdout)?;
+
+        let mut files = self.checkpoints[self.checkpoint_idx].files.clone();
+        if exit_code == Some(0) {
+            for (key, bytes) in Workspace::collect(&target_dir)? {
+                files.insert(format!("{}/{key}", pm.install_dir()), bytes);
+            }
+        }
+        let interned_files = self.interner.intern_file_map(files);
+        self.check_workspace_size(&interned_files)?;
+        self.push_checkpoint(
+            interned_files,
+            CommandOutcome {
+                stdout,
+                stderr,
+                command: Some(format!("{package_manager} install {}", packages.join(" "))),
+                exit_code,
+            },
+            "session_package_install",
             description,
         )
     }
@@ -910,6 +963,135 @@ mod tests {
 
         assert_eq!(squashed.command.as_deref(), Some("echo one && echo two"));
         assert_eq!(squashed.exit_code, Some(2));
+    }
+
+    #[test]
+    fn install_package_is_disabled_by_default() {
+        let mut session = new_session();
+        let err = session
+            .install_package("pip", &["six".to_string()], &mut |_| {}, None)
+            .unwrap_err();
+        assert!(err.to_string().contains("disabled"));
+        assert_eq!(
+            session.history().len(),
+            1,
+            "a disabled install must not checkpoint"
+        );
+    }
+
+    #[test]
+    fn install_package_rejects_an_unsupported_manager_even_when_enabled() {
+        let config = Config {
+            package_install_enabled: true,
+            ..Config::default()
+        };
+        let mut session = Session::new(config.into()).unwrap();
+        let err = session
+            .install_package("cargo", &["serde".to_string()], &mut |_| {}, None)
+            .unwrap_err();
+        assert!(err.to_string().contains("cargo"));
+    }
+
+    #[test]
+    fn install_package_rejects_an_empty_package_list_even_when_enabled() {
+        let config = Config {
+            package_install_enabled: true,
+            ..Config::default()
+        };
+        let mut session = Session::new(config.into()).unwrap();
+        let err = session
+            .install_package("pip", &[], &mut |_| {}, None)
+            .unwrap_err();
+        assert!(err.to_string().contains("no packages"));
+    }
+
+    #[test]
+    fn install_package_rejects_an_unsafe_package_specifier_even_when_enabled() {
+        let config = Config {
+            package_install_enabled: true,
+            ..Config::default()
+        };
+        let mut session = Session::new(config.into()).unwrap();
+        let err = session
+            .install_package(
+                "pip",
+                &["--index-url=http://evil".to_string()],
+                &mut |_| {},
+                None,
+            )
+            .unwrap_err();
+        assert!(err.to_string().contains("not a valid package specifier"));
+    }
+
+    // Requires real network access and a working python3/pip (or npm) on
+    // PATH — not run by default (see the macos-gated tests below for why
+    // these can't run nested inside an already-sandboxed process either).
+    // Run explicitly with `cargo test -- --ignored` to verify end to end.
+    #[test]
+    #[ignore]
+    #[cfg(target_os = "macos")]
+    fn install_package_installs_a_pure_python_package_and_makes_it_importable() {
+        let config = Config {
+            package_install_enabled: true,
+            ..Config::default()
+        };
+        let mut session = Session::new(config.into()).unwrap();
+        let checkpoint = session
+            .install_package("pip", &["six".to_string()], &mut |_| {}, None)
+            .unwrap();
+        assert_eq!(checkpoint.exit_code, Some(0));
+        assert!(
+            checkpoint
+                .files
+                .keys()
+                .any(|k| k.starts_with(".packages/pip/six"))
+        );
+
+        let verify = session
+            .execute_bash(
+                "python3 -c \"import six; print(six.__name__)\"",
+                &mut |_| {},
+                None,
+            )
+            .unwrap();
+        assert_eq!(verify.stdout.trim(), "six");
+    }
+
+    // Same as above but for npm, proving the abstraction genuinely covers a
+    // second package manager rather than only ever having been exercised
+    // against pip. Needs an `npm` that resolves to a binary reachable inside
+    // the sandbox's read-only paths (e.g. a Homebrew or system install) — a
+    // version manager that symlinks into $HOME (nvm, volta, ...) will fail
+    // with EPERM, which is a pre-existing Sandbox path-allowlist limitation
+    // unrelated to this abstraction.
+    #[test]
+    #[ignore]
+    #[cfg(target_os = "macos")]
+    fn install_package_installs_an_npm_package_and_makes_it_requireable() {
+        let config = Config {
+            package_install_enabled: true,
+            ..Config::default()
+        };
+        let mut session = Session::new(config.into()).unwrap();
+        let checkpoint = session
+            .install_package("npm", &["left-pad".to_string()], &mut |_| {}, None)
+            .unwrap();
+        assert_eq!(checkpoint.exit_code, Some(0));
+        assert!(
+            checkpoint
+                .files
+                .keys()
+                .any(|k| k.starts_with(".packages/npm/node_modules/left-pad"))
+        );
+
+        let verify = session
+            .execute_bash(
+                "node -e \"console.log(require('left-pad')('5', 3, '0'))\"",
+                &mut |_| {},
+                None,
+            )
+            .unwrap();
+        assert_eq!(verify.stdout.trim(), "005");
     }
 
     // These two exercise the real sandbox-exec profile end to end, so they
