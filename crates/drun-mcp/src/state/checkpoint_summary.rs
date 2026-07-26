@@ -13,6 +13,8 @@ pub(crate) struct CheckpointSummary {
     exit_code: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     tool: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
     stdout_bytes: usize,
     stderr_bytes: usize,
     file_count: usize,
@@ -40,6 +42,7 @@ impl CheckpointSummary {
                     command: checkpoint.command.clone(),
                     exit_code: checkpoint.exit_code,
                     tool: checkpoint.tool.clone(),
+                    description: checkpoint.description.clone(),
                     stdout_bytes: checkpoint.stdout.len(),
                     stderr_bytes: checkpoint.stderr.len(),
                     file_count: checkpoint.files.len(),
@@ -79,6 +82,7 @@ mod tests {
                     command: None,
                     exit_code: None,
                     tool: None,
+                    description: None,
                     files: HashMap::new(),
                 },
                 CheckpointRecord {
@@ -89,6 +93,7 @@ mod tests {
                     command,
                     exit_code: None,
                     tool: None,
+                    description: None,
                     files: HashMap::new(),
                 },
             ],
@@ -116,8 +121,8 @@ mod tests {
     #[test]
     fn checkpoint_summary_history_diffs_against_the_prior_checkpoint() {
         let mut session = new_session();
-        session.write_file("a.txt", b"hi".to_vec()).unwrap();
-        session.write_file("b.txt", b"hi".to_vec()).unwrap();
+        session.write_file("a.txt", b"hi".to_vec(), None).unwrap();
+        session.write_file("b.txt", b"hi".to_vec(), None).unwrap();
 
         let history = CheckpointSummary::history(&session);
         assert_eq!(history.len(), 3);

@@ -61,6 +61,11 @@ pub struct SessionSwitch {
 pub struct SessionBash {
     /// Shell command to run (passed to sh -c).
     pub command: String,
+    /// One short sentence on why you're running this command (e.g.
+    /// "installing pytest to run the test suite"). Shown next to the
+    /// checkpoint this call creates. Keep it brief — a single sentence, not
+    /// a paragraph.
+    pub description: String,
 }
 
 #[mcp_tool(
@@ -203,6 +208,11 @@ pub struct SessionWriteFile {
     pub path: String,
     pub content: String,
     pub is_base64: Option<bool>,
+    /// One short sentence on why you're writing this file (e.g. "adding a
+    /// regression test for the parser bug"). Shown next to the checkpoint
+    /// this call creates. Keep it brief — a single sentence, not a
+    /// paragraph.
+    pub description: String,
 }
 
 #[mcp_tool(
@@ -216,6 +226,11 @@ pub struct SessionWriteFile {
 pub struct SessionDeleteFile {
     /// Session-relative file path (e.g. src/main.py).
     pub path: String,
+    /// One short sentence on why you're deleting this file (e.g. "removing
+    /// the scratch file from the earlier experiment"). Shown next to the
+    /// checkpoint this call creates. Keep it brief — a single sentence, not
+    /// a paragraph.
+    pub description: String,
 }
 
 #[mcp_tool(
@@ -263,6 +278,11 @@ pub struct SessionMerge {
     pub source_checkpoint_label: Option<String>,
     /// Specific file paths to merge. Omit to merge all files from the source checkpoint.
     pub keys: Option<Vec<String>>,
+    /// One short sentence on why you're merging this in (e.g. "pulling in
+    /// the working auth fix from the parallel session"). Shown next to the
+    /// checkpoint this call creates. Keep it brief — a single sentence, not
+    /// a paragraph.
+    pub description: String,
 }
 
 #[mcp_tool(

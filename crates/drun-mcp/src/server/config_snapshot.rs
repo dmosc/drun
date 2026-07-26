@@ -339,7 +339,7 @@ mod tests {
         {
             let sessions = handler.sessions.lock().unwrap();
             let mut session = sessions.get("original").unwrap().lock().unwrap();
-            session.write_file("a.txt", b"hi".to_vec()).unwrap();
+            session.write_file("a.txt", b"hi".to_vec(), None).unwrap();
         }
         let snapshot_path = dir.path().join("original.drun");
         {

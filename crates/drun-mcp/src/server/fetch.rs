@@ -80,7 +80,7 @@ impl DrunHandler {
         let bytes_len = body_bytes.len();
         self.with_session_mut(&session_id, |session| {
             session
-                .write_file(&save_path, body_bytes.to_vec())
+                .write_file(&save_path, body_bytes.to_vec(), None)
                 .map_err(|e| DrunError::from_exec(e).into_tool_err())?;
             Ok(ResponseBuilder::text(
                 serde_json::json!({

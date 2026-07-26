@@ -28,10 +28,14 @@ impl DrunHandler {
                     let live_output = handler.live_output.start(&session_id, &t.command);
                     let previous_files = session.current().files.clone();
                     session
-                        .execute_bash(&t.command, &mut |chunk| {
-                            live_output.append(&chunk);
-                            let _ = progress_tx.send(chunk);
-                        })
+                        .execute_bash(
+                            &t.command,
+                            &mut |chunk| {
+                                live_output.append(&chunk);
+                                let _ = progress_tx.send(chunk);
+                            },
+                            Some(&t.description),
+                        )
                         .map_err(|e| DrunError::from_exec(e).into_tool_err())?;
                     Ok(ResponseBuilder::json(&SessionState::compute(
                         &session_id,

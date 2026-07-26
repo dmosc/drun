@@ -20,6 +20,11 @@ pub struct Checkpoint {
     pub exit_code: Option<i32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool: Option<String>,
+    /// The caller's one-sentence account of why this operation happened
+    /// (e.g. "installing pytest to run the test suite"). `None` for the
+    /// initial checkpoint and for operations that don't take one (squash).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
 }
 
 impl Checkpoint {
@@ -33,6 +38,7 @@ impl Checkpoint {
             command: None,
             exit_code: None,
             tool: None,
+            description: None,
         }
     }
 }

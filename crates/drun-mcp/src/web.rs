@@ -725,7 +725,7 @@ mod tests {
     #[tokio::test]
     async fn handle_checkpoint_diff_defaults_to_diffing_from_checkpoint_zero() {
         let mut session = Session::new(Config::default().into()).unwrap();
-        session.write_file("a.txt", b"hi".to_vec()).unwrap();
+        session.write_file("a.txt", b"hi".to_vec(), None).unwrap();
         let sessions = session_map(vec![("s1", session)]);
 
         let response = WebServer::handle_checkpoint_diff(
@@ -807,8 +807,8 @@ mod tests {
     #[tokio::test]
     async fn handle_checkpoint_files_lists_paths_sorted_with_sizes() {
         let mut session = Session::new(Config::default().into()).unwrap();
-        session.write_file("z.txt", b"12345".to_vec()).unwrap();
-        session.write_file("a.txt", b"hi".to_vec()).unwrap();
+        session.write_file("z.txt", b"12345".to_vec(), None).unwrap();
+        session.write_file("a.txt", b"hi".to_vec(), None).unwrap();
         let sessions = session_map(vec![("s1", session)]);
 
         let response = WebServer::handle_checkpoint_files(
@@ -841,7 +841,7 @@ mod tests {
     #[tokio::test]
     async fn handle_checkpoint_file_returns_utf8_text_as_plain_text() {
         let mut session = Session::new(Config::default().into()).unwrap();
-        session.write_file("notes.txt", b"hello".to_vec()).unwrap();
+        session.write_file("notes.txt", b"hello".to_vec(), None).unwrap();
         let sessions = session_map(vec![("s1", session)]);
 
         let response = WebServer::handle_checkpoint_file(
@@ -861,7 +861,7 @@ mod tests {
     async fn handle_checkpoint_file_marks_non_utf8_content_as_binary() {
         let mut session = Session::new(Config::default().into()).unwrap();
         session
-            .write_file("data.bin", vec![0xff, 0xfe, 0x00])
+            .write_file("data.bin", vec![0xff, 0xfe, 0x00], None)
             .unwrap();
         let sessions = session_map(vec![("s1", session)]);
 
@@ -916,7 +916,7 @@ mod tests {
     #[tokio::test]
     async fn handle_session_fork_creates_a_new_session_branching_from_the_source() {
         let mut source = Session::new(Config::default().into()).unwrap();
-        source.write_file("a.txt", b"hi".to_vec()).unwrap();
+        source.write_file("a.txt", b"hi".to_vec(), None).unwrap();
         let sessions = session_map(vec![("s1", source)]);
         let state = app_state(sessions.clone());
 
@@ -970,8 +970,8 @@ mod tests {
     #[tokio::test]
     async fn handle_session_rollback_moves_the_head_to_the_given_checkpoint() {
         let mut source = Session::new(Config::default().into()).unwrap();
-        source.write_file("a.txt", b"one".to_vec()).unwrap(); // checkpoint 1
-        source.write_file("a.txt", b"two".to_vec()).unwrap(); // checkpoint 2
+        source.write_file("a.txt", b"one".to_vec(), None).unwrap(); // checkpoint 1
+        source.write_file("a.txt", b"two".to_vec(), None).unwrap(); // checkpoint 2
         let sessions = session_map(vec![("s1", source)]);
         let state = app_state(sessions.clone());
 
@@ -1039,7 +1039,7 @@ mod tests {
     async fn handle_session_snapshot_writes_a_drun_file_to_the_default_path() {
         let dir = tempfile::tempdir().unwrap();
         let mut source = Session::new(Config::default().into()).unwrap();
-        source.write_file("a.txt", b"hi".to_vec()).unwrap();
+        source.write_file("a.txt", b"hi".to_vec(), None).unwrap();
         let sessions = session_map(vec![("s1", source)]);
         let config = Config {
             snapshots_dir: dir.path().to_path_buf(),

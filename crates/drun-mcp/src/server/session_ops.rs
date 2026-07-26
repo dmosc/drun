@@ -142,7 +142,7 @@ impl DrunHandler {
             .map_err(|e| DrunError::from_exec(e).into_tool_err())?;
         self.with_session_mut(&session_id, |session| {
             session
-                .merge_from(&source, source_checkpoint_id, t.keys)
+                .merge_from(&source, source_checkpoint_id, t.keys, Some(&t.description))
                 .map_err(|e| DrunError::from_exec(e).into_tool_err())?;
             Ok(ResponseBuilder::json(&SessionState::compute(
                 &session_id,
@@ -240,7 +240,7 @@ mod tests {
                 .unwrap()
                 .lock()
                 .unwrap()
-                .write_file("a.txt", b"hi".to_vec())
+                .write_file("a.txt", b"hi".to_vec(), None)
                 .unwrap();
         }
 
@@ -500,6 +500,7 @@ mod tests {
                     source_checkpoint_id: None,
                     source_checkpoint_label: None,
                     keys: None,
+                    description: "test".to_string(),
                 },
             )
             .unwrap_err();
@@ -521,6 +522,7 @@ mod tests {
                     source_checkpoint_id: None,
                     source_checkpoint_label: None,
                     keys: None,
+                    description: "test".to_string(),
                 },
             )
             .unwrap_err();
@@ -539,7 +541,7 @@ mod tests {
                 .unwrap()
                 .lock()
                 .unwrap()
-                .write_file("shared.txt", b"from source".to_vec())
+                .write_file("shared.txt", b"from source".to_vec(), None)
                 .unwrap();
         }
 
@@ -551,6 +553,7 @@ mod tests {
                     source_checkpoint_id: None,
                     source_checkpoint_label: None,
                     keys: None,
+                    description: "test".to_string(),
                 },
             )
             .unwrap();
@@ -586,6 +589,7 @@ mod tests {
                     source_checkpoint_id: None,
                     source_checkpoint_label: None,
                     keys: None,
+                    description: "test".to_string(),
                 },
             )
             .unwrap();

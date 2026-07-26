@@ -65,7 +65,7 @@ impl DrunHandler {
             };
             let previous_files = session.current().files.clone();
             session
-                .write_file(&t.path, bytes)
+                .write_file(&t.path, bytes, Some(&t.description))
                 .map_err(|e| DrunError::from_exec(e).into_tool_err())?;
             Ok(ResponseBuilder::json(&SessionState::compute(
                 session_id,
@@ -84,7 +84,7 @@ impl DrunHandler {
         self.with_current_session_mut(connection_id, |session_id, session| {
             let previous_files = session.current().files.clone();
             session
-                .delete_file(&t.path)
+                .delete_file(&t.path, Some(&t.description))
                 .map_err(|e| DrunError::from_exec(e).into_tool_err())?;
             Ok(ResponseBuilder::json(&SessionState::compute(
                 session_id,
@@ -183,7 +183,7 @@ mod tests {
                 .unwrap()
                 .lock()
                 .unwrap()
-                .write_file("a.txt", b"hello world".to_vec())
+                .write_file("a.txt", b"hello world".to_vec(), None)
                 .unwrap();
         }
 
@@ -211,7 +211,7 @@ mod tests {
                 .unwrap()
                 .lock()
                 .unwrap()
-                .write_file("a.txt", b"hello world".to_vec())
+                .write_file("a.txt", b"hello world".to_vec(), None)
                 .unwrap();
         }
 
@@ -242,7 +242,7 @@ mod tests {
                 .unwrap()
                 .lock()
                 .unwrap()
-                .write_file("a.txt", b"hello world".to_vec())
+                .write_file("a.txt", b"hello world".to_vec(), None)
                 .unwrap();
         }
 
@@ -273,7 +273,7 @@ mod tests {
                 .unwrap()
                 .lock()
                 .unwrap()
-                .write_file("bin.dat", bytes)
+                .write_file("bin.dat", bytes, None)
                 .unwrap();
         }
 
@@ -321,6 +321,7 @@ mod tests {
                     path: "a.txt".to_string(),
                     content: encoded,
                     is_base64: Some(true),
+                    description: "test".to_string(),
                 },
             )
             .unwrap();
@@ -341,6 +342,7 @@ mod tests {
                     path: "a.txt".to_string(),
                     content: "not valid base64!!".to_string(),
                     is_base64: Some(true),
+                    description: "test".to_string(),
                 },
             )
             .unwrap_err();
@@ -358,6 +360,7 @@ mod tests {
                     path: "../escape.txt".to_string(),
                     content: "hi".to_string(),
                     is_base64: Some(false),
+                    description: "test".to_string(),
                 },
             )
             .unwrap_err();
@@ -379,6 +382,7 @@ mod tests {
                     path: "a.txt".to_string(),
                     content: "hi".to_string(),
                     is_base64: Some(false),
+                    description: "test".to_string(),
                 },
             )
             .unwrap_err();
@@ -392,7 +396,7 @@ mod tests {
         {
             let sessions = handler.sessions.lock().unwrap();
             let mut session = sessions.get("s1").unwrap().lock().unwrap();
-            session.write_file("a.txt", b"hi".to_vec()).unwrap();
+            session.write_file("a.txt", b"hi".to_vec(), None).unwrap();
         }
 
         let result = handler
@@ -400,6 +404,7 @@ mod tests {
                 CLIENT,
                 SessionDeleteFile {
                     path: "a.txt".to_string(),
+                    description: "test".to_string(),
                 },
             )
             .unwrap();
@@ -415,6 +420,7 @@ mod tests {
                 CLIENT,
                 SessionDeleteFile {
                     path: "missing.txt".to_string(),
+                    description: "test".to_string(),
                 },
             )
             .unwrap_err();
@@ -474,7 +480,7 @@ mod tests {
             let sessions = handler.sessions.lock().unwrap();
             let mut session = sessions.get("s1").unwrap().lock().unwrap();
             session.mount(&host_file).unwrap();
-            session.write_file("a.txt", b"changed".to_vec()).unwrap();
+            session.write_file("a.txt", b"changed".to_vec(), None).unwrap();
         }
 
         let result = handler
@@ -543,7 +549,7 @@ mod tests {
                 .unwrap()
                 .lock()
                 .unwrap()
-                .write_file("out.txt", b"data".to_vec())
+                .write_file("out.txt", b"data".to_vec(), None)
                 .unwrap();
         }
 
@@ -571,7 +577,7 @@ mod tests {
                 .unwrap()
                 .lock()
                 .unwrap()
-                .write_file("out.txt", b"data".to_vec())
+                .write_file("out.txt", b"data".to_vec(), None)
                 .unwrap();
         }
 

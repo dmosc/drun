@@ -54,7 +54,7 @@ impl DrunSession {
         self.inner
             .lock()
             .unwrap()
-            .execute_bash(&command, &mut |_| {})
+            .execute_bash(&command, &mut |_| {}, None)
             .map(DrunCheckpoint::from_checkpoint)
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))
     }
@@ -63,7 +63,7 @@ impl DrunSession {
         self.inner
             .lock()
             .unwrap()
-            .write_file(&path, content)
+            .write_file(&path, content, None)
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))
     }
 
@@ -71,7 +71,7 @@ impl DrunSession {
         self.inner
             .lock()
             .unwrap()
-            .delete_file(&path)
+            .delete_file(&path, None)
             .map(DrunCheckpoint::from_checkpoint)
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))
     }

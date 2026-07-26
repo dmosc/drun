@@ -75,7 +75,7 @@ mod tests {
     fn session_state_compute_counts_added_files_against_previous_snapshot() {
         let mut session = new_session();
         let previous_files = session.current().files.clone();
-        session.write_file("a.txt", b"hi".to_vec()).unwrap();
+        session.write_file("a.txt", b"hi".to_vec(), None).unwrap();
 
         let state = SessionState::compute("s1", &session, Some(&previous_files), vec![]);
         assert_eq!(state.files_added_count, 1);

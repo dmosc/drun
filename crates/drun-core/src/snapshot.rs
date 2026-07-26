@@ -27,6 +27,8 @@ pub struct CheckpointRecord {
     pub exit_code: Option<i32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
     pub files: HashMap<String, usize>,
 }
 
@@ -120,6 +122,7 @@ impl SessionSnapshot {
                     command: checkpoint.command.clone(),
                     exit_code: checkpoint.exit_code,
                     tool: checkpoint.tool.clone(),
+                    description: checkpoint.description.clone(),
                     files,
                 }
             })
@@ -158,6 +161,7 @@ impl SessionSnapshot {
                     command: record.command,
                     exit_code: record.exit_code,
                     tool: record.tool,
+                    description: record.description,
                     files,
                 }
             })
@@ -205,6 +209,7 @@ mod tests {
                     command: None,
                     exit_code: None,
                     tool: None,
+                    description: None,
                     files: HashMap::new(),
                 },
                 CheckpointRecord {
@@ -215,6 +220,7 @@ mod tests {
                     command: Some("echo ok".to_string()),
                     exit_code: Some(0),
                     tool: Some("session_bash".to_string()),
+                    description: Some("checking for stray files".to_string()),
                     files: [("a.txt".to_string(), 0)].into_iter().collect(),
                 },
             ],
