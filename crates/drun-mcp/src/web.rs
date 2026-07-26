@@ -387,8 +387,8 @@ impl WebServer {
 
     fn file_response(path: &str, bytes: &[u8]) -> Response {
         let mut headers = HeaderMap::new();
-        if let Some(mime_type) = ResponseBuilder::mime_type_for_extension(path) {
-            headers.insert("content-type", HeaderValue::from_static(mime_type));
+        if let Some(content_type) = Self::content_type_for_extension(path) {
+            headers.insert("content-type", HeaderValue::from_static(content_type));
             return (StatusCode::OK, headers, bytes.to_vec()).into_response();
         }
         match std::str::from_utf8(bytes) {
@@ -407,6 +407,23 @@ impl WebServer {
                 headers.insert("x-drun-binary", HeaderValue::from_static("true"));
                 (StatusCode::OK, headers, bytes.to_vec()).into_response()
             }
+        }
+    }
+
+    fn content_type_for_extension(path: &str) -> Option<&'static str> {
+        if let Some(mime_type) = ResponseBuilder::mime_type_for_extension(path) {
+            return Some(mime_type);
+        }
+        let ext = path.rsplit('.').next().unwrap_or("").to_lowercase();
+        match ext.as_str() {
+            "mp3" => Some("audio/mpeg"),
+            "wav" => Some("audio/wav"),
+            "ogg" => Some("audio/ogg"),
+            "m4a" => Some("audio/mp4"),
+            "mp4" => Some("video/mp4"),
+            "webm" => Some("video/webm"),
+            "mov" => Some("video/quicktime"),
+            _ => None,
         }
     }
 
@@ -807,7 +824,9 @@ mod tests {
     #[tokio::test]
     async fn handle_checkpoint_files_lists_paths_sorted_with_sizes() {
         let mut session = Session::new(Config::default().into()).unwrap();
-        session.write_file("z.txt", b"12345".to_vec(), None).unwrap();
+        session
+            .write_file("z.txt", b"12345".to_vec(), None)
+            .unwrap();
         session.write_file("a.txt", b"hi".to_vec(), None).unwrap();
         let sessions = session_map(vec![("s1", session)]);
 
@@ -841,7 +860,9 @@ mod tests {
     #[tokio::test]
     async fn handle_checkpoint_file_returns_utf8_text_as_plain_text() {
         let mut session = Session::new(Config::default().into()).unwrap();
-        session.write_file("notes.txt", b"hello".to_vec(), None).unwrap();
+        session
+            .write_file("notes.txt", b"hello".to_vec(), None)
+            .unwrap();
         let sessions = session_map(vec![("s1", session)]);
 
         let response = WebServer::handle_checkpoint_file(
