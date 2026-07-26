@@ -11,6 +11,14 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
 
+#[derive(Default)]
+struct CommandOutcome {
+    stdout: String,
+    stderr: String,
+    command: Option<String>,
+    exit_code: Option<i32>,
+}
+
 pub struct Session {
     config: ConfigHandle,
     checkpoints: Vec<Checkpoint>,
@@ -158,10 +166,7 @@ impl Session {
         self.check_workspace_size(&files)?;
         self.push_checkpoint(
             files,
-            String::new(),
-            String::new(),
-            None,
-            None,
+            CommandOutcome::default(),
             "session_write_file",
             description,
         )?;
@@ -179,10 +184,7 @@ impl Session {
         }
         self.push_checkpoint(
             files,
-            String::new(),
-            String::new(),
-            None,
-            None,
+            CommandOutcome::default(),
             "session_delete_file",
             description,
         )
@@ -216,7 +218,14 @@ impl Session {
             on_stdout,
         )?;
         let collected_files = Workspace::collect(workspace_dir.path())?;
-        self.record_bash_checkpoint(command, collected_files, stdout, stderr, exit_code, description)
+        self.record_bash_checkpoint(
+            command,
+            collected_files,
+            stdout,
+            stderr,
+            exit_code,
+            description,
+        )
     }
 
     fn record_bash_checkpoint(
@@ -232,10 +241,12 @@ impl Session {
         self.check_workspace_size(&interned_files)?;
         self.push_checkpoint(
             interned_files,
-            stdout,
-            stderr,
-            Some(command.to_string()),
-            exit_code,
+            CommandOutcome {
+                stdout,
+                stderr,
+                command: Some(command.to_string()),
+                exit_code,
+            },
             "session_bash",
             description,
         )
@@ -419,10 +430,7 @@ impl Session {
         self.check_workspace_size(&merged)?;
         self.push_checkpoint(
             merged,
-            String::new(),
-            String::new(),
-            None,
-            None,
+            CommandOutcome::default(),
             "session_merge",
             description,
         )
@@ -535,10 +543,7 @@ impl Session {
     fn push_checkpoint(
         &mut self,
         files: FileMap,
-        stdout: String,
-        stderr: String,
-        command: Option<String>,
-        exit_code: Option<i32>,
+        outcome: CommandOutcome,
         tool: &str,
         description: Option<&str>,
     ) -> anyhow::Result<&Checkpoint> {
@@ -550,12 +555,12 @@ impl Session {
         let id = self.checkpoints.len();
         self.checkpoints.push(Checkpoint {
             id,
-            stdout,
-            stderr,
+            stdout: outcome.stdout,
+            stderr: outcome.stderr,
             files,
             label: None,
-            command,
-            exit_code,
+            command: outcome.command,
+            exit_code: outcome.exit_code,
             tool: Some(tool.to_string()),
             description: description.map(str::to_string),
         });
@@ -1035,7 +1040,9 @@ mod tests {
         assert_eq!(session.interner.len(), 2, "one and two are both live");
 
         session.rollback(0).unwrap();
-        session.write_file("a.txt", b"three".to_vec(), None).unwrap();
+        session
+            .write_file("a.txt", b"three".to_vec(), None)
+            .unwrap();
 
         assert_eq!(session.interner.len(), 1, "only three is still live");
     }
