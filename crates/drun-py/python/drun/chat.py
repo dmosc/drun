@@ -13,15 +13,21 @@ import json
 import sys
 from typing import TYPE_CHECKING, Any, Protocol
 
+from .retry import RetryPolicy
+
 if TYPE_CHECKING:
     from .drun_internal import DrunSession
 
 
 class Bridge(Protocol):
     """Lists tool schemas, executes tool calls, and supplies a default system
-    prompt. Implemented by `DrunMcpBridge` and `LocalSessionBridge`."""
+    prompt. Implemented by `DrunMcpBridge` and `LocalSessionBridge`. `call`
+    raises on failure; `ChatAgent` reports that failure to the model rather
+    than retrying, since retrying an unchanged call can't fix a semantic
+    error and could repeat a non-idempotent tool's side effect."""
 
-    default_system_prompt: str
+    @property
+    def default_system_prompt(self) -> str: ...
 
     async def tools(self) -> list[dict[str, Any]]: ...
 
@@ -30,7 +36,20 @@ class Bridge(Protocol):
 
 
 class ChatAgent:
-    """Runs a tool-calling loop between an LLM (via litellm) and a `Bridge`."""
+    """Runs a tool-calling loop between an LLM (via litellm) and a `Bridge`.
+
+    Two distinct failure modes, two distinct responses:
+    - A tool call fails (bad arguments, bridge error, daemon error) — reported
+      to the model as that call's result, never retried. The model, not the
+      loop, decides whether to retry with different arguments, try another
+      tool, or give up; blindly repeating the exact same call can't fix a
+      semantic error and could re-run a non-idempotent side effect.
+    - The LLM request itself fails (rate limit, timeout, dropped connection)
+      — retried transparently (`llm_retries`, exponential backoff), since
+      it's the same idempotent request and such failures are usually
+      transient infrastructure blips.
+    Either way, one failure doesn't end the run.
+    """
 
     def __init__(
         self,
@@ -40,14 +59,19 @@ class ChatAgent:
         base_url: str | None = None,
         system: str | None = None,
         max_iterations: int = 30,
+        llm_retries: int = 3,
+        llm_retry_base_delay: float = 0.5,
     ) -> None:
         self._bridge = bridge
         self._model = model
         self._base_url = base_url
         self._system = system
         self._max_iterations = max_iterations
+        self._completion_retry = RetryPolicy(
+            attempts=llm_retries, base_delay=llm_retry_base_delay)
 
     async def run(self, prompt: str) -> str:
+        litellm = self._import_litellm()
         tools = await self._bridge.tools()
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": self._system or self._bridge.default_system_prompt},
@@ -55,26 +79,44 @@ class ChatAgent:
         ]
 
         for _ in range(self._max_iterations):
-            message, finish_reason = await self._complete(messages, tools)
+            message, finish_reason = await self._completion_retry.run(
+                lambda: self._complete(litellm, messages, tools)
+            )
             messages.append(self._message_to_dict(message))
 
             if not message.tool_calls:
                 return self._final_answer(message, finish_reason)
 
             for tool_call in message.tool_calls:
-                arguments = json.loads(tool_call.function.arguments)
-                print(f"[{tool_call.function.name}] {arguments}",
-                      file=sys.stderr)
-                result = await self._bridge.call(tool_call.function.name, arguments)
-                messages.append(
-                    {"role": "tool", "tool_call_id": tool_call.id, "content": result}
-                )
+                messages.append(await self._execute_tool_call(tool_call))
 
         return "(max iterations reached)"
 
-    async def _complete(
-        self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]
-    ) -> tuple[Any, str]:
+    async def _execute_tool_call(self, tool_call: Any) -> dict[str, Any]:
+        """Runs one tool call and returns its result as a tool-role message.
+        Bad arguments and bridge failures are caught and reported back to the
+        model as the call's content instead of propagating, so a single
+        failure can't end the run."""
+        name = tool_call.function.name
+        try:
+            arguments = json.loads(tool_call.function.arguments)
+        except json.JSONDecodeError as exc:
+            return self._tool_result(tool_call.id, f"error: invalid arguments ({exc})")
+
+        print(f"[{name}] {arguments}", file=sys.stderr)
+        try:
+            content = await self._bridge.call(name, arguments)
+        except Exception as exc:
+            print(f"[{name}] failed: {exc}", file=sys.stderr)
+            content = f"error: {exc}"
+        return self._tool_result(tool_call.id, content)
+
+    @staticmethod
+    def _tool_result(tool_call_id: str, content: str) -> dict[str, Any]:
+        return {"role": "tool", "tool_call_id": tool_call_id, "content": content}
+
+    @staticmethod
+    def _import_litellm() -> Any:
         try:
             import litellm
         except ImportError as exc:
@@ -82,7 +124,11 @@ class ChatAgent:
                 "litellm is required for drun chat. "
                 "Install it with: pip install 'drun-sandbox[chat]'"
             ) from exc
+        return litellm
 
+    async def _complete(
+        self, litellm: Any, messages: list[dict[str, Any]], tools: list[dict[str, Any]]
+    ) -> tuple[Any, str]:
         response = await litellm.acompletion(
             model=self._model,
             messages=messages,
@@ -195,17 +241,13 @@ Rules:
 
     async def call(self, name: str, arguments: dict[str, Any] | None = None) -> str:
         arguments = arguments or {}
-        try:
-            if name == "execute_bash":
-                checkpoint = self._session.execute_bash(arguments["command"])
-                return self._format_checkpoint(checkpoint.stdout, checkpoint.stderr)
-            if name == "write_file":
-                self._session.write_file(
-                    arguments["path"], arguments["content"].encode())
-                return f"wrote {arguments['path']}"
-        except Exception as exc:
-            return f"error: {exc}"
-
+        if name == "execute_bash":
+            checkpoint = self._session.execute_bash(arguments["command"])
+            return self._format_checkpoint(checkpoint.stdout, checkpoint.stderr)
+        if name == "write_file":
+            self._session.write_file(
+                arguments["path"], arguments["content"].encode())
+            return f"wrote {arguments['path']}"
         return f"unknown tool: {name}"
 
     @staticmethod

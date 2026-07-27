@@ -1,6 +1,6 @@
-"""Tests for cli._run_chat's error-handling split: a failure to connect to
-drun-mcp gets the "is drun-mcp running?" hint, but a failure inside an
-already-connected session (e.g. the LLM call) does not — that hint would
+"""Tests for ChatCommand._run_chat's error-handling split: a failure to
+connect to drun-mcp gets the "is drun-mcp running?" hint, but a failure inside
+an already-connected session (e.g. the LLM call) does not — that hint would
 misdirect troubleshooting for an unrelated error."""
 
 from __future__ import annotations
@@ -43,6 +43,7 @@ def make_args(**overrides: object) -> argparse.Namespace:
         mount=[],
         system=None,
         max_iterations=5,
+        llm_retries=3,
     )
     defaults.update(overrides)
     return argparse.Namespace(**defaults)
@@ -55,7 +56,7 @@ async def test_connection_failure_gets_the_is_drun_mcp_running_hint(monkeypatch,
     )
 
     with pytest.raises(SystemExit):
-        await cli._run_chat(make_args())
+        await cli.ChatCommand()._run_chat(make_args())
 
     err = capsys.readouterr().err
     assert "boom" in err
@@ -67,7 +68,7 @@ async def test_agent_failure_after_connecting_has_no_mcp_hint(monkeypatch, capsy
     monkeypatch.setattr(cli, "ChatAgent", FailingAgent)
 
     with pytest.raises(SystemExit):
-        await cli._run_chat(make_args())
+        await cli.ChatCommand()._run_chat(make_args())
 
     err = capsys.readouterr().err
     assert "litellm exploded" in err

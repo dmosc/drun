@@ -9,6 +9,7 @@ from collections.abc import Iterable
 from typing import Any
 
 import litellm
+import pytest
 
 from drun.chat import ChatAgent, LocalSessionBridge
 
@@ -144,6 +145,117 @@ async def test_run_stops_after_max_iterations_without_a_final_answer(monkeypatch
     assert result == "(max iterations reached)"
 
 
+async def test_run_recovers_from_a_failing_tool_call_and_continues(monkeypatch):
+    """A tool call that raises must not abort the run: its error is reported
+    back to the model as the call's result, and the loop continues."""
+    bridge = FakeBridge()
+
+    async def _failing_call(name: str, arguments: dict[str, Any] | None = None) -> str:
+        raise RuntimeError("boom")
+
+    bridge.call = _failing_call  # type: ignore[method-assign]
+    tool_call = FakeToolCall(
+        "call-1", "session_bash", json.dumps({"command": "echo hi"})
+    )
+    captured_messages: list[dict[str, Any]] = []
+
+    async def _acompletion(**kwargs: object) -> FakeResponse:
+        captured_messages[:] = kwargs["messages"]  # type: ignore[arg-type]
+        if not captured_messages or captured_messages[-1]["role"] != "tool":
+            return FakeResponse(FakeChoice(FakeMessage(None, tool_calls=[tool_call])))
+        return FakeResponse(FakeChoice(FakeMessage("recovered")))
+
+    monkeypatch.setattr(litellm, "acompletion", _acompletion)
+
+    agent = ChatAgent(bridge)
+    result = await agent.run("try something risky")
+
+    assert result == "recovered"
+    assert captured_messages[-1] == {
+        "role": "tool", "tool_call_id": "call-1", "content": "error: boom"}
+
+
+async def test_run_survives_invalid_tool_call_arguments(monkeypatch):
+    bridge = FakeBridge()
+    tool_call = FakeToolCall("call-1", "session_bash", "{not json")
+    monkeypatch.setattr(
+        litellm,
+        "acompletion",
+        stub_acompletion(
+            [
+                FakeResponse(FakeChoice(FakeMessage(
+                    None, tool_calls=[tool_call]))),
+                FakeResponse(FakeChoice(FakeMessage("handled the bad call"))),
+            ]
+        ),
+    )
+
+    agent = ChatAgent(bridge)
+    result = await agent.run("send garbage arguments")
+
+    assert result == "handled the bad call"
+    assert bridge.calls == []
+
+
+async def test_failing_tool_calls_are_reported_once_without_retrying(monkeypatch):
+    """Tool calls aren't retried: repeating an unchanged call can't fix a
+    semantic failure and could re-run a non-idempotent tool's side effect.
+    The model sees the error and decides what to do next, so one attempt is
+    all the loop itself should make."""
+    bridge = FakeBridge()
+    attempts = 0
+
+    async def _flaky_call(name: str, arguments: dict[str, Any] | None = None) -> str:
+        nonlocal attempts
+        attempts += 1
+        raise RuntimeError("boom")
+
+    bridge.call = _flaky_call  # type: ignore[method-assign]
+    tool_call = FakeToolCall(
+        "call-1", "session_bash", json.dumps({"command": "echo hi"})
+    )
+    monkeypatch.setattr(
+        litellm,
+        "acompletion",
+        stub_acompletion(
+            [
+                FakeResponse(FakeChoice(FakeMessage(
+                    None, tool_calls=[tool_call]))),
+                FakeResponse(FakeChoice(FakeMessage("saw the error"))),
+            ]
+        ),
+    )
+
+    agent = ChatAgent(bridge)
+    result = await agent.run("try something risky")
+
+    assert result == "saw the error"
+    assert attempts == 1
+
+
+async def test_run_retries_a_flaky_llm_completion_before_succeeding(monkeypatch):
+    """Unlike tool calls, LLM requests are safe to retry transparently: same
+    idempotent request, and transient infra blips (timeouts, rate limits) are
+    common enough to be worth a bounded retry."""
+    bridge = FakeBridge()
+    attempts = 0
+
+    async def _flaky_acompletion(**kwargs: object) -> FakeResponse:
+        nonlocal attempts
+        attempts += 1
+        if attempts < 2:
+            raise RuntimeError("connection reset")
+        return FakeResponse(FakeChoice(FakeMessage("done")))
+
+    monkeypatch.setattr(litellm, "acompletion", _flaky_acompletion)
+
+    agent = ChatAgent(bridge, llm_retry_base_delay=0)
+    result = await agent.run("do the thing")
+
+    assert result == "done"
+    assert attempts == 2
+
+
 class FakeCheckpoint:
     def __init__(self, stdout: str = "", stderr: str = "") -> None:
         self.stdout = stdout
@@ -181,12 +293,11 @@ async def test_local_session_bridge_writes_files_through_the_session():
     assert session.written == {"a.txt": b"hi"}
 
 
-async def test_local_session_bridge_reports_tool_errors_without_raising():
+async def test_local_session_bridge_raises_on_tool_errors():
     bridge = LocalSessionBridge(FakeDrunSession())
 
-    result = await bridge.call("execute_bash", {"command": "boom"})
-
-    assert result == "error: command failed"
+    with pytest.raises(RuntimeError, match="command failed"):
+        await bridge.call("execute_bash", {"command": "boom"})
 
 
 async def test_local_session_bridge_reports_unknown_tools():

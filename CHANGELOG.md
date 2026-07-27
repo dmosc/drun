@@ -6,6 +6,26 @@ All notable changes to drun are documented here.
 
 ## Unreleased
 
+### `drun chat` agent hardening
+
+- **A failing tool call no longer kills the agent run.** `ChatAgent` now
+  catches bad tool arguments, bridge errors, and daemon-reported tool
+  failures and reports them back to the model as that call's result instead
+  of raising, so the model can retry differently, try another tool, or give
+  up on its own terms — one failure no longer ends the trajectory. Tool
+  calls are deliberately *not* retried automatically: repeating an unchanged
+  call can't fix a semantic failure and could re-run a non-idempotent tool's
+  side effect (e.g. a write) a second time.
+- **LLM requests are retried**, since unlike tool calls they're the same
+  idempotent request and transient infra blips (timeouts, rate limits) are
+  common — bounded attempts with exponential backoff via a new `RetryPolicy`
+  (`crates/drun-py/python/drun/retry.py`), configurable via the new
+  `--llm-retries` flag.
+- `Bridge` implementations (`DrunMcpBridge`, `LocalSessionBridge`) now share
+  one contract — `call` raises on failure, `ChatAgent` decides how to
+  recover — removing `LocalSessionBridge`'s separate error-swallowing.
+- `drun/cli.py` is now a `ChatCommand` class instead of free functions.
+
 ### Hermes bridge + `drun-mcp` provider subcommands
 
 - Added a **Hermes** bridge, alongside the existing Claude Code one, for wiring
