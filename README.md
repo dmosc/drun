@@ -387,11 +387,6 @@ attach to one that's already running instead:
 drun chat "keep going on the report in results.md" --session-id <id>
 ```
 
-A failing tool call doesn't end the run — the model sees the error and decides
-what to do next (retry differently, try another tool, give up). LLM request
-failures (timeouts, rate limits) get a few automatic retries instead, tunable
-with `--llm-retries`.
-
 Run `drun chat --help` for all flags.
 
 ### Python SDK
