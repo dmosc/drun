@@ -866,7 +866,8 @@
       display: block;
     }
 
-    .file-preview-pdf {
+    .file-preview-pdf,
+    .file-preview-html {
       width: 100%;
       height: 700px;
       border: none;
@@ -1178,6 +1179,7 @@
         const contentType = res.headers.get('content-type') || '';
         if (contentType.startsWith('image/')) return { kind: 'image', url };
         if (contentType === 'application/pdf') return { kind: 'pdf', url };
+        if (contentType.startsWith('text/html')) return { kind: 'html', url };
         if (contentType.startsWith('audio/')) return { kind: 'audio', url };
         if (contentType.startsWith('video/')) return { kind: 'video', url };
         if (res.headers.get('x-drun-binary') === 'true') return { kind: 'binary' };
@@ -1628,6 +1630,8 @@
         bodyHtml = `<div class="file-preview-body"><img class="file-preview-image" src="${fileState.url}" alt="${escHtml(viewState.selectedFilePath)}"></div>`;
       } else if (fileState.kind === 'pdf') {
         bodyHtml = `<div class="file-preview-body"><iframe class="file-preview-pdf" src="${fileState.url}" title="${escHtml(viewState.selectedFilePath)}"></iframe></div>`;
+      } else if (fileState.kind === 'html') {
+        bodyHtml = `<div class="file-preview-body"><iframe class="file-preview-html" src="${fileState.url}" title="${escHtml(viewState.selectedFilePath)}" sandbox="allow-scripts" referrerpolicy="no-referrer"></iframe></div>`;
       } else if (fileState.kind === 'audio') {
         bodyHtml = `<div class="file-preview-body"><audio class="file-preview-media" controls src="${fileState.url}"></audio></div>`;
       } else if (fileState.kind === 'video') {

@@ -428,6 +428,17 @@ impl WebServer {
         let mut headers = HeaderMap::new();
         if let Some(content_type) = Self::content_type_for_extension(path) {
             headers.insert("content-type", HeaderValue::from_static(content_type));
+            if content_type.starts_with("text/html") {
+                // No network egress, no nested frames, no same-origin access.
+                headers.insert(
+                    "content-security-policy",
+                    HeaderValue::from_static(
+                        "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; \
+                         img-src data: blob:; font-src data:; media-src data: blob:; \
+                         connect-src 'none'; frame-src 'none'",
+                    ),
+                );
+            }
             return (StatusCode::OK, headers, bytes.to_vec()).into_response();
         }
         match std::str::from_utf8(bytes) {
@@ -455,6 +466,7 @@ impl WebServer {
         }
         let ext = path.rsplit('.').next().unwrap_or("").to_lowercase();
         match ext.as_str() {
+            "html" | "htm" => Some("text/html; charset=utf-8"),
             "mp3" => Some("audio/mpeg"),
             "wav" => Some("audio/wav"),
             "ogg" => Some("audio/ogg"),
@@ -1159,6 +1171,43 @@ mod tests {
         assert_eq!(
             body,
             r#"{"running":true,"command":"echo hi","output":"hello\n"}"#
+        );
+    }
+
+    #[test]
+    fn content_type_for_extension_recognizes_html() {
+        assert_eq!(
+            WebServer::content_type_for_extension("index.html"),
+            Some("text/html; charset=utf-8")
+        );
+        assert_eq!(
+            WebServer::content_type_for_extension("page.htm"),
+            Some("text/html; charset=utf-8")
+        );
+    }
+
+    #[test]
+    fn file_response_sets_a_restrictive_csp_for_html_but_not_other_types() {
+        let html_response = WebServer::file_response("demo.html", b"<html></html>");
+        assert_eq!(
+            html_response.headers().get("content-type").unwrap(),
+            "text/html; charset=utf-8"
+        );
+        let csp = html_response
+            .headers()
+            .get("content-security-policy")
+            .expect("html responses must carry a CSP")
+            .to_str()
+            .unwrap();
+        assert!(csp.contains("connect-src 'none'"));
+        assert!(csp.contains("frame-src 'none'"));
+
+        let pdf_response = WebServer::file_response("doc.pdf", b"%PDF-1.4");
+        assert!(
+            pdf_response
+                .headers()
+                .get("content-security-policy")
+                .is_none()
         );
     }
 }
