@@ -49,6 +49,8 @@ pub struct Config {
     pub package_install_enabled: bool,
     /// Timeout for session_package_install calls in milliseconds.
     pub package_install_timeout_ms: u64,
+    /// Example http://localhost:9091 Changing requires restart.
+    pub drunmon_url: Option<String>,
 }
 
 impl Default for Config {
@@ -83,6 +85,7 @@ impl Default for Config {
             web_port: Some(7274),
             package_install_enabled: false,
             package_install_timeout_ms: 180_000,
+            drunmon_url: None,
         }
     }
 }

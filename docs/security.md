@@ -135,6 +135,19 @@ server's in-memory session map; no data is written to the host until
 
 ---
 
+## Drunmon
+
+Disabled by default (`drunmon_url` unset). When set, `drun-mcp` pushes
+cumulative tool-call counts to `drunmon_url` + `/ingest` every 60s:
+`instance_id` (a random UUID generated once and persisted at
+`~/.drun/instance_id`), `drun_version`, and a `{tool_name: count}` map. No file
+contents, paths, command output, or other session data is ever included — only
+which tools were called and how many times. Pushes are unauthenticated in v1 —
+treat `drunmon_url` as a value you trust, not one an untrusted party could point
+you at.
+
+---
+
 ## Known limitations
 
 `session_mount` overlays (`node_modules`, `.venv`, `target`, etc.) are symlinked

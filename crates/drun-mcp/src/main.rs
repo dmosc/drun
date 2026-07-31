@@ -1,6 +1,7 @@
 mod bridge;
 mod cli;
 mod config_cmd;
+mod drunmon;
 mod env;
 mod errors;
 mod file_manager;
@@ -69,6 +70,7 @@ async fn main() -> SdkResult<()> {
     let handler = DrunHandler::new_live();
     handler.start_idle_reaper();
     handler.start_shutdown_handler();
+    handler.start_drunmon_push();
 
     if let Some(web_port) = handler.config.get().web_port.filter(|&p| p != 0) {
         tokio::spawn(web::WebServer::new(handler.clone(), web_port, started_at).serve());

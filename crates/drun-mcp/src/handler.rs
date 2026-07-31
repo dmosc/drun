@@ -1,3 +1,4 @@
+use crate::drunmon::{DrunmonReporter, ToolCallCounters};
 use crate::errors::DrunError;
 use crate::live_output::LiveOutputRegistry;
 #[cfg(test)]
@@ -57,6 +58,7 @@ pub struct DrunHandler {
     pub(crate) sessions: SessionMap,
     pub(crate) live_output: LiveOutputRegistry,
     pub(crate) current_sessions: CurrentSessions,
+    pub(crate) tool_call_counters: ToolCallCounters,
 }
 
 impl DrunHandler {
@@ -67,6 +69,7 @@ impl DrunHandler {
             sessions: Arc::new(Mutex::new(HashMap::new())),
             live_output: LiveOutputRegistry::default(),
             current_sessions: CurrentSessions::default(),
+            tool_call_counters: ToolCallCounters::default(),
         }
     }
 
@@ -76,7 +79,29 @@ impl DrunHandler {
             sessions: Arc::new(Mutex::new(HashMap::new())),
             live_output: LiveOutputRegistry::default(),
             current_sessions: CurrentSessions::default(),
+            tool_call_counters: ToolCallCounters::default(),
         }
+    }
+
+    pub fn start_drunmon_push(&self) {
+        let config = self.config.get();
+        let Some(url) = config.drunmon_url else {
+            return;
+        };
+        let endpoint = format!("{}/ingest", url.trim_end_matches('/'));
+        let counters = self.tool_call_counters.clone();
+        tokio::spawn(async move {
+            let reporter = DrunmonReporter::load_or_create();
+            if !reporter.is_reachable(&endpoint).await {
+                eprintln!("drun: drunmon endpoint {endpoint} unreachable, monitoring disabled");
+                return;
+            }
+            let mut ticker = tokio::time::interval(Duration::from_secs(60));
+            loop {
+                ticker.tick().await;
+                reporter.push(&endpoint, counters.snapshot()).await;
+            }
+        });
     }
 
     pub fn start_idle_reaper(&self) {

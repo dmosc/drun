@@ -47,6 +47,7 @@ impl ServerHandler for DrunHandler {
         let progress_token = params.meta.as_ref().and_then(|m| m.progress_token.clone());
         let connection_id = runtime.session_id().unwrap_or_default();
         let tool = DrunTools::try_from(params)?;
+        self.tool_call_counters.increment(&tool.tool_name());
         match tool {
             DrunTools::CreateSession(_) => self.handle_create_session(&connection_id),
             DrunTools::SessionSwitch(t) => self.handle_session_switch(&connection_id, t),
