@@ -67,7 +67,7 @@ check exit_code instead; many commands write warnings or progress to stderr on s
             ) from exc
 
         try:
-            read_stream, write_stream, _ = await self._exit_stack.enter_async_context(
+            read_stream, write_stream = await self._exit_stack.enter_async_context(
                 streamable_http_client(self._url)
             )
             self._session = await self._exit_stack.enter_async_context(
@@ -106,7 +106,7 @@ check exit_code instead; many commands write warnings or progress to stderr on s
                 "function": {
                     "name": tool.name,
                     "description": tool.description or "",
-                    "parameters": tool.inputSchema,
+                    "parameters": tool.input_schema,
                 },
             }
             for tool in result.tools
@@ -116,7 +116,7 @@ check exit_code instead; many commands write warnings or progress to stderr on s
         result = await self._require_session().call_tool(name, arguments or {})
         text = "\n".join(
             block.text for block in result.content if block.type == "text")
-        if result.isError:
+        if result.is_error:
             raise RuntimeError(
                 f"drun tool '{name}' failed: {text or '(no error message)'}")
         return text or "(no output)"
