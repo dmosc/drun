@@ -442,7 +442,6 @@ fields are optional.
 | `bash_command_denylist`      | `[]`                                                                 | Command substrings always rejected by `session_bash` before execution.                                                                                                                                                                                                     |
 | `bash_command_allowlist`     | `[]`                                                                 | Command substrings permitted by `session_bash`. Empty means all commands are allowed (subject to the denylist).                                                                                                                                                            |
 | `web_port`                   | `7274`                                                               | TCP port for the trajectory viewer web UI. Set to `0`, or remove the field from the config file, to disable it.                                                                                                                                                            |
-| `drunmon_url`                | (none)                                                               | Opt-in. When set, pushes cumulative tool-call counts to this collector's base URL (e.g. `https://drunmon.example.com` — `/ingest` is appended automatically) every 60s. Startup-only — see below.                                                                        |
 
 #### Updating configuration via the CLI
 
@@ -465,9 +464,8 @@ above or by hand — take effect on the very next call, no restart, no dropped
 sessions. `drun-mcp claude init` also allowlists the current project directory
 for `session_mount` automatically.
 
-The exceptions are `web_port`, `session_idle_timeout_secs`, and
-`drunmon_url`: these are only applied at daemon startup, so changing any of
-them still requires a restart:
+The exceptions are `web_port`, `session_idle_timeout_secs`: these are only
+applied at daemon startup, so changing any of them still requires a restart:
 
 **macOS**
 
