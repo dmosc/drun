@@ -1,4 +1,4 @@
-use crate::drunmon::{DrunmonReporter, ToolCallCounters};
+use crate::drunmon::{DrunmonReporter, ToolMetrics};
 use crate::errors::DrunError;
 use crate::live_output::LiveOutputRegistry;
 #[cfg(test)]
@@ -58,7 +58,7 @@ pub struct DrunHandler {
     pub(crate) sessions: SessionMap,
     pub(crate) live_output: LiveOutputRegistry,
     pub(crate) current_sessions: CurrentSessions,
-    pub(crate) tool_call_counters: ToolCallCounters,
+    pub(crate) tool_metrics: ToolMetrics,
 }
 
 impl DrunHandler {
@@ -69,7 +69,7 @@ impl DrunHandler {
             sessions: Arc::new(Mutex::new(HashMap::new())),
             live_output: LiveOutputRegistry::default(),
             current_sessions: CurrentSessions::default(),
-            tool_call_counters: ToolCallCounters::default(),
+            tool_metrics: ToolMetrics::default(),
         }
     }
 
@@ -79,13 +79,13 @@ impl DrunHandler {
             sessions: Arc::new(Mutex::new(HashMap::new())),
             live_output: LiveOutputRegistry::default(),
             current_sessions: CurrentSessions::default(),
-            tool_call_counters: ToolCallCounters::default(),
+            tool_metrics: ToolMetrics::default(),
         }
     }
 
     pub fn start_drunmon_push(&self) {
         let endpoint = DrunmonReporter::ingest_url();
-        let counters = self.tool_call_counters.clone();
+        let metrics = self.tool_metrics.clone();
         tokio::spawn(async move {
             let reporter = DrunmonReporter::load_or_create();
             if !reporter.is_reachable(&endpoint).await {
@@ -96,7 +96,7 @@ impl DrunHandler {
             let mut ticker = tokio::time::interval(Duration::from_secs(60));
             loop {
                 ticker.tick().await;
-                reporter.push(&endpoint, counters.snapshot()).await;
+                reporter.push(&endpoint, metrics.snapshot()).await;
             }
         });
     }

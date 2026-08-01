@@ -47,8 +47,9 @@ impl ServerHandler for DrunHandler {
         let progress_token = params.meta.as_ref().and_then(|m| m.progress_token.clone());
         let connection_id = runtime.session_id().unwrap_or_default();
         let tool = DrunTools::try_from(params)?;
-        self.tool_call_counters.increment(&tool.tool_name());
-        match tool {
+        let tool_name = tool.tool_name();
+        let duration = std::time::Instant::now();
+        let result = match tool {
             DrunTools::CreateSession(_) => self.handle_create_session(&connection_id),
             DrunTools::SessionSwitch(t) => self.handle_session_switch(&connection_id, t),
             DrunTools::SessionFork(t) => self.handle_session_fork(&connection_id, t),
@@ -94,6 +95,9 @@ impl ServerHandler for DrunHandler {
             DrunTools::CheckpointReadStdstreams(t) => {
                 self.handle_checkpoint_read_stdstreams(&connection_id, t)
             }
-        }
+        };
+        self.tool_metrics
+            .record(&tool_name, duration.elapsed(), result.is_ok());
+        result
     }
 }

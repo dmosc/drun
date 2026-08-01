@@ -662,7 +662,7 @@ mod tests {
             sessions,
             live_output: LiveOutputRegistry::default(),
             current_sessions: crate::handler::CurrentSessions::default(),
-            tool_call_counters: crate::drunmon::ToolCallCounters::default(),
+            tool_metrics: crate::drunmon::ToolMetrics::default(),
         }
     }
 

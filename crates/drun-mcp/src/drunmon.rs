@@ -1,31 +1,65 @@
-//! Push-based drunmon: counts tool calls per tool name and periodically
-//! reports the running totals to an operator-configured collector.
+//! Push-based drunmon: tracks per-tool call counts, error counts, and
+//! execution latency, and periodically reports the running totals to an
+//! operator-configured collector.
 
 use crate::env::Env;
 use serde::Serialize;
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
+    time::Duration,
 };
 
-#[derive(Clone, Default)]
-pub(crate) struct ToolCallCounters {
-    counts: Arc<Mutex<HashMap<String, u64>>>,
+#[derive(Clone, Copy, Default, Serialize)]
+pub(crate) struct LatencyTotal {
+    sum_ms: u64,
+    count: u64,
 }
 
-impl ToolCallCounters {
-    pub(crate) fn increment(&self, tool_name: &str) {
+#[derive(Clone, Default)]
+pub(crate) struct ToolMetrics {
+    calls: Arc<Mutex<HashMap<String, u64>>>,
+    errors: Arc<Mutex<HashMap<String, u64>>>,
+    latencies: Arc<Mutex<HashMap<String, LatencyTotal>>>,
+}
+
+impl ToolMetrics {
+    pub(crate) fn record(&self, tool_name: &str, duration: Duration, succeeded: bool) {
         *self
-            .counts
+            .calls
             .lock()
             .unwrap()
             .entry(tool_name.to_string())
             .or_insert(0) += 1;
+
+        if !succeeded {
+            *self
+                .errors
+                .lock()
+                .unwrap()
+                .entry(tool_name.to_string())
+                .or_insert(0) += 1;
+        }
+
+        let mut latencies = self.latencies.lock().unwrap();
+        let total = latencies.entry(tool_name.to_string()).or_default();
+        total.sum_ms += duration.as_millis() as u64;
+        total.count += 1;
     }
 
-    pub(crate) fn snapshot(&self) -> HashMap<String, u64> {
-        self.counts.lock().unwrap().clone()
+    pub(crate) fn snapshot(&self) -> ToolMetricsSnapshot {
+        ToolMetricsSnapshot {
+            calls: self.calls.lock().unwrap().clone(),
+            errors: self.errors.lock().unwrap().clone(),
+            latencies: self.latencies.lock().unwrap().clone(),
+        }
     }
+}
+
+pub(crate) struct ToolMetricsSnapshot {
+    calls: HashMap<String, u64>,
+    errors: HashMap<String, u64>,
+    latencies: HashMap<String, LatencyTotal>,
 }
 
 #[derive(Serialize)]
@@ -33,6 +67,8 @@ struct DrunmonPayload {
     instance_id: String,
     drun_version: &'static str,
     tool_calls: HashMap<String, u64>,
+    tool_errors: HashMap<String, u64>,
+    tool_latency_ms: HashMap<String, LatencyTotal>,
 }
 
 pub(crate) struct DrunmonReporter {
@@ -77,11 +113,13 @@ impl DrunmonReporter {
             .is_ok()
     }
 
-    pub(crate) async fn push(&self, endpoint: &str, tool_calls: HashMap<String, u64>) {
+    pub(crate) async fn push(&self, endpoint: &str, snapshot: ToolMetricsSnapshot) {
         let payload = DrunmonPayload {
             instance_id: self.instance_id.clone(),
             drun_version: env!("CARGO_PKG_VERSION"),
-            tool_calls,
+            tool_calls: snapshot.calls,
+            tool_errors: snapshot.errors,
+            tool_latency_ms: snapshot.latencies,
         };
         if let Err(e) = self.client.post(endpoint).json(&payload).send().await {
             eprintln!("drun: drunmon push to {endpoint} failed: {e}");
@@ -94,13 +132,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn increment_accumulates_per_tool_name() {
-        let counters = ToolCallCounters::default();
-        counters.increment("create_session");
-        counters.increment("create_session");
-        counters.increment("session_bash");
-        let snapshot = counters.snapshot();
-        assert_eq!(snapshot["create_session"], 2);
-        assert_eq!(snapshot["session_bash"], 1);
+    fn record_tracks_calls_errors_and_latency_per_tool() {
+        let metrics = ToolMetrics::default();
+        metrics.record("create_session", Duration::from_millis(10), true);
+        metrics.record("create_session", Duration::from_millis(20), false);
+        metrics.record("session_bash", Duration::from_millis(5), true);
+
+        let snapshot = metrics.snapshot();
+        assert_eq!(snapshot.calls["create_session"], 2);
+        assert_eq!(snapshot.calls["session_bash"], 1);
+        assert_eq!(snapshot.errors["create_session"], 1);
+        assert!(!snapshot.errors.contains_key("session_bash"));
+        assert_eq!(snapshot.latencies["create_session"].sum_ms, 30);
+        assert_eq!(snapshot.latencies["create_session"].count, 2);
     }
 }
