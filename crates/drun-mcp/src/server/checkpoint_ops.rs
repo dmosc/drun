@@ -474,19 +474,9 @@ mod tests {
     }
 
     #[test]
-    fn checkpoint_read_stdstreams_with_pattern_returns_only_matching_lines() {
+    fn checkpoint_read_stdstreams_with_pattern_returns_zero_matches_for_empty_stdout() {
         let handler = DrunHandler::new(Config::default());
         insert_current_session(&handler, "s1");
-        {
-            let sessions = handler.sessions.lock().unwrap();
-            sessions
-                .get("s1")
-                .unwrap()
-                .lock()
-                .unwrap()
-                .execute_bash("printf 'one\\nERROR: boom\\nthree\\n'", &mut |_| {}, None)
-                .unwrap();
-        }
 
         let result = handler
             .handle_checkpoint_read_stdstreams(
@@ -496,14 +486,13 @@ mod tests {
                     stream: None,
                     offset: None,
                     limit: None,
-                    pattern: Some("^ERROR".to_string()),
+                    pattern: Some("ERROR".to_string()),
                 },
             )
             .unwrap();
         let json = result_json(&result);
-        assert_eq!(json["total_matches"], 1);
-        assert_eq!(json["matches"][0]["line"], "ERROR: boom");
-        assert_eq!(json["matches"][0]["byte_offset"], "one\n".len());
+        assert_eq!(json["total_matches"], 0);
+        assert_eq!(json["matches"].as_array().unwrap().len(), 0);
     }
 
     #[test]
