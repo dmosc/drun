@@ -77,8 +77,8 @@ async fn main() -> SdkResult<()> {
     }
 
     let mcp_port = Env.mcp_port();
-    eprintln!("drun: MCP → http://127.0.0.1:{mcp_port}/mcp (streamable HTTP)");
-    eprintln!("drun: MCP → http://127.0.0.1:{mcp_port}/sse (SSE)");
+    eprintln!("drun: MCP listening at http://127.0.0.1:{mcp_port}/mcp (streamable HTTP)");
+    eprintln!("drun: MCP listening at http://127.0.0.1:{mcp_port}/sse (SSE)");
 
     hyper_server::create_server(
         Cli::build_server_details(),

@@ -92,6 +92,7 @@ impl DrunHandler {
                 eprintln!("drun: drunmon endpoint {endpoint} unreachable, monitoring disabled");
                 return;
             }
+            eprintln!("drun: drunmon listening at {endpoint}");
             let mut ticker = tokio::time::interval(Duration::from_secs(60));
             loop {
                 ticker.tick().await;

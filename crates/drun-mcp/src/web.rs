@@ -34,7 +34,7 @@ impl WebServer {
         let bind_address = format!("127.0.0.1:{}", self.port);
         match tokio::net::TcpListener::bind(&bind_address).await {
             Ok(listener) => {
-                eprintln!("drun: web UI → http://{bind_address}");
+                eprintln!("drun: web UI listening at http://{bind_address}");
                 let router = Self::build_router(self.handler, self.port, self.started_at);
                 axum::serve(listener, router).await.ok();
             }
