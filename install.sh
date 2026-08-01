@@ -88,16 +88,13 @@ max_checkpoints = 200
 # Seconds of inactivity before a session is considered abandoned.
 session_idle_timeout_secs = 3600
 
-# Host path prefixes agents may mount into a session. Empty = all paths allowed.
+# Host path prefixes available to drun sessions for read and write operations.
 mount_allowlist = []
 
 # Directory names that session_mount registers as read-only host overlays
 # instead of loading into the workspace. Symlinked at execution time, never
 # checkpointed. Set to [] to disable.
 mount_overlay_paths = ["node_modules", ".venv", "venv", "target", "__pycache__", ".git"]
-
-# Directory where session_export writes files.
-export_root = "$DRUN_HOME/exports"
 
 # Directory where session_snapshot writes .drun files.
 snapshots_dir = "$DRUN_HOME/snapshots"
