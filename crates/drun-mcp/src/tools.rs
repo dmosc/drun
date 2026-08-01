@@ -110,7 +110,13 @@ pub struct SessionRollback {
                    files or images, omit offset and limit to get the full content. For large \
                    files, use offset + limit to page through without flooding context. The \
                    response includes total_bytes and has_more so you know when you have \
-                   reached the end.",
+                   reached the end. To locate something in a large file instead of paging \
+                   blind, set pattern to a case-sensitive regex (e.g. use (?i) for \
+                   case-insensitive) — offset/limit still select the byte range to search \
+                   (the whole file if omitted), and the response is a list of matching lines \
+                   with their line_number and byte_offset instead of raw bytes. Use the \
+                   byte_offset of a match with a follow-up offset/limit read to pull \
+                   surrounding context. Requires UTF-8 content.",
     idempotent_hint = true,
     destructive_hint = false,
     read_only_hint = true
@@ -123,6 +129,9 @@ pub struct SessionReadFile {
     pub offset: Option<u64>,
     /// Maximum number of bytes to return. Omit to return all remaining bytes.
     pub limit: Option<u64>,
+    /// Case-sensitive regex; when set, returns matching lines within the
+    /// offset/limit byte range instead of raw content.
+    pub pattern: Option<String>,
 }
 
 #[mcp_tool(
@@ -517,7 +526,13 @@ pub struct SessionCheckpointSquash {
                    and get_session_state report stdout_bytes/stderr_bytes but do not return \
                    the content inline — use this tool to fetch it. Defaults to the current \
                    checkpoint's stdout. Returns the same offset/length/total_bytes/has_more \
-                   envelope as session_read_file.",
+                   envelope as session_read_file. To locate something in a large stream \
+                   instead of paging blind, set pattern to a case-sensitive regex (e.g. use \
+                   (?i) for case-insensitive) — offset/limit still select the byte range to \
+                   search (the whole stream if omitted), and the response is a list of \
+                   matching lines with their line_number and byte_offset instead of raw bytes. \
+                   Use the byte_offset of a match with a follow-up offset/limit read to pull \
+                   surrounding context.",
     idempotent_hint = true,
     destructive_hint = false,
     read_only_hint = true
@@ -532,6 +547,9 @@ pub struct CheckpointReadStdstreams {
     pub offset: Option<u64>,
     /// Maximum number of bytes to return. Omit to return all remaining bytes.
     pub limit: Option<u64>,
+    /// Case-sensitive regex; when set, returns matching lines within the
+    /// offset/limit byte range instead of raw content.
+    pub pattern: Option<String>,
 }
 
 #[mcp_tool(

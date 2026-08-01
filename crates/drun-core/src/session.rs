@@ -1,11 +1,11 @@
 use crate::config::ConfigHandle;
 use crate::error::RunnerError;
 use crate::executor::{BashExecutor, BashOutput};
-use crate::extract::TextExtractor;
 use crate::interner::Interner;
 use crate::mounts::MountTable;
 use crate::package_manager::PackageManager;
 use crate::snapshot::SessionSnapshot;
+use crate::text_parser_utilities::TextParserUtilities;
 use crate::workspace::Workspace;
 use crate::{Checkpoint, CheckpointRef, FileMap};
 use std::collections::HashMap;
@@ -187,7 +187,7 @@ impl Session {
             .get(path)
             .ok_or_else(|| RunnerError::file_not_found_in_current(path))?
             .clone();
-        let text = TextExtractor::extract(path, &bytes)?;
+        let text = TextParserUtilities::extract(path, &bytes)?;
         let save_path = save_to
             .map(str::to_string)
             .unwrap_or_else(|| format!("{path}.txt"));
@@ -891,7 +891,7 @@ mod tests {
         session
             .write_file(
                 "report.pdf",
-                TextExtractor::minimal_pdf_with_text("Hi"),
+                TextParserUtilities::minimal_pdf_with_text("Hi"),
                 None,
             )
             .unwrap();
@@ -907,7 +907,7 @@ mod tests {
         session
             .write_file(
                 "report.pdf",
-                TextExtractor::minimal_pdf_with_text("Hi"),
+                TextParserUtilities::minimal_pdf_with_text("Hi"),
                 None,
             )
             .unwrap();

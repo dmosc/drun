@@ -7,6 +7,7 @@ use crate::tools::{
     SessionReadFile, SessionWriteFile,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+use drun_core::TextParserUtilities;
 use rust_mcp_sdk::schema::{CallToolResult, schema_utils::CallToolError};
 use std::path::PathBuf;
 
@@ -22,9 +23,6 @@ impl DrunHandler {
                 .files
                 .get(&t.path)
                 .ok_or_else(|| DrunError::file_not_found(&t.path).into_tool_err())?;
-            if t.offset.is_none() && t.limit.is_none() {
-                return Ok(ResponseBuilder::file_content(&t.path, all_bytes.as_slice()));
-            }
             let total = all_bytes.len();
             let start = (t.offset.unwrap_or(0) as usize).min(total);
             let end = t
@@ -32,6 +30,23 @@ impl DrunHandler {
                 .map(|l| start.saturating_add(l as usize).min(total))
                 .unwrap_or(total);
             let slice = &all_bytes[start..end];
+
+            if let Some(pattern) = &t.pattern {
+                let grep = TextParserUtilities::grep(slice, pattern)
+                    .map_err(|e| DrunError::from_exec(e.into()).into_tool_err())?;
+                return Ok(ResponseBuilder::text(
+                    serde_json::json!({
+                        "path": t.path,
+                        "total_matches": grep.total_matches,
+                        "matches": grep.matches,
+                    })
+                    .to_string(),
+                ));
+            }
+
+            if t.offset.is_none() && t.limit.is_none() {
+                return Ok(ResponseBuilder::file_content(&t.path, all_bytes.as_slice()));
+            }
             let (content, encoding) = match std::str::from_utf8(slice) {
                 Ok(s) => (s.to_string(), "text"),
                 Err(_) => (BASE64.encode(slice), "base64"),
@@ -213,6 +228,7 @@ mod tests {
                     path: "a.txt".to_string(),
                     offset: None,
                     limit: None,
+                    pattern: None,
                 },
             )
             .unwrap();
@@ -241,6 +257,7 @@ mod tests {
                     path: "a.txt".to_string(),
                     offset: Some(6),
                     limit: Some(5),
+                    pattern: None,
                 },
             )
             .unwrap();
@@ -272,6 +289,7 @@ mod tests {
                     path: "a.txt".to_string(),
                     offset: Some(6),
                     limit: Some(u64::MAX),
+                    pattern: None,
                 },
             )
             .unwrap();
@@ -303,6 +321,7 @@ mod tests {
                     path: "bin.dat".to_string(),
                     offset: Some(0),
                     limit: Some(3),
+                    pattern: None,
                 },
             )
             .unwrap();
@@ -321,10 +340,132 @@ mod tests {
                     path: "missing.txt".to_string(),
                     offset: None,
                     limit: None,
+                    pattern: None,
                 },
             )
             .unwrap_err();
         assert!(err.to_string().contains("file_not_found"));
+    }
+
+    #[test]
+    fn session_read_file_with_pattern_returns_only_matching_lines() {
+        let handler = DrunHandler::new(Config::default());
+        insert_current_session(&handler, "s1");
+        {
+            let sessions = handler.sessions.lock().unwrap();
+            sessions
+                .get("s1")
+                .unwrap()
+                .lock()
+                .unwrap()
+                .write_file("a.txt", b"one\nERROR: boom\nthree\n".to_vec(), None)
+                .unwrap();
+        }
+
+        let result = handler
+            .handle_session_read_file(
+                CLIENT,
+                SessionReadFile {
+                    path: "a.txt".to_string(),
+                    offset: None,
+                    limit: None,
+                    pattern: Some("^ERROR".to_string()),
+                },
+            )
+            .unwrap();
+        let json = result_json(&result);
+        assert_eq!(json["total_matches"], 1);
+        assert_eq!(json["matches"][0]["line_number"], 2);
+        assert_eq!(json["matches"][0]["line"], "ERROR: boom");
+        assert_eq!(json["matches"][0]["byte_offset"], "one\n".len());
+    }
+
+    #[test]
+    fn session_read_file_with_pattern_searches_within_the_offset_limit_range() {
+        let handler = DrunHandler::new(Config::default());
+        insert_current_session(&handler, "s1");
+        {
+            let sessions = handler.sessions.lock().unwrap();
+            sessions
+                .get("s1")
+                .unwrap()
+                .lock()
+                .unwrap()
+                .write_file("a.txt", b"match\nmatch\nmatch\n".to_vec(), None)
+                .unwrap();
+        }
+
+        let result = handler
+            .handle_session_read_file(
+                CLIENT,
+                SessionReadFile {
+                    path: "a.txt".to_string(),
+                    offset: Some(0),
+                    limit: Some(6),
+                    pattern: Some("match".to_string()),
+                },
+            )
+            .unwrap();
+        let json = result_json(&result);
+        assert_eq!(json["total_matches"], 1);
+    }
+
+    #[test]
+    fn session_read_file_with_pattern_returns_invalid_pattern_for_bad_regex() {
+        let handler = DrunHandler::new(Config::default());
+        insert_current_session(&handler, "s1");
+        {
+            let sessions = handler.sessions.lock().unwrap();
+            sessions
+                .get("s1")
+                .unwrap()
+                .lock()
+                .unwrap()
+                .write_file("a.txt", b"hi\n".to_vec(), None)
+                .unwrap();
+        }
+
+        let err = handler
+            .handle_session_read_file(
+                CLIENT,
+                SessionReadFile {
+                    path: "a.txt".to_string(),
+                    offset: None,
+                    limit: None,
+                    pattern: Some("(unclosed".to_string()),
+                },
+            )
+            .unwrap_err();
+        assert!(err.to_string().contains("invalid_pattern"));
+    }
+
+    #[test]
+    fn session_read_file_with_pattern_returns_binary_content_for_non_utf8_files() {
+        let handler = DrunHandler::new(Config::default());
+        insert_current_session(&handler, "s1");
+        {
+            let sessions = handler.sessions.lock().unwrap();
+            sessions
+                .get("s1")
+                .unwrap()
+                .lock()
+                .unwrap()
+                .write_file("bin.dat", vec![0xff, 0xfe, 0xfd], None)
+                .unwrap();
+        }
+
+        let err = handler
+            .handle_session_read_file(
+                CLIENT,
+                SessionReadFile {
+                    path: "bin.dat".to_string(),
+                    offset: None,
+                    limit: None,
+                    pattern: Some("anything".to_string()),
+                },
+            )
+            .unwrap_err();
+        assert!(err.to_string().contains("binary_content"));
     }
 
     #[test]

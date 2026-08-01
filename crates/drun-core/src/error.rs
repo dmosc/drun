@@ -13,6 +13,8 @@ pub enum RunnerError {
     PackageInstallDisabled,
     UnsupportedPackageManager(String),
     InvalidPackageSpec(String),
+    InvalidPattern(String),
+    BinaryContent(String),
 }
 
 impl RunnerError {
@@ -78,6 +80,14 @@ impl RunnerError {
     pub fn invalid_package_spec(message: impl Into<String>) -> Self {
         Self::InvalidPackageSpec(message.into())
     }
+
+    pub fn invalid_pattern(message: impl Into<String>) -> Self {
+        Self::InvalidPattern(message.into())
+    }
+
+    pub fn binary_content(message: impl Into<String>) -> Self {
+        Self::BinaryContent(message.into())
+    }
 }
 
 impl std::fmt::Display for RunnerError {
@@ -108,6 +118,8 @@ impl std::fmt::Display for RunnerError {
             ),
             Self::UnsupportedPackageManager(msg) => write!(f, "{msg}"),
             Self::InvalidPackageSpec(msg) => write!(f, "{msg}"),
+            Self::InvalidPattern(msg) => write!(f, "{msg}"),
+            Self::BinaryContent(msg) => write!(f, "{msg}"),
         }
     }
 }

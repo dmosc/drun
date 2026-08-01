@@ -487,6 +487,7 @@ dependencies = [
  "anyhow",
  "libc",
  "pdf-extract",
+ "regex",
  "serde",
  "serde_json",
  "similar",

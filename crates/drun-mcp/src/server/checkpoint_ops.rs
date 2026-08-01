@@ -6,6 +6,7 @@ use crate::tools::{
     CheckpointReadStdstreams, SessionCheckpointDrop, SessionCheckpointLabel,
     SessionCheckpointSquash, SessionDiff, SessionRollback,
 };
+use drun_core::TextParserUtilities;
 use rust_mcp_sdk::schema::{CallToolResult, schema_utils::CallToolError};
 
 impl DrunHandler {
@@ -149,6 +150,22 @@ impl DrunHandler {
                 .limit
                 .map(|l| start.saturating_add(l as usize).min(total))
                 .unwrap_or(total);
+
+            if let Some(pattern) = &t.pattern {
+                let slice = &content.as_bytes()[start..end];
+                let grep = TextParserUtilities::grep(slice, pattern)
+                    .map_err(|e| DrunError::from_exec(e.into()).into_tool_err())?;
+                return Ok(ResponseBuilder::text(
+                    serde_json::json!({
+                        "stream": stream,
+                        "checkpoint_id": checkpoint_id,
+                        "total_matches": grep.total_matches,
+                        "matches": grep.matches,
+                    })
+                    .to_string(),
+                ));
+            }
+
             Ok(ResponseBuilder::text(
                 serde_json::json!({
                     "stream": stream,
@@ -387,6 +404,7 @@ mod tests {
                     stream: Some("stdxyz".to_string()),
                     offset: None,
                     limit: None,
+                    pattern: None,
                 },
             )
             .unwrap_err();
@@ -405,6 +423,7 @@ mod tests {
                     stream: None,
                     offset: None,
                     limit: None,
+                    pattern: None,
                 },
             )
             .unwrap();
@@ -426,6 +445,7 @@ mod tests {
                     stream: None,
                     offset: None,
                     limit: None,
+                    pattern: None,
                 },
             )
             .unwrap_err();
@@ -445,10 +465,63 @@ mod tests {
                     stream: None,
                     offset: Some(0),
                     limit: Some(u64::MAX),
+                    pattern: None,
                 },
             )
             .unwrap();
         let json = result_json(&result);
         assert_eq!(json["content"], "");
+    }
+
+    #[test]
+    fn checkpoint_read_stdstreams_with_pattern_returns_only_matching_lines() {
+        let handler = DrunHandler::new(Config::default());
+        insert_current_session(&handler, "s1");
+        {
+            let sessions = handler.sessions.lock().unwrap();
+            sessions
+                .get("s1")
+                .unwrap()
+                .lock()
+                .unwrap()
+                .execute_bash("printf 'one\\nERROR: boom\\nthree\\n'", &mut |_| {}, None)
+                .unwrap();
+        }
+
+        let result = handler
+            .handle_checkpoint_read_stdstreams(
+                CLIENT,
+                CheckpointReadStdstreams {
+                    checkpoint_id: None,
+                    stream: None,
+                    offset: None,
+                    limit: None,
+                    pattern: Some("^ERROR".to_string()),
+                },
+            )
+            .unwrap();
+        let json = result_json(&result);
+        assert_eq!(json["total_matches"], 1);
+        assert_eq!(json["matches"][0]["line"], "ERROR: boom");
+        assert_eq!(json["matches"][0]["byte_offset"], "one\n".len());
+    }
+
+    #[test]
+    fn checkpoint_read_stdstreams_with_pattern_returns_invalid_pattern_for_bad_regex() {
+        let handler = DrunHandler::new(Config::default());
+        insert_current_session(&handler, "s1");
+        let err = handler
+            .handle_checkpoint_read_stdstreams(
+                CLIENT,
+                CheckpointReadStdstreams {
+                    checkpoint_id: None,
+                    stream: None,
+                    offset: None,
+                    limit: None,
+                    pattern: Some("(unclosed".to_string()),
+                },
+            )
+            .unwrap_err();
+        assert!(err.to_string().contains("invalid_pattern"));
     }
 }

@@ -171,6 +171,14 @@ impl DrunError {
         Self::new("invalid_package_spec", message)
     }
 
+    pub fn invalid_pattern(message: impl Into<String>) -> Self {
+        Self::new("invalid_pattern", message)
+    }
+
+    pub fn binary_content(message: impl Into<String>) -> Self {
+        Self::new("binary_content", message)
+    }
+
     pub fn from_exec(e: anyhow::Error) -> Self {
         match e.downcast_ref::<RunnerError>() {
             Some(RunnerError::Timeout { timeout_ms }) => Self::execution_timeout(*timeout_ms),
@@ -195,6 +203,8 @@ impl DrunError {
                 Self::unsupported_package_manager(msg.clone())
             }
             Some(RunnerError::InvalidPackageSpec(msg)) => Self::invalid_package_spec(msg.clone()),
+            Some(RunnerError::InvalidPattern(msg)) => Self::invalid_pattern(msg.clone()),
+            Some(RunnerError::BinaryContent(msg)) => Self::binary_content(msg.clone()),
             None => Self::internal(e),
         }
     }
