@@ -31,7 +31,7 @@ impl Bridge for Codex {
             &project_dir,
             &crate::Env.drun_home(),
             "AGENTS.md",
-            &self.agents_md_content(project_path),
+            &self.agents_md_content(),
         );
 
         let path = self.config_path();
@@ -90,14 +90,11 @@ impl Codex {
         crate::Env.home_dir().join(".codex/config.toml")
     }
 
-    fn agents_md_content(&self, project_path: &str) -> String {
-        format!(
-            "# Agent instructions\n\n\
-             This project uses [drun](https://github.com/dmosc/drun) as a sandboxed runtime.\n\
-             Codex's native shell tool is disabled (machine-wide — see `features.shell_tool` in \
-             `~/.codex/config.toml`) so it can't bypass the sandbox. Use the drun MCP tools for \
-             everything.\n\n{}",
-            self.drun_instructions_body(project_path)
+    fn agents_md_content(&self) -> String {
+        self.agent_instructions_stub(
+            "Codex's native shell tool is disabled (machine-wide — see `features.shell_tool` \
+             in `~/.codex/config.toml`) so it can't bypass the sandbox. Use the drun MCP tools \
+             for everything.",
         )
     }
 }
@@ -289,15 +286,14 @@ mod tests {
     }
 
     #[test]
-    fn agents_md_content_includes_the_project_path() {
-        let content = Codex.agents_md_content("/home/user/myproject");
-        assert!(content.contains("/home/user/myproject"));
+    fn agents_md_content_explains_the_disabled_shell_tool() {
+        let content = Codex.agents_md_content();
+        assert!(content.contains("features.shell_tool"));
     }
 
     #[test]
-    fn agents_md_content_documents_the_core_tools() {
-        let content = Codex.agents_md_content("/tmp/project");
-        assert!(content.contains("session_bash"));
-        assert!(content.contains("session_mount"));
+    fn agents_md_content_tells_the_agent_to_call_get_system_instructions() {
+        let content = Codex.agents_md_content();
+        assert!(content.contains("get_system_instructions"));
     }
 }

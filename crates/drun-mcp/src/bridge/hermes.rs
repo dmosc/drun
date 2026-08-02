@@ -34,7 +34,7 @@ impl Bridge for Hermes {
             &project_dir,
             &crate::Env.drun_home(),
             "HERMES.md",
-            &self.hermes_md_content(project_path),
+            &self.hermes_md_content(),
         );
         if !self.hermes_available() {
             let path = self.hermes_config_path();
@@ -100,15 +100,13 @@ impl Hermes {
         )
     }
 
-    fn hermes_md_content(&self, project_path: &str) -> String {
-        format!(
-            "# Agent instructions\n\n\
-             This project uses [drun](https://github.com/dmosc/drun) as a sandboxed runtime.\n\
-             Hermes's native `terminal`, `file`, `web`, `search`, and `delegation` toolsets are\n\
-             disabled (machine-wide — see `~/.hermes/config.yaml`) so they don't bypass the\n\
-             sandbox. Use the drun MCP tools for everything.\n\n{}",
-            self.drun_instructions_body(project_path)
-        )
+    fn hermes_md_content(&self) -> String {
+        self.agent_instructions_stub(&format!(
+            "Hermes's native {} toolsets are disabled (machine-wide — see \
+             `~/.hermes/config.yaml`) so they can't bypass the sandbox. Use the drun MCP tools \
+             for everything.",
+            Self::REQUIRED_TOOLSETS.join(", ")
+        ))
     }
 
     fn register_mcp(&self) {
@@ -385,16 +383,16 @@ mod tests {
     const URL: &str = "http://127.0.0.1:7273/mcp";
 
     #[test]
-    fn hermes_md_content_includes_the_project_path() {
-        let content = Hermes.hermes_md_content("/home/user/myproject");
-        assert!(content.contains("/home/user/myproject"));
+    fn hermes_md_content_lists_the_disabled_toolsets() {
+        let content = Hermes.hermes_md_content();
+        assert!(content.contains("terminal"));
+        assert!(content.contains("delegation"));
     }
 
     #[test]
-    fn hermes_md_content_documents_the_core_tools() {
-        let content = Hermes.hermes_md_content("/tmp/project");
-        assert!(content.contains("session_bash"));
-        assert!(content.contains("session_mount"));
+    fn hermes_md_content_tells_the_agent_to_call_get_system_instructions() {
+        let content = Hermes.hermes_md_content();
+        assert!(content.contains("get_system_instructions"));
     }
 
     #[test]

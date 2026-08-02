@@ -160,8 +160,7 @@ This does two things:
      `Grep`), shell (`Bash`, `BashOutput`, `KillBash`), network (`WebFetch`,
      `WebSearch`), and subagent delegation (`Task`) tools are all blocked, and
      drun's MCP tools are pre-allowed so Claude isn't prompted on every call.
-   - `CLAUDE.md` — tells Claude to use drun tools instead of native ones and how
-     to bootstrap a session (`create_session` then `session_mount`).
+   - `CLAUDE.md` — instructs Claude how to use drun.
 
 The tool restriction is intentionally per-project; you wouldn't want native
 tools blocked globally across every workspace. Run `drun-mcp claude init` from
@@ -211,8 +210,7 @@ This does two things:
      (`ShellTool`, `EditTool`, `WriteFileTool`, `ReadFileTool`, `GlobTool`,
      `GrepTool`, `ReadManyFilesTool`, `LSTool`, `WebFetchTool`, `WebSearchTool`)
      via `excludeTools`, for this workspace only.
-   - `GEMINI.md` — tells Gemini to use drun tools instead of native ones and how
-     to bootstrap a session (`create_session` then `session_mount`).
+   - `GEMINI.md` - instructs Gemini how to use drun tools.
 
 Same as Claude Code, the tool restriction is per-project and the registration
 step is idempotent — re-running `drun-mcp gemini init` across projects doesn't
@@ -293,14 +291,8 @@ drun-mcp hermes init
 
 This does three things:
 
-1. **Creates `HERMES.md` in the current directory** (skipped if it already
-   exists) — Hermes's own highest-priority
-   [context file](https://github.com/NousResearch/hermes-agent/blob/main/website/docs/user-guide/features/context-files.md),
-   auto-discovered per project the same way `CLAUDE.md` is for Claude Code.
-   Without it, Hermes has no way to know drun exists or how to bootstrap a
-   session beyond whatever's in its raw tool list — this is what tells it to
-   call `create_session` then `session_mount` up front, same instructions
-   `CLAUDE.md` gives Claude Code.
+1. **Creates `HERMES.md` in the current directory** which instructs Hermes how
+   to rely no drun.
 2. **Registers drun** by writing a `drun` entry directly into
    `~/.hermes/config.yaml` under `mcp_servers`, pointing at the daemon's
    streamable-HTTP endpoint:

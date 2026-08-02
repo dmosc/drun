@@ -361,6 +361,19 @@ pub struct SessionCommit {
 }
 
 #[mcp_tool(
+    name = "get_system_instructions",
+    description = "Return the full, always-current guide to using drun's tools: getting \
+                   started, how to resume a session you didn't start, reading command output, \
+                   and every tool grouped by purpose. Call this before your first drun tool \
+                   call in a session.",
+    idempotent_hint = true,
+    destructive_hint = false,
+    read_only_hint = true
+)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct GetSystemInstructions {}
+
+#[mcp_tool(
     name = "get_config",
     description = "Return the server's operator-configured limits and allowlists: which domains \
                    session_fetch may reach, which host paths session_mount may load, which env \
@@ -600,6 +613,7 @@ tool_box!(
         SessionTree,
         SessionFetch,
         GetConfig,
+        GetSystemInstructions,
         ListSnapshots,
         SessionSnapshotTool,
         SessionRestore,

@@ -78,6 +78,7 @@ impl ServerHandler for DrunHandler {
             DrunTools::SessionExport(t) => self.handle_session_export(&connection_id, t),
             DrunTools::SessionFetch(t) => self.handle_session_fetch(&connection_id, t).await,
             DrunTools::GetConfig(_) => self.handle_get_config(),
+            DrunTools::GetSystemInstructions(_) => self.handle_get_system_instructions(),
             DrunTools::SessionSnapshotTool(t) => self.handle_session_snapshot(&connection_id, t),
             DrunTools::SessionGetEnv(t) => self.handle_session_get_env(&connection_id, t),
             DrunTools::SessionRestore(t) => self.handle_session_restore(&connection_id, t),

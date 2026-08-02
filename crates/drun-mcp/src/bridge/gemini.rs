@@ -28,12 +28,11 @@ impl Bridge for Gemini {
 
     fn init(&self) {
         let project_dir = std::env::current_dir().expect("cannot read current directory");
-        let project_path = project_dir.to_str().expect("non-UTF-8 project path");
         self.init_common(
             &project_dir,
             &crate::Env.drun_home(),
             "GEMINI.md",
-            &self.gemini_md_content(project_path),
+            &self.gemini_md_content(),
         );
         self.write_settings(&project_dir);
         self.register_cli_mcp();
@@ -92,16 +91,13 @@ impl Gemini {
         Ok(Some(format!("{rendered}\n")))
     }
 
-    fn gemini_md_content(&self, project_path: &str) -> String {
-        format!(
-            "# Agent instructions\n\n\
-             This project uses [drun](https://github.com/dmosc/drun) as a sandboxed runtime.\n\
-             Native file, shell, and network tools ({}) are disabled for this workspace — they \
-             would otherwise read or write the host directly, bypassing the sandbox. Use the drun \
-             MCP tools for everything.\n\n{}",
-            Self::EXCLUDED_TOOLS.join(", "),
-            self.drun_instructions_body(project_path)
-        )
+    fn gemini_md_content(&self) -> String {
+        self.agent_instructions_stub(&format!(
+            "Native file, shell, and network tools ({}) are disabled for this workspace — \
+             they would otherwise read or write the host directly, bypassing the sandbox. Use \
+             the drun MCP tools for everything.",
+            Self::EXCLUDED_TOOLS.join(", ")
+        ))
     }
 }
 
@@ -110,21 +106,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn gemini_md_content_includes_the_project_path() {
-        let content = Gemini.gemini_md_content("/home/user/myproject");
-        assert!(content.contains("/home/user/myproject"));
-    }
-
-    #[test]
-    fn gemini_md_content_documents_the_core_tools() {
-        let content = Gemini.gemini_md_content("/tmp/project");
-        assert!(content.contains("session_bash"));
-        assert!(content.contains("session_mount"));
+    fn gemini_md_content_tells_the_agent_to_call_get_system_instructions() {
+        let content = Gemini.gemini_md_content();
+        assert!(content.contains("get_system_instructions"));
     }
 
     #[test]
     fn gemini_md_content_lists_the_excluded_tools() {
-        let content = Gemini.gemini_md_content("/tmp/project");
+        let content = Gemini.gemini_md_content();
         assert!(content.contains("ShellTool"));
         assert!(content.contains("WebSearchTool"));
     }

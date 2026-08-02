@@ -15,6 +15,12 @@ impl DrunHandler {
         )))
     }
 
+    pub(super) fn handle_get_system_instructions(&self) -> Result<CallToolResult, CallToolError> {
+        Ok(ResponseBuilder::text(
+            crate::instructions::SYSTEM_INSTRUCTIONS,
+        ))
+    }
+
     pub(super) fn handle_get_config(&self) -> Result<CallToolResult, CallToolError> {
         let config = self.config.get();
         Ok(ResponseBuilder::text(
@@ -134,6 +140,16 @@ mod tests {
     use super::*;
     use crate::server::test_support::*;
     use drun_core::Config;
+
+    #[test]
+    fn get_system_instructions_returns_the_full_guide() {
+        let handler = DrunHandler::new(Config::default());
+        let result = handler.handle_get_system_instructions().unwrap();
+        assert_eq!(
+            result_text(&result),
+            crate::instructions::SYSTEM_INSTRUCTIONS
+        );
+    }
 
     #[test]
     fn session_restore_rejects_once_max_sessions_is_reached() {

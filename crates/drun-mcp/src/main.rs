@@ -6,6 +6,7 @@ mod env;
 mod errors;
 mod file_manager;
 mod handler;
+mod instructions;
 mod live_output;
 mod response;
 mod server;

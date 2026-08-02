@@ -26,12 +26,11 @@ impl Bridge for Claude {
 
     fn init(&self) {
         let project_dir = std::env::current_dir().expect("cannot read current directory");
-        let project_path = project_dir.to_str().expect("non-UTF-8 project path");
         self.init_common(
             &project_dir,
             &crate::Env.drun_home(),
             "CLAUDE.md",
-            &self.claude_md_content(project_path),
+            &self.claude_md_content(),
         );
         self.write_settings(&project_dir);
         self.register_cli_mcp();
@@ -107,16 +106,13 @@ impl Claude {
         Ok(Some(format!("{rendered}\n")))
     }
 
-    fn claude_md_content(&self, project_path: &str) -> String {
-        format!(
-            "# Agent instructions\n\n\
-             This project uses [drun](https://github.com/dmosc/drun) as a sandboxed runtime.\n\
-             Native file, shell, and network tools (`Bash`, `Edit`, `Write`, `NotebookEdit`,\n\
-             `Read`, `Glob`, `Grep`, `WebFetch`, `WebSearch`, `Task`) are disabled for this\n\
-             workspace — they would otherwise read or write the host directly, bypassing the\n\
-             sandbox. Use the drun MCP tools (prefixed `mcp__drun__`) for everything.\n\n{}",
-            self.drun_instructions_body(project_path)
-        )
+    fn claude_md_content(&self) -> String {
+        self.agent_instructions_stub(&format!(
+            "Native file, shell, and network tools ({}) are disabled for this workspace — \
+             they would otherwise read or write the host directly, bypassing the sandbox. Use \
+             the drun MCP tools (prefixed `mcp__drun__`) for everything.",
+            Self::REQUIRED_DENY.join(", ")
+        ))
     }
 }
 
@@ -125,16 +121,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn claude_md_content_includes_the_project_path() {
-        let content = Claude.claude_md_content("/home/user/myproject");
-        assert!(content.contains("/home/user/myproject"));
+    fn claude_md_content_lists_the_blocked_native_tools() {
+        let content = Claude.claude_md_content();
+        assert!(content.contains("Bash"));
+        assert!(content.contains("WebSearch"));
     }
 
     #[test]
-    fn claude_md_content_documents_the_core_tools() {
-        let content = Claude.claude_md_content("/tmp/project");
-        assert!(content.contains("session_bash"));
-        assert!(content.contains("session_mount"));
+    fn claude_md_content_tells_the_agent_to_call_get_system_instructions() {
+        let content = Claude.claude_md_content();
+        assert!(content.contains("get_system_instructions"));
     }
 
     #[test]
