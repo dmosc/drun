@@ -27,6 +27,7 @@ pub struct Session {
     checkpoint_idx: usize,
     mounts: MountTable,
     interner: Interner,
+    workspace: Option<Workspace>,
     pub label: Option<String>,
     pub parent: Option<CheckpointRef>,
     pub created_at: Instant,
@@ -41,6 +42,7 @@ impl Session {
             checkpoint_idx: 0,
             mounts: MountTable::default(),
             interner: Interner::default(),
+            workspace: None,
             label: None,
             parent: None,
             created_at: Instant::now(),
@@ -66,6 +68,7 @@ impl Session {
             checkpoint_idx,
             mounts,
             interner,
+            workspace: None,
             label,
             parent,
             created_at: Instant::now(),
@@ -230,11 +233,10 @@ impl Session {
         description: Option<&str>,
     ) -> anyhow::Result<&Checkpoint> {
         self.check_command_policy(command)?;
-        let workspace_dir = tempfile::TempDir::new()?;
-        Workspace::materialize(
-            &self.checkpoints[self.checkpoint_idx].files,
-            workspace_dir.path(),
-        )?;
+        let files = self.checkpoints[self.checkpoint_idx].files.clone();
+        let workspace = self.workspace()?;
+        workspace.sync_to(&files)?;
+        let workspace_dir = workspace.path().to_path_buf();
         let mut read_paths: Vec<PathBuf> = self.mounts.overlays().values().cloned().collect();
         read_paths.extend(self.config.get().mount_allowlist);
         let bash_timeout_ms = self.config.get().bash_timeout_ms;
@@ -243,14 +245,14 @@ impl Session {
             stderr,
             exit_code,
         } = BashExecutor::run(
-            workspace_dir.path(),
+            &workspace_dir,
             self.mounts.overlays(),
             read_paths,
             command,
             bash_timeout_ms,
             on_stdout,
         )?;
-        let collected_files = Workspace::collect(workspace_dir.path())?;
+        let collected_files = self.workspace()?.collect_changes()?;
         self.record_bash_checkpoint(
             command,
             collected_files,
@@ -259,6 +261,15 @@ impl Session {
             exit_code,
             description,
         )
+    }
+
+    /// Lazily creates the session's persistent on-disk workspace on first
+    /// use, so a session that never runs a command never pays for one.
+    fn workspace(&mut self) -> anyhow::Result<&mut Workspace> {
+        if self.workspace.is_none() {
+            self.workspace = Some(Workspace::new()?);
+        }
+        Ok(self.workspace.as_mut().unwrap())
     }
 
     fn record_bash_checkpoint(
@@ -1113,6 +1124,29 @@ mod tests {
             .unwrap();
         assert_eq!(checkpoint.stdout.trim(), "hello");
         assert_eq!(checkpoint.stderr, "");
+    }
+
+    // Exercises the persistent Workspace across real, back-to-back
+    // sandboxed calls: a file modified in place, a file created, and a file
+    // deleted by a later command all need to show up correctly, since the
+    // workspace directory is no longer torn down and rebuilt between calls.
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn execute_bash_workspace_reflects_file_changes_across_multiple_calls() {
+        let mut session = new_session();
+        session.write_file("a.txt", b"one".to_vec(), None).unwrap();
+
+        let first = session
+            .execute_bash("echo two > a.txt && echo new > b.txt", &mut |_| {}, None)
+            .unwrap();
+        assert_eq!(first.files["a.txt"].as_slice(), b"two\n");
+        assert_eq!(first.files["b.txt"].as_slice(), b"new\n");
+
+        let second = session
+            .execute_bash("rm b.txt && cat a.txt", &mut |_| {}, None)
+            .unwrap();
+        assert_eq!(second.stdout, "two\n");
+        assert!(!second.files.contains_key("b.txt"));
     }
 
     #[test]
