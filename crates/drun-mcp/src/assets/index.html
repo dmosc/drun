@@ -583,18 +583,27 @@
     }
 
     #output-body {
-      max-height: 700px;
+      height: 600px;
+      min-height: 100px;
+      max-height: 90vh;
       padding: 10px;
+      resize: vertical;
     }
 
     #files-tree {
-      max-height: 170px;
+      height: 170px;
+      min-height: 60px;
+      max-height: 90vh;
       border-bottom: 1px solid var(--border);
+      resize: vertical;
     }
 
     #files-preview {
-      max-height: 700px;
+      height: 430px;
+      min-height: 100px;
+      max-height: 90vh;
       overflow-y: auto;
+      resize: vertical;
     }
 
     .empty-column-note {
@@ -1023,6 +1032,9 @@
       // { cached, command } last rendered by renderOutputColumn, so the 2s poll
       // doesn't rebuild the output pane and reset its scroll position.
       lastRenderedOutput: null,
+      // { cached, path, mode } last rendered by renderFilesTree, so the 2s poll
+      // doesn't rebuild the tree and collapse open <details> folders.
+      lastRenderedFilesTree: null,
     };
 
     // ── Helpers ──────────────────────────────────────────────────────────────
@@ -1564,7 +1576,18 @@
       const counts = document.getElementById('files-counts');
       counts.textContent = hist ? `${hist.file_count} total` : '';
 
-      if (!cached?.files) { tree.innerHTML = '<div class="loading-note">Loading…</div>'; return; }
+      if (!cached?.files) { viewState.lastRenderedFilesTree = null; tree.innerHTML = '<div class="loading-note">Loading…</div>'; return; }
+
+      // Skip the rewrite when nothing changed since the last render; otherwise
+      // every 2s poll tick recreates every <details> element and collapses
+      // any folder the user closed.
+      const last = viewState.lastRenderedFilesTree;
+      const unchanged = last
+        && last.cached === cached
+        && last.path === viewState.selectedFilePath
+        && last.mode === viewState.filePreviewMode;
+      if (unchanged) return;
+      viewState.lastRenderedFilesTree = { cached, path: viewState.selectedFilePath, mode: viewState.filePreviewMode };
 
       const deltaByPath = new Map();
       for (const f of cached.fileNames?.added || []) deltaByPath.set(f, 'added');
