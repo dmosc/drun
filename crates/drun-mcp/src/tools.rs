@@ -409,7 +409,7 @@ pub struct SessionFetch {
 
 #[mcp_tool(
     name = "session_tree",
-    description = "Return the full session-checkpoint tree in a single call. Root sessions are top-level; forks are nested under the checkpoint they branched from. Each checkpoint is flagged with is_current so you can see the active head of every session at a glance.",
+    description = "Return the full session-checkpoint tree in a single call. Root sessions are top-level; forks are nested under the checkpoint they branched from. Each checkpoint is flagged with is_current so you can see the active head of every session at a glance, and carries the tool, command, description, and file delta counts recorded when it was created — enough to reconstruct what happened and why across every session without switching into each one. Call this first when picking up a session you did not create, or when resuming work after a break, to rebuild context before acting.",
     idempotent_hint = true,
     destructive_hint = false,
     read_only_hint = true

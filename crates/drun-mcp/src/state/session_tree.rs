@@ -1,5 +1,6 @@
 use crate::handler::DrunHandler;
 use crate::live_output::LiveOutputRegistry;
+use crate::state::file_delta::FileDelta;
 use drun_core::{CheckpointRef, Session};
 use serde::Serialize;
 use std::collections::HashMap;
@@ -11,9 +12,20 @@ struct CheckpointTreeNode {
     is_current: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     label: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    command: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    exit_code: Option<i32>,
     stdout_bytes: usize,
     stderr_bytes: usize,
     file_count: usize,
+    files_added_count: usize,
+    files_modified_count: usize,
+    files_removed_count: usize,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     forks: Vec<SessionTreeNode>,
 }
@@ -39,10 +51,11 @@ impl SessionTreeNode {
         live_output: &LiveOutputRegistry,
     ) -> SessionTreeNode {
         let current_id = session.current().id;
-        let checkpoints = session
-            .history()
+        let history = session.history();
+        let checkpoints = history
             .iter()
-            .map(|checkpoint| {
+            .enumerate()
+            .map(|(index, checkpoint)| {
                 let forks = children
                     .get(&(session_id.to_string(), checkpoint.id))
                     .map(|kids| {
@@ -53,13 +66,26 @@ impl SessionTreeNode {
                             .collect()
                     })
                     .unwrap_or_default();
+                let previous_files = if index > 0 {
+                    Some(&history[index - 1].files)
+                } else {
+                    None
+                };
+                let delta = FileDelta::compute(previous_files, &checkpoint.files);
                 CheckpointTreeNode {
                     checkpoint_id: checkpoint.id,
                     is_current: checkpoint.id == current_id,
                     label: checkpoint.label.clone(),
+                    tool: checkpoint.tool.clone(),
+                    command: checkpoint.command.clone(),
+                    description: checkpoint.description.clone(),
+                    exit_code: checkpoint.exit_code,
                     stdout_bytes: checkpoint.stdout.len(),
                     stderr_bytes: checkpoint.stderr.len(),
                     file_count: checkpoint.files.len(),
+                    files_added_count: delta.added.len(),
+                    files_modified_count: delta.modified.len(),
+                    files_removed_count: delta.removed.len(),
                     forks,
                 }
             })
@@ -120,6 +146,26 @@ mod tests {
 
     fn new_session() -> Session {
         Session::new(Config::default().into()).unwrap()
+    }
+
+    #[test]
+    fn session_tree_node_forest_reports_checkpoint_provenance_and_file_deltas() {
+        let mut session = new_session();
+        session
+            .write_files(
+                vec![("a.txt".to_string(), b"hi".to_vec())],
+                "session_write_file",
+                Some("add a.txt"),
+            )
+            .unwrap();
+        let mut sessions = HashMap::new();
+        sessions.insert("s1".to_string(), Arc::new(Mutex::new(session)));
+
+        let forest = SessionTreeNode::forest(&sessions, &LiveOutputRegistry::default());
+        let checkpoint = &forest[0].checkpoints[1];
+        assert_eq!(checkpoint.tool.as_deref(), Some("session_write_file"));
+        assert_eq!(checkpoint.description.as_deref(), Some("add a.txt"));
+        assert_eq!(checkpoint.files_added_count, 1);
     }
 
     #[test]
