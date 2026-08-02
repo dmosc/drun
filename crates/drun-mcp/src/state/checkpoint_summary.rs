@@ -121,8 +121,20 @@ mod tests {
     #[test]
     fn checkpoint_summary_history_diffs_against_the_prior_checkpoint() {
         let mut session = new_session();
-        session.write_file("a.txt", b"hi".to_vec(), None).unwrap();
-        session.write_file("b.txt", b"hi".to_vec(), None).unwrap();
+        session
+            .write_files(
+                vec![("a.txt".to_string(), b"hi".to_vec())],
+                "session_write_file",
+                None,
+            )
+            .unwrap();
+        session
+            .write_files(
+                vec![("b.txt".to_string(), b"hi".to_vec())],
+                "session_write_file",
+                None,
+            )
+            .unwrap();
 
         let history = CheckpointSummary::history(&session);
         assert_eq!(history.len(), 3);

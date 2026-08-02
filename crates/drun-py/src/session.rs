@@ -68,7 +68,7 @@ impl DrunSession {
         self.inner
             .lock()
             .unwrap()
-            .write_file(&path, content, None)
+            .write_files(vec![(path, content)], "session_write_file", None)
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))
     }
 

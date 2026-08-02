@@ -3,9 +3,21 @@ use crate::errors::DrunError;
 use crate::handler::DrunHandler;
 use crate::tools::SessionFetch;
 use rust_mcp_sdk::schema::{CallToolResult, schema_utils::CallToolError};
+use scraper::{Html, Selector};
+use serde_json::json;
+use std::collections::HashSet;
 use std::time::Duration;
+use url::Url;
+
+enum FetchBodyError {
+    Failed(String),
+    TooLarge,
+}
 
 impl DrunHandler {
+    const MAX_ASSETS: usize = 60;
+    const MAX_ASSET_BYTES: u64 = 20 * 1024 * 1024;
+
     pub(super) async fn handle_session_fetch(
         &self,
         connection_id: &str,
@@ -14,24 +26,29 @@ impl DrunHandler {
         let session_id = self.current_sessions.resolve(connection_id)?;
         self.resolve_session(&session_id)?;
         let config = self.config.get();
-        let url_is_allowed = Self::host_from_url(&t.url).is_some_and(|h| config.domain_allowed(&h));
-        if !url_is_allowed {
-            return Err(DrunError::fetch_denied(&t.url).into_tool_err());
-        }
+
+        let url = match Url::parse(&t.url) {
+            Ok(url)
+                if matches!(url.scheme(), "http" | "https")
+                    && url.host_str().is_some_and(|h| config.domain_allowed(h)) =>
+            {
+                url
+            }
+            _ => return Err(DrunError::fetch_denied(&t.url).into_tool_err()),
+        };
 
         let method = t.method.as_deref().unwrap_or("GET").to_uppercase();
         let parsed_method = method.parse::<reqwest::Method>().map_err(|_| {
             DrunError::internal(format!("invalid HTTP method: {method}")).into_tool_err()
         })?;
 
-        let builder = reqwest::Client::builder()
+        let client = reqwest::Client::builder()
             .connect_timeout(Duration::from_millis(config.connect_timeout_ms))
-            .timeout(Duration::from_millis(config.fetch_timeout_ms));
-        let client = builder
+            .timeout(Duration::from_millis(config.fetch_timeout_ms))
             .build()
             .map_err(|e| DrunError::internal(e).into_tool_err())?;
 
-        let mut req = client.request(parsed_method, &t.url);
+        let mut req = client.request(parsed_method, url.clone());
         if let Some(headers) = t.headers {
             for header in headers {
                 req = req.header(header.name, header.value);
@@ -41,85 +58,270 @@ impl DrunHandler {
             req = req.body(body);
         }
 
-        let mut response = req
+        let response = req
             .send()
             .await
             .map_err(|e| DrunError::internal(e).into_tool_err())?;
         let status = response.status().as_u16();
-        let content_type = response
-            .headers()
-            .get("content-type")
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or("")
-            .to_string();
+        let content_type = Self::content_type(&response);
 
         let max_body = config
             .max_workspace_mb
             .map(|mb| mb * 1024 * 1024)
             .unwrap_or(256 * 1024 * 1024);
-        let mut body_bytes: Vec<u8> = Vec::new();
-        while let Some(chunk) = response
-            .chunk()
+        let body_bytes = Self::read_body(response, max_body)
             .await
-            .map_err(|e| DrunError::internal(e).into_tool_err())?
-        {
-            body_bytes.extend_from_slice(&chunk);
-            if body_bytes.len() as u64 > max_body {
-                return Err(DrunError::internal(format!(
+            .map_err(|e| match e {
+                FetchBodyError::Failed(msg) => DrunError::internal(msg).into_tool_err(),
+                FetchBodyError::TooLarge => DrunError::internal(format!(
                     "response body exceeds the {} MB limit; use a smaller download \
                      or raise max_workspace_mb in server config",
                     max_body / 1024 / 1024
                 ))
-                .into_tool_err());
+                .into_tool_err(),
+            })?;
+
+        let is_html = content_type.to_lowercase().contains("text/html");
+        let (dir, filename) = Self::bundle_paths(&url, is_html);
+        let saved_to = format!("{dir}/{filename}");
+        let bytes_len = body_bytes.len();
+
+        let asset_urls = if is_html {
+            Self::discover_asset_urls(&String::from_utf8_lossy(&body_bytes), &url)
+        } else {
+            Vec::new()
+        };
+
+        let mut used_names: HashSet<String> = [filename.clone(), "manifest.json".to_string()]
+            .into_iter()
+            .collect();
+        let mut files = vec![(saved_to.clone(), body_bytes)];
+        let mut fetched = Vec::new();
+        let mut skipped = Vec::new();
+        let mut failed = Vec::new();
+
+        for (i, asset_url) in asset_urls.iter().enumerate() {
+            let resolved = asset_url.as_str().to_string();
+            if i >= Self::MAX_ASSETS {
+                skipped.push(json!({"url": resolved, "reason": "asset_limit_exceeded"}));
+                continue;
+            }
+            let host = asset_url
+                .host_str()
+                .expect("http/https urls always have a host");
+            if !config.domain_allowed(host) {
+                skipped.push(json!({"url": resolved, "reason": "domain_not_allowed"}));
+                continue;
+            }
+            match Self::fetch_asset(&client, asset_url).await {
+                Ok((asset_status, asset_content_type, asset_bytes)) => {
+                    let asset_bytes_len = asset_bytes.len();
+                    let asset_name = Self::asset_filename(asset_url, &mut used_names);
+                    let asset_saved_to = format!("{dir}/{asset_name}");
+                    files.push((asset_saved_to.clone(), asset_bytes));
+                    fetched.push(json!({
+                        "url": resolved,
+                        "saved_to": asset_saved_to,
+                        "bytes": asset_bytes_len,
+                        "content_type": asset_content_type,
+                        "status": asset_status,
+                    }));
+                }
+                Err(reason) => {
+                    failed.push(json!({"url": resolved, "reason": reason}));
+                }
             }
         }
 
-        let save_path = t
-            .save_to
-            .unwrap_or_else(|| Self::download_path_from_url(&t.url));
-        let bytes_len = body_bytes.len();
+        let manifest_path = format!("{dir}/manifest.json");
+        let (fetched_count, skipped_count, failed_count) =
+            (fetched.len(), skipped.len(), failed.len());
+        files.push((
+            manifest_path.clone(),
+            serde_json::to_vec_pretty(&json!({
+                "source_url": url.as_str(),
+                "saved_to": saved_to,
+                "assets": fetched,
+                "skipped": skipped,
+                "failed": failed,
+                "totals": {
+                    "fetched": fetched_count,
+                    "skipped": skipped_count,
+                    "failed": failed_count,
+                },
+            }))
+            .unwrap_or_default(),
+        ));
+
         self.with_session_mut(&session_id, |session| {
             session
-                .write_file(&save_path, body_bytes.to_vec(), None)
+                .write_files(files, "session_fetch", None)
                 .map_err(|e| DrunError::from_exec(e).into_tool_err())?;
             Ok(ResponseBuilder::text(
-                serde_json::json!({
+                json!({
                     "status": status,
                     "bytes": bytes_len,
                     "content_type": content_type,
-                    "saved_to": save_path,
+                    "saved_to": saved_to,
+                    "dir": dir,
+                    "manifest_path": manifest_path,
+                    "assets_fetched": fetched_count,
+                    "assets_skipped": skipped_count,
+                    "assets_failed": failed_count,
                 })
                 .to_string(),
             ))
         })
     }
 
-    fn host_from_url(url: &str) -> Option<String> {
-        let s = url
-            .strip_prefix("https://")
-            .or_else(|| url.strip_prefix("http://"))?;
-        let authority = s.split('/').next().filter(|h| !h.is_empty())?;
-        let host = if authority.starts_with('[') {
-            // IPv6: "[::1]" or "[::1]:port" — extract up to and including ']'
-            let end = authority
-                .find(']')
-                .map(|i| i + 1)
-                .unwrap_or(authority.len());
-            authority[..end].to_string()
-        } else {
-            authority.split(':').next()?.to_string()
+    fn bundle_paths(url: &Url, is_html: bool) -> (String, String) {
+        let host = url.host_str().expect("http/https urls always have a host");
+        let segment = url
+            .path_segments()
+            .and_then(|mut s| s.next_back())
+            .filter(|s| !s.is_empty());
+        let slug = match segment.and_then(|s| s.rsplit_once('.')) {
+            Some((stem, _)) if !stem.is_empty() => Some(stem),
+            _ => segment,
         };
-        Some(host)
+        let dir = match slug {
+            Some(slug) => format!("downloads/{host}/{slug}"),
+            None => format!("downloads/{host}"),
+        };
+        let filename = match segment {
+            Some(s) => s.to_string(),
+            None if is_html => "index.html".to_string(),
+            None => "download".to_string(),
+        };
+        (dir, filename)
     }
 
-    fn download_path_from_url(url: &str) -> String {
-        let without_query = url.split('?').next().unwrap_or(url).trim_end_matches('/');
-        let name = without_query
-            .rsplit('/')
-            .next()
+    fn discover_asset_urls(html: &str, base: &Url) -> Vec<Url> {
+        let doc = Html::parse_document(html);
+        let mut urls = Vec::new();
+        let mut seen = HashSet::new();
+        let mut push = |raw: &str| {
+            if let Some(url) = Self::resolve_asset_url(base, raw)
+                && seen.insert(url.as_str().to_string())
+            {
+                urls.push(url);
+            }
+        };
+
+        let link_sel = Selector::parse("link[href]").expect("valid selector");
+        for el in doc.select(&link_sel) {
+            let rel = el.value().attr("rel").unwrap_or("").to_lowercase();
+            let is_asset_rel = rel
+                .split_whitespace()
+                .any(|r| r == "stylesheet" || r.ends_with("icon"));
+            if is_asset_rel && let Some(href) = el.value().attr("href") {
+                push(href);
+            }
+        }
+
+        for selector in ["script[src]", "img[src]"] {
+            let sel = Selector::parse(selector).expect("valid selector");
+            for el in doc.select(&sel) {
+                if let Some(src) = el.value().attr("src") {
+                    push(src);
+                }
+            }
+        }
+
+        urls
+    }
+
+    fn resolve_asset_url(base: &Url, raw: &str) -> Option<Url> {
+        let trimmed = raw.trim();
+        if trimmed.is_empty()
+            || trimmed.starts_with('#')
+            || trimmed.starts_with("data:")
+            || trimmed.starts_with("mailto:")
+            || trimmed.starts_with("javascript:")
+        {
+            return None;
+        }
+        let resolved = base.join(trimmed).ok()?;
+        matches!(resolved.scheme(), "http" | "https").then_some(resolved)
+    }
+
+    async fn fetch_asset(
+        client: &reqwest::Client,
+        url: &Url,
+    ) -> Result<(u16, String, Vec<u8>), String> {
+        let response = client
+            .get(url.clone())
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+        let status = response.status();
+        if !status.is_success() {
+            return Err(format!("http_{}", status.as_u16()));
+        }
+        let content_type = Self::content_type(&response);
+        let bytes = Self::read_body(response, Self::MAX_ASSET_BYTES)
+            .await
+            .map_err(|e| match e {
+                FetchBodyError::Failed(msg) => msg,
+                FetchBodyError::TooLarge => "asset_too_large".to_string(),
+            })?;
+        Ok((status.as_u16(), content_type, bytes))
+    }
+
+    fn content_type(response: &reqwest::Response) -> String {
+        response
+            .headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_string()
+    }
+
+    async fn read_body(
+        mut response: reqwest::Response,
+        limit: u64,
+    ) -> Result<Vec<u8>, FetchBodyError> {
+        let mut bytes: Vec<u8> = Vec::new();
+        while let Some(chunk) = response
+            .chunk()
+            .await
+            .map_err(|e| FetchBodyError::Failed(e.to_string()))?
+        {
+            bytes.extend_from_slice(&chunk);
+            if bytes.len() as u64 > limit {
+                return Err(FetchBodyError::TooLarge);
+            }
+        }
+        Ok(bytes)
+    }
+
+    fn asset_filename(url: &Url, used: &mut HashSet<String>) -> String {
+        let raw = url
+            .path_segments()
+            .and_then(|mut s| s.next_back())
             .filter(|s| !s.is_empty())
-            .unwrap_or("fetch");
-        format!("downloads/{name}")
+            .unwrap_or("asset");
+        let mut name = raw.to_string();
+        if used.contains(&name) {
+            let (stem, ext) = match name.rsplit_once('.') {
+                Some((stem, ext)) => (stem.to_string(), Some(ext.to_string())),
+                None => (name.clone(), None),
+            };
+            let mut i = 2;
+            loop {
+                let candidate = match &ext {
+                    Some(ext) => format!("{stem}-{i}.{ext}"),
+                    None => format!("{stem}-{i}"),
+                };
+                if !used.contains(&candidate) {
+                    name = candidate;
+                    break;
+                }
+                i += 1;
+            }
+        }
+        used.insert(name.clone());
+        name
     }
 }
 
@@ -130,98 +332,25 @@ mod tests {
     use crate::tools::HttpHeader;
     use drun_core::Config;
 
-    #[test]
-    fn host_from_url_extracts_https_host() {
-        assert_eq!(
-            DrunHandler::host_from_url("https://pypi.org/simple/requests/"),
-            Some("pypi.org".to_string())
-        );
-    }
-
-    #[test]
-    fn host_from_url_extracts_http_host() {
-        assert_eq!(
-            DrunHandler::host_from_url("http://example.com"),
-            Some("example.com".to_string())
-        );
-    }
-
-    #[test]
-    fn host_from_url_strips_port() {
-        assert_eq!(
-            DrunHandler::host_from_url("https://example.com:8080/path"),
-            Some("example.com".to_string())
-        );
-    }
-
-    #[test]
-    fn host_from_url_rejects_missing_scheme() {
-        assert_eq!(DrunHandler::host_from_url("example.com/path"), None);
-    }
-
-    #[test]
-    fn host_from_url_rejects_unsupported_scheme() {
-        assert_eq!(DrunHandler::host_from_url("ftp://example.com/foo"), None);
-    }
-
-    #[test]
-    fn host_from_url_rejects_empty_authority() {
-        assert_eq!(DrunHandler::host_from_url("https:///path"), None);
-    }
-
-    #[test]
-    fn host_from_url_handles_ipv6_with_port() {
-        assert_eq!(
-            DrunHandler::host_from_url("https://[::1]:8080/path"),
-            Some("[::1]".to_string())
-        );
-    }
-
-    #[test]
-    fn host_from_url_handles_ipv6_without_port() {
-        assert_eq!(
-            DrunHandler::host_from_url("https://[::1]/path"),
-            Some("[::1]".to_string())
-        );
-    }
-
-    #[test]
-    fn download_path_from_url_uses_last_path_segment() {
-        assert_eq!(
-            DrunHandler::download_path_from_url("https://example.com/path/to/file.tar.gz"),
-            "downloads/file.tar.gz"
-        );
-    }
-
-    #[test]
-    fn download_path_from_url_strips_query_string() {
-        assert_eq!(
-            DrunHandler::download_path_from_url("https://example.com/file.zip?token=abc"),
-            "downloads/file.zip"
-        );
-    }
-
-    #[test]
-    fn download_path_from_url_strips_trailing_slash() {
-        assert_eq!(
-            DrunHandler::download_path_from_url("https://example.com/dir/"),
-            "downloads/dir"
-        );
-    }
-
-    #[test]
-    fn download_path_from_url_falls_back_to_fetch_for_empty_path() {
-        assert_eq!(
-            DrunHandler::download_path_from_url("https://example.com/"),
-            "downloads/example.com"
-        );
-        assert_eq!(DrunHandler::download_path_from_url(""), "downloads/fetch");
-    }
-
     fn fetch_test_config(mock_uri: &str) -> Config {
         Config {
-            domain_allowlist: vec![DrunHandler::host_from_url(mock_uri).unwrap()],
+            domain_allowlist: vec![
+                Url::parse(mock_uri)
+                    .unwrap()
+                    .host_str()
+                    .unwrap()
+                    .to_string(),
+            ],
             ..Config::default()
+        }
+    }
+
+    fn fetch(url: String) -> SessionFetch {
+        SessionFetch {
+            url,
+            method: None,
+            headers: None,
+            body: None,
         }
     }
 
@@ -229,16 +358,7 @@ mod tests {
     async fn session_fetch_returns_no_active_session_without_a_current_session() {
         let handler = DrunHandler::new(Config::default());
         let err = handler
-            .handle_session_fetch(
-                CLIENT,
-                SessionFetch {
-                    url: "https://pypi.org/simple/".to_string(),
-                    method: None,
-                    headers: None,
-                    body: None,
-                    save_to: None,
-                },
-            )
+            .handle_session_fetch(CLIENT, fetch("https://pypi.org/simple/".to_string()))
             .await
             .unwrap_err();
         assert!(err.to_string().contains("no_active_session"));
@@ -249,113 +369,41 @@ mod tests {
         let handler = DrunHandler::new(Config::default());
         insert_current_session(&handler, "s1");
         let err = handler
-            .handle_session_fetch(
-                CLIENT,
-                SessionFetch {
-                    url: "https://evil.example.com/data".to_string(),
-                    method: None,
-                    headers: None,
-                    body: None,
-                    save_to: None,
-                },
-            )
+            .handle_session_fetch(CLIENT, fetch("https://evil.example.com/data".to_string()))
             .await
             .unwrap_err();
         assert!(err.to_string().contains("fetch_denied"));
     }
 
     #[tokio::test]
-    async fn session_fetch_saves_the_response_body_under_the_default_download_path() {
-        use wiremock::matchers::{method, path};
-        use wiremock::{Mock, MockServer, ResponseTemplate};
-
-        let mock_server = MockServer::start().await;
-        Mock::given(method("GET"))
-            .and(path("/data.json"))
-            .respond_with(
-                ResponseTemplate::new(200).set_body_raw(r#"{"ok":true}"#, "application/json"),
-            )
-            .mount(&mock_server)
-            .await;
-
-        let handler = DrunHandler::new(fetch_test_config(&mock_server.uri()));
+    async fn session_fetch_denies_an_unsupported_scheme() {
+        let handler = DrunHandler::new(Config {
+            domain_allowlist: vec!["example.com".to_string()],
+            ..Config::default()
+        });
         insert_current_session(&handler, "s1");
-        let result = handler
-            .handle_session_fetch(
-                CLIENT,
-                SessionFetch {
-                    url: format!("{}/data.json", mock_server.uri()),
-                    method: None,
-                    headers: None,
-                    body: None,
-                    save_to: None,
-                },
-            )
+        let err = handler
+            .handle_session_fetch(CLIENT, fetch("ftp://example.com/foo".to_string()))
             .await
-            .unwrap();
-
-        let json = result_json(&result);
-        assert_eq!(json["status"], 200);
-        assert_eq!(json["content_type"], "application/json");
-        assert_eq!(json["saved_to"], "downloads/data.json");
-
-        let sessions = handler.sessions.lock().unwrap();
-        let session = sessions.get("s1").unwrap().lock().unwrap();
-        let saved = session.current().files.get("downloads/data.json").unwrap();
-        assert_eq!(saved.as_slice(), br#"{"ok":true}"#);
+            .unwrap_err();
+        assert!(err.to_string().contains("fetch_denied"));
     }
 
     #[tokio::test]
-    async fn session_fetch_honors_an_explicit_save_to_path_and_method() {
-        use wiremock::matchers::{method, path};
-        use wiremock::{Mock, MockServer, ResponseTemplate};
-
-        let mock_server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/submit"))
-            .respond_with(ResponseTemplate::new(201).set_body_string("created"))
-            .mount(&mock_server)
-            .await;
-
-        let handler = DrunHandler::new(fetch_test_config(&mock_server.uri()));
+    async fn session_fetch_denies_an_unparseable_url() {
+        let handler = DrunHandler::new(Config::default());
         insert_current_session(&handler, "s1");
-        let result = handler
-            .handle_session_fetch(
-                CLIENT,
-                SessionFetch {
-                    url: format!("{}/submit", mock_server.uri()),
-                    method: Some("post".to_string()),
-                    headers: None,
-                    body: Some("payload".to_string()),
-                    save_to: Some("out/response.txt".to_string()),
-                },
-            )
+        let err = handler
+            .handle_session_fetch(CLIENT, fetch("not a url".to_string()))
             .await
-            .unwrap();
-
-        let json = result_json(&result);
-        assert_eq!(json["status"], 201);
-        assert_eq!(json["saved_to"], "out/response.txt");
-
-        let sessions = handler.sessions.lock().unwrap();
-        let session = sessions.get("s1").unwrap().lock().unwrap();
-        assert_eq!(
-            session
-                .current()
-                .files
-                .get("out/response.txt")
-                .unwrap()
-                .as_slice(),
-            b"created"
-        );
+            .unwrap_err();
+        assert!(err.to_string().contains("fetch_denied"));
     }
 
     #[tokio::test]
     async fn session_fetch_rejects_an_invalid_http_method() {
         use wiremock::MockServer;
 
-        // No Mock is registered: an invalid method token must be rejected
-        // before any request reaches the (local, offline) mock server.
         let mock_server = MockServer::start().await;
         let handler = DrunHandler::new(fetch_test_config(&mock_server.uri()));
         insert_current_session(&handler, "s1");
@@ -363,11 +411,8 @@ mod tests {
             .handle_session_fetch(
                 CLIENT,
                 SessionFetch {
-                    url: mock_server.uri(),
                     method: Some("IN VALID".to_string()),
-                    headers: None,
-                    body: None,
-                    save_to: None,
+                    ..fetch(mock_server.uri())
                 },
             )
             .await
@@ -391,30 +436,21 @@ mod tests {
         let handler = DrunHandler::new(config);
         insert_current_session(&handler, "s1");
         let err = handler
-            .handle_session_fetch(
-                CLIENT,
-                SessionFetch {
-                    url: mock_server.uri(),
-                    method: None,
-                    headers: None,
-                    body: None,
-                    save_to: None,
-                },
-            )
+            .handle_session_fetch(CLIENT, fetch(mock_server.uri()))
             .await
             .unwrap_err();
         assert!(err.to_string().contains("exceeds"));
     }
 
     #[tokio::test]
-    async fn session_fetch_forwards_custom_headers_to_the_request() {
+    async fn session_fetch_forwards_custom_headers_and_method_to_the_request() {
         use wiremock::matchers::{header, method};
         use wiremock::{Mock, MockServer, ResponseTemplate};
 
         let mock_server = MockServer::start().await;
-        Mock::given(method("GET"))
+        Mock::given(method("POST"))
             .and(header("x-api-key", "secret"))
-            .respond_with(ResponseTemplate::new(200))
+            .respond_with(ResponseTemplate::new(201).set_body_string("created"))
             .mount(&mock_server)
             .await;
 
@@ -424,18 +460,139 @@ mod tests {
             .handle_session_fetch(
                 CLIENT,
                 SessionFetch {
-                    url: mock_server.uri(),
-                    method: None,
+                    method: Some("post".to_string()),
                     headers: Some(vec![HttpHeader {
                         name: "x-api-key".to_string(),
                         value: "secret".to_string(),
                     }]),
-                    body: None,
-                    save_to: None,
+                    body: Some("payload".to_string()),
+                    ..fetch(mock_server.uri())
                 },
             )
             .await
             .unwrap();
-        assert_eq!(result_json(&result)["status"], 200);
+        assert_eq!(result_json(&result)["status"], 201);
+    }
+
+    #[tokio::test]
+    async fn session_fetch_saves_a_non_html_response_under_a_url_derived_folder() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let mock_server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/data.json"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_raw(r#"{"ok":true}"#, "application/json"),
+            )
+            .mount(&mock_server)
+            .await;
+
+        let handler = DrunHandler::new(fetch_test_config(&mock_server.uri()));
+        insert_current_session(&handler, "s1");
+        let result = handler
+            .handle_session_fetch(CLIENT, fetch(format!("{}/data.json", mock_server.uri())))
+            .await
+            .unwrap();
+
+        let json = result_json(&result);
+        assert_eq!(json["status"], 200);
+        assert_eq!(json["dir"], "downloads/127.0.0.1/data");
+        assert_eq!(json["saved_to"], "downloads/127.0.0.1/data/data.json");
+        assert_eq!(json["assets_fetched"], 0);
+
+        let sessions = handler.sessions.lock().unwrap();
+        let session = sessions.get("s1").unwrap().lock().unwrap();
+        let files = &session.current().files;
+        assert_eq!(
+            files
+                .get("downloads/127.0.0.1/data/data.json")
+                .unwrap()
+                .as_slice(),
+            br#"{"ok":true}"#
+        );
+        assert!(files.contains_key("downloads/127.0.0.1/data/manifest.json"));
+    }
+
+    #[tokio::test]
+    async fn session_fetch_bundles_an_html_pages_linked_assets() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let mock_server = MockServer::start().await;
+        let html = r#"<html><head>
+            <link rel="stylesheet" href="css/style.css">
+            <script src="/js/app.js"></script>
+        </head><body>
+            <img src="img/logo.png">
+            <script src="https://evil.example.com/track.js"></script>
+        </body></html>"#;
+        Mock::given(method("GET"))
+            .and(path("/"))
+            .respond_with(ResponseTemplate::new(200).set_body_raw(html, "text/html"))
+            .mount(&mock_server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/css/style.css"))
+            .respond_with(ResponseTemplate::new(200).set_body_raw(".x{color:red}", "text/css"))
+            .mount(&mock_server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/js/app.js"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_raw("console.log(1)", "application/javascript"),
+            )
+            .mount(&mock_server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/img/logo.png"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(vec![0u8, 1, 2, 3]))
+            .mount(&mock_server)
+            .await;
+
+        let handler = DrunHandler::new(fetch_test_config(&mock_server.uri()));
+        insert_current_session(&handler, "s1");
+        let result = handler
+            .handle_session_fetch(CLIENT, fetch(format!("{}/", mock_server.uri())))
+            .await
+            .unwrap();
+
+        let json = result_json(&result);
+        assert_eq!(json["status"], 200);
+        assert_eq!(json["assets_fetched"], 3);
+        assert_eq!(json["assets_skipped"], 1);
+        assert_eq!(json["assets_failed"], 0);
+        let dir = json["dir"].as_str().unwrap().to_string();
+        assert_eq!(dir, "downloads/127.0.0.1");
+        assert_eq!(json["saved_to"], format!("{dir}/index.html"));
+        assert_eq!(json["manifest_path"], format!("{dir}/manifest.json"));
+
+        let sessions = handler.sessions.lock().unwrap();
+        let session = sessions.get("s1").unwrap().lock().unwrap();
+        let files = &session.current().files;
+
+        assert_eq!(
+            files.get(&format!("{dir}/index.html")).unwrap().as_slice(),
+            html.as_bytes()
+        );
+        assert_eq!(
+            files.get(&format!("{dir}/style.css")).unwrap().as_slice(),
+            b".x{color:red}"
+        );
+        assert_eq!(
+            files.get(&format!("{dir}/app.js")).unwrap().as_slice(),
+            b"console.log(1)"
+        );
+        assert_eq!(
+            files.get(&format!("{dir}/logo.png")).unwrap().as_slice(),
+            &[0u8, 1, 2, 3]
+        );
+
+        let manifest: serde_json::Value =
+            serde_json::from_slice(files.get(&format!("{dir}/manifest.json")).unwrap()).unwrap();
+        assert_eq!(manifest["totals"]["fetched"], 3);
+        assert_eq!(manifest["totals"]["skipped"], 1);
+        assert_eq!(manifest["totals"]["failed"], 0);
+        assert_eq!(manifest["skipped"][0]["reason"], "domain_not_allowed");
     }
 }

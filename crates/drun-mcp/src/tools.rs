@@ -382,11 +382,15 @@ pub struct GetConfig {}
     name = "session_fetch",
     description = "The designated gateway for all outbound HTTP. session_bash has no network \
                    access by design — fetch external data here first, then process it there. \
-                   Makes an HTTP request from the host and saves the response body as a \
-                   workspace file in the active session so it is immediately available to \
-                   subsequent session_bash calls. The body is never returned inline — use \
-                   session_read_file with offset + limit to read it in chunks. The target \
-                   URL's domain must be in the server's fetch allowlist.",
+                   Makes an HTTP request from the host and saves the response into a folder \
+                   named after the URL under downloads/<host>/<page>/ in the active session, \
+                   immediately available to subsequent session_bash calls. If the response is \
+                   HTML, its linked stylesheets, scripts, and images are also fetched (a \
+                   shallow scan, not a full render) into the same folder. That folder always \
+                   has a manifest.json listing what was fetched, skipped, or failed. Response \
+                   bodies are never returned inline — use session_read_file with offset + \
+                   limit to read them in chunks. The target URL's domain, and every asset \
+                   domain, must be in the server's fetch allowlist.",
     idempotent_hint = false,
     destructive_hint = false,
     read_only_hint = false
@@ -401,8 +405,6 @@ pub struct SessionFetch {
     pub headers: Option<Vec<HttpHeader>>,
     /// Request body for POST/PUT/PATCH.
     pub body: Option<String>,
-    /// Workspace-relative path where the response body will be saved.
-    pub save_to: Option<String>,
 }
 
 #[mcp_tool(

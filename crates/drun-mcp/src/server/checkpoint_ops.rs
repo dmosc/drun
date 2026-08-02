@@ -227,7 +227,11 @@ mod tests {
                 .unwrap()
                 .lock()
                 .unwrap()
-                .write_file("a.txt", b"1".to_vec(), None)
+                .write_files(
+                    vec![("a.txt".to_string(), b"1".to_vec())],
+                    "session_write_file",
+                    None,
+                )
                 .unwrap();
         }
 
@@ -271,7 +275,11 @@ mod tests {
                 .unwrap()
                 .lock()
                 .unwrap()
-                .write_file("a.txt", b"hi".to_vec(), None)
+                .write_files(
+                    vec![("a.txt".to_string(), b"hi".to_vec())],
+                    "session_write_file",
+                    None,
+                )
                 .unwrap();
         }
 
@@ -317,8 +325,20 @@ mod tests {
         {
             let sessions = handler.sessions.lock().unwrap();
             let mut session = sessions.get("s1").unwrap().lock().unwrap();
-            session.write_file("a.txt", b"hi".to_vec(), None).unwrap();
-            session.write_file("b.txt", b"bye".to_vec(), None).unwrap();
+            session
+                .write_files(
+                    vec![("a.txt".to_string(), b"hi".to_vec())],
+                    "session_write_file",
+                    None,
+                )
+                .unwrap();
+            session
+                .write_files(
+                    vec![("b.txt".to_string(), b"bye".to_vec())],
+                    "session_write_file",
+                    None,
+                )
+                .unwrap();
         }
 
         let result = handler
@@ -349,7 +369,11 @@ mod tests {
                 .unwrap()
                 .lock()
                 .unwrap()
-                .write_file("a.txt", b"hi".to_vec(), None)
+                .write_files(
+                    vec![("a.txt".to_string(), b"hi".to_vec())],
+                    "session_write_file",
+                    None,
+                )
                 .unwrap();
         }
 
@@ -379,8 +403,20 @@ mod tests {
         {
             let sessions = handler.sessions.lock().unwrap();
             let mut session = sessions.get("s1").unwrap().lock().unwrap();
-            session.write_file("a.txt", b"one".to_vec(), None).unwrap();
-            session.write_file("a.txt", b"two".to_vec(), None).unwrap();
+            session
+                .write_files(
+                    vec![("a.txt".to_string(), b"one".to_vec())],
+                    "session_write_file",
+                    None,
+                )
+                .unwrap();
+            session
+                .write_files(
+                    vec![("a.txt".to_string(), b"two".to_vec())],
+                    "session_write_file",
+                    None,
+                )
+                .unwrap();
         }
 
         let result = handler
@@ -403,8 +439,20 @@ mod tests {
         {
             let sessions = handler.sessions.lock().unwrap();
             let mut session = sessions.get("s1").unwrap().lock().unwrap();
-            session.write_file("a.txt", b"one".to_vec(), None).unwrap();
-            session.write_file("a.txt", b"two".to_vec(), None).unwrap();
+            session
+                .write_files(
+                    vec![("a.txt".to_string(), b"one".to_vec())],
+                    "session_write_file",
+                    None,
+                )
+                .unwrap();
+            session
+                .write_files(
+                    vec![("a.txt".to_string(), b"two".to_vec())],
+                    "session_write_file",
+                    None,
+                )
+                .unwrap();
         }
 
         let result = handler

@@ -240,7 +240,11 @@ mod tests {
                 .unwrap()
                 .lock()
                 .unwrap()
-                .write_file("a.txt", b"hi".to_vec(), None)
+                .write_files(
+                    vec![("a.txt".to_string(), b"hi".to_vec())],
+                    "session_write_file",
+                    None,
+                )
                 .unwrap();
         }
 
@@ -541,7 +545,11 @@ mod tests {
                 .unwrap()
                 .lock()
                 .unwrap()
-                .write_file("shared.txt", b"from source".to_vec(), None)
+                .write_files(
+                    vec![("shared.txt".to_string(), b"from source".to_vec())],
+                    "session_write_file",
+                    None,
+                )
                 .unwrap();
         }
 

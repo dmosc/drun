@@ -159,23 +159,22 @@ impl Session {
         Ok(mounted_keys)
     }
 
-    pub fn write_file(
+    pub fn write_files(
         &mut self,
-        path: &str,
-        content: Vec<u8>,
+        entries: Vec<(String, Vec<u8>)>,
+        tool: &str,
         description: Option<&str>,
     ) -> anyhow::Result<()> {
-        self.validate_file_path(path)?;
+        for (path, _) in &entries {
+            self.validate_file_path(path)?;
+        }
         let mut files = self.checkpoints[self.checkpoint_idx].files.clone();
-        let arc = self.interner.intern_bytes(content);
-        files.insert(path.to_string(), arc);
+        for (path, content) in entries {
+            let arc = self.interner.intern_bytes(content);
+            files.insert(path, arc);
+        }
         self.check_workspace_size(&files)?;
-        self.push_checkpoint(
-            files,
-            CommandOutcome::default(),
-            "session_write_file",
-            description,
-        )?;
+        self.push_checkpoint(files, CommandOutcome::default(), tool, description)?;
         Ok(())
     }
 
@@ -894,7 +893,13 @@ mod tests {
     #[test]
     fn write_file_and_delete_file_leave_the_checkpoints_command_and_exit_code_unset() {
         let mut session = new_session();
-        session.write_file("a.txt", b"hi".to_vec(), None).unwrap();
+        session
+            .write_files(
+                vec![("a.txt".to_string(), b"hi".to_vec())],
+                "session_write_file",
+                None,
+            )
+            .unwrap();
         assert_eq!(session.current().command, None);
         assert_eq!(session.current().exit_code, None);
         session.delete_file("a.txt", None).unwrap();
@@ -903,12 +908,54 @@ mod tests {
     }
 
     #[test]
+    fn write_files_adds_all_entries_in_a_single_checkpoint() {
+        let mut session = new_session();
+        let before = session.current().id;
+        session
+            .write_files(
+                vec![
+                    ("a.txt".to_string(), b"hi".to_vec()),
+                    ("dir/b.txt".to_string(), b"bye".to_vec()),
+                ],
+                "session_fetch",
+                None,
+            )
+            .unwrap();
+        let current = session.current();
+        assert_eq!(current.id, before + 1);
+        assert_eq!(current.files.get("a.txt").unwrap().as_slice(), b"hi");
+        assert_eq!(current.files.get("dir/b.txt").unwrap().as_slice(), b"bye");
+        assert_eq!(current.tool.as_deref(), Some("session_fetch"));
+    }
+
+    #[test]
+    fn write_files_rejects_the_whole_batch_if_any_path_is_invalid() {
+        let mut session = new_session();
+        let before = session.current().id;
+        let err = session
+            .write_files(
+                vec![
+                    ("a.txt".to_string(), b"hi".to_vec()),
+                    ("../escape.txt".to_string(), b"bye".to_vec()),
+                ],
+                "session_fetch",
+                None,
+            )
+            .unwrap_err();
+        assert!(err.to_string().contains(".."));
+        assert_eq!(session.current().id, before);
+    }
+
+    #[test]
     fn extract_text_writes_the_extracted_text_as_a_new_checkpoint_file() {
         let mut session = new_session();
         session
-            .write_file(
-                "report.pdf",
-                TextParserUtilities::minimal_pdf_with_text("Hi"),
+            .write_files(
+                vec![(
+                    "report.pdf".to_string(),
+                    TextParserUtilities::minimal_pdf_with_text("Hi"),
+                )],
+                "session_write_file",
                 None,
             )
             .unwrap();
@@ -922,9 +969,12 @@ mod tests {
     fn extract_text_honors_an_explicit_save_to_path() {
         let mut session = new_session();
         session
-            .write_file(
-                "report.pdf",
-                TextParserUtilities::minimal_pdf_with_text("Hi"),
+            .write_files(
+                vec![(
+                    "report.pdf".to_string(),
+                    TextParserUtilities::minimal_pdf_with_text("Hi"),
+                )],
+                "session_write_file",
                 None,
             )
             .unwrap();
@@ -946,7 +996,11 @@ mod tests {
     fn extract_text_rejects_an_unsupported_extension() {
         let mut session = new_session();
         session
-            .write_file("notes.docx", b"whatever".to_vec(), None)
+            .write_files(
+                vec![("notes.docx".to_string(), b"whatever".to_vec())],
+                "session_write_file",
+                None,
+            )
             .unwrap();
         let err = session.extract_text("notes.docx", None, None).unwrap_err();
         assert!(err.to_string().contains("docx"));
@@ -1123,7 +1177,11 @@ mod tests {
     fn execute_bash_can_still_read_and_write_within_the_workspace() {
         let mut session = new_session();
         session
-            .write_file("greeting.txt", b"hello".to_vec(), None)
+            .write_files(
+                vec![("greeting.txt".to_string(), b"hello".to_vec())],
+                "session_write_file",
+                None,
+            )
             .unwrap();
         let checkpoint = session
             .execute_bash("cat greeting.txt", &mut |_| {}, None)
@@ -1140,7 +1198,13 @@ mod tests {
     #[cfg(target_os = "macos")]
     fn execute_bash_workspace_reflects_file_changes_across_multiple_calls() {
         let mut session = new_session();
-        session.write_file("a.txt", b"one".to_vec(), None).unwrap();
+        session
+            .write_files(
+                vec![("a.txt".to_string(), b"one".to_vec())],
+                "session_write_file",
+                None,
+            )
+            .unwrap();
 
         let first = session
             .execute_bash("echo two > a.txt && echo new > b.txt", &mut |_| {}, None)
@@ -1311,13 +1375,31 @@ mod tests {
     #[test]
     fn merge_after_rollback_discards_forward_checkpoints_like_other_mutators() {
         let mut session = new_session();
-        session.write_file("a.txt", b"1".to_vec(), None).unwrap(); // checkpoint 1
-        session.write_file("a.txt", b"2".to_vec(), None).unwrap(); // checkpoint 2
+        session
+            .write_files(
+                vec![("a.txt".to_string(), b"1".to_vec())],
+                "session_write_file",
+                None,
+            )
+            .unwrap(); // checkpoint 1
+        session
+            .write_files(
+                vec![("a.txt".to_string(), b"2".to_vec())],
+                "session_write_file",
+                None,
+            )
+            .unwrap(); // checkpoint 2
         assert_eq!(session.history().len(), 3);
         session.rollback(1).unwrap();
 
         let mut source = new_session();
-        source.write_file("b.txt", b"src".to_vec(), None).unwrap();
+        source
+            .write_files(
+                vec![("b.txt".to_string(), b"src".to_vec())],
+                "session_write_file",
+                None,
+            )
+            .unwrap();
 
         session.merge_from(&source, None, None, None).unwrap();
 
@@ -1339,13 +1421,29 @@ mod tests {
     #[test]
     fn rollback_then_write_prunes_intern_table_of_discarded_content() {
         let mut session = new_session();
-        session.write_file("a.txt", b"one".to_vec(), None).unwrap(); // checkpoint 1
-        session.write_file("a.txt", b"two".to_vec(), None).unwrap(); // checkpoint 2
+        session
+            .write_files(
+                vec![("a.txt".to_string(), b"one".to_vec())],
+                "session_write_file",
+                None,
+            )
+            .unwrap(); // checkpoint 1
+        session
+            .write_files(
+                vec![("a.txt".to_string(), b"two".to_vec())],
+                "session_write_file",
+                None,
+            )
+            .unwrap(); // checkpoint 2
         assert_eq!(session.interner.len(), 2, "one and two are both live");
 
         session.rollback(0).unwrap();
         session
-            .write_file("a.txt", b"three".to_vec(), None)
+            .write_files(
+                vec![("a.txt".to_string(), b"three".to_vec())],
+                "session_write_file",
+                None,
+            )
             .unwrap();
 
         assert_eq!(session.interner.len(), 1, "only three is still live");
@@ -1354,8 +1452,20 @@ mod tests {
     #[test]
     fn squash_checkpoints_prunes_intern_table_of_the_absorbed_intermediate_content() {
         let mut session = new_session();
-        session.write_file("a.txt", b"one".to_vec(), None).unwrap(); // checkpoint 1
-        session.write_file("a.txt", b"two".to_vec(), None).unwrap(); // checkpoint 2
+        session
+            .write_files(
+                vec![("a.txt".to_string(), b"one".to_vec())],
+                "session_write_file",
+                None,
+            )
+            .unwrap(); // checkpoint 1
+        session
+            .write_files(
+                vec![("a.txt".to_string(), b"two".to_vec())],
+                "session_write_file",
+                None,
+            )
+            .unwrap(); // checkpoint 2
         assert_eq!(session.interner.len(), 2);
 
         session.squash_checkpoints(1, 2, None).unwrap();
@@ -1366,8 +1476,20 @@ mod tests {
     #[test]
     fn drop_checkpoints_prunes_intern_table_of_the_dropped_content() {
         let mut session = new_session();
-        session.write_file("a.txt", b"one".to_vec(), None).unwrap(); // checkpoint 1
-        session.write_file("a.txt", b"two".to_vec(), None).unwrap(); // checkpoint 2
+        session
+            .write_files(
+                vec![("a.txt".to_string(), b"one".to_vec())],
+                "session_write_file",
+                None,
+            )
+            .unwrap(); // checkpoint 1
+        session
+            .write_files(
+                vec![("a.txt".to_string(), b"two".to_vec())],
+                "session_write_file",
+                None,
+            )
+            .unwrap(); // checkpoint 2
         assert_eq!(session.interner.len(), 2);
 
         session.drop_checkpoints(1, 1).unwrap();
@@ -1378,8 +1500,20 @@ mod tests {
     #[test]
     fn squash_cannot_include_checkpoint_zero() {
         let mut session = new_session();
-        session.write_file("a.txt", b"1".to_vec(), None).unwrap();
-        session.write_file("a.txt", b"2".to_vec(), None).unwrap();
+        session
+            .write_files(
+                vec![("a.txt".to_string(), b"1".to_vec())],
+                "session_write_file",
+                None,
+            )
+            .unwrap();
+        session
+            .write_files(
+                vec![("a.txt".to_string(), b"2".to_vec())],
+                "session_write_file",
+                None,
+            )
+            .unwrap();
         let err = session.squash_checkpoints(0, 1, None).unwrap_err();
         assert!(err.to_string().contains("checkpoint 0"));
         // The mounted baseline must still be squashable-range-adjacent but
@@ -1390,8 +1524,20 @@ mod tests {
     #[test]
     fn drop_cannot_include_checkpoint_zero() {
         let mut session = new_session();
-        session.write_file("a.txt", b"1".to_vec(), None).unwrap();
-        session.write_file("a.txt", b"2".to_vec(), None).unwrap();
+        session
+            .write_files(
+                vec![("a.txt".to_string(), b"1".to_vec())],
+                "session_write_file",
+                None,
+            )
+            .unwrap();
+        session
+            .write_files(
+                vec![("a.txt".to_string(), b"2".to_vec())],
+                "session_write_file",
+                None,
+            )
+            .unwrap();
         let err = session.drop_checkpoints(0, 0).unwrap_err();
         assert!(err.to_string().contains("checkpoint 0"));
     }
@@ -1410,10 +1556,18 @@ mod tests {
         let mut session = new_session();
         session.mount(&host_path).unwrap();
         session
-            .write_file("mounted.txt", b"changed".to_vec(), None)
+            .write_files(
+                vec![("mounted.txt".to_string(), b"changed".to_vec())],
+                "session_write_file",
+                None,
+            )
             .unwrap();
         session
-            .write_file("mounted.txt", b"changed again".to_vec(), None)
+            .write_files(
+                vec![("mounted.txt".to_string(), b"changed again".to_vec())],
+                "session_write_file",
+                None,
+            )
             .unwrap();
 
         // Squashing checkpoints 1..=2 is allowed and must not touch checkpoint 0.
@@ -1433,8 +1587,20 @@ mod tests {
     #[test]
     fn diff_with_paths_restricts_output_to_the_given_files() {
         let mut session = new_session();
-        session.write_file("a.txt", b"hi".to_vec(), None).unwrap();
-        session.write_file("b.txt", b"bye".to_vec(), None).unwrap();
+        session
+            .write_files(
+                vec![("a.txt".to_string(), b"hi".to_vec())],
+                "session_write_file",
+                None,
+            )
+            .unwrap();
+        session
+            .write_files(
+                vec![("b.txt".to_string(), b"bye".to_vec())],
+                "session_write_file",
+                None,
+            )
+            .unwrap();
 
         let diff = session
             .diff(0, session.current().id, &["a.txt".to_string()])
@@ -1446,8 +1612,20 @@ mod tests {
     #[test]
     fn diff_with_empty_paths_includes_every_changed_file() {
         let mut session = new_session();
-        session.write_file("a.txt", b"hi".to_vec(), None).unwrap();
-        session.write_file("b.txt", b"bye".to_vec(), None).unwrap();
+        session
+            .write_files(
+                vec![("a.txt".to_string(), b"hi".to_vec())],
+                "session_write_file",
+                None,
+            )
+            .unwrap();
+        session
+            .write_files(
+                vec![("b.txt".to_string(), b"bye".to_vec())],
+                "session_write_file",
+                None,
+            )
+            .unwrap();
 
         let diff = session.diff(0, session.current().id, &[]).unwrap();
         assert!(diff.contains("a.txt"));

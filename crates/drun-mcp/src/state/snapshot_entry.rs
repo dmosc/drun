@@ -72,7 +72,13 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut session = new_session();
         session.set_label("checkpoint-1".to_string());
-        session.write_file("a.txt", b"hi".to_vec(), None).unwrap();
+        session
+            .write_files(
+                vec![("a.txt".to_string(), b"hi".to_vec())],
+                "session_write_file",
+                None,
+            )
+            .unwrap();
         let snapshot_path = dir.path().join("session.drun");
         session.snapshot().write(&snapshot_path).unwrap();
 

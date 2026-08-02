@@ -80,7 +80,11 @@ impl DrunHandler {
             };
             let previous_files = session.current().files.clone();
             session
-                .write_file(&t.path, bytes, Some(&t.description))
+                .write_files(
+                    vec![(t.path.to_string(), bytes)],
+                    "session_write_file",
+                    Some(&t.description),
+                )
                 .map_err(|e| DrunError::from_exec(e).into_tool_err())?;
             Ok(ResponseBuilder::json(&SessionState::compute(
                 session_id,
@@ -217,7 +221,11 @@ mod tests {
                 .unwrap()
                 .lock()
                 .unwrap()
-                .write_file("a.txt", b"hello world".to_vec(), None)
+                .write_files(
+                    vec![("a.txt".to_string(), b"hello world".to_vec())],
+                    "session_write_file",
+                    None,
+                )
                 .unwrap();
         }
 
@@ -246,7 +254,11 @@ mod tests {
                 .unwrap()
                 .lock()
                 .unwrap()
-                .write_file("a.txt", b"hello world".to_vec(), None)
+                .write_files(
+                    vec![("a.txt".to_string(), b"hello world".to_vec())],
+                    "session_write_file",
+                    None,
+                )
                 .unwrap();
         }
 
@@ -278,7 +290,11 @@ mod tests {
                 .unwrap()
                 .lock()
                 .unwrap()
-                .write_file("a.txt", b"hello world".to_vec(), None)
+                .write_files(
+                    vec![("a.txt".to_string(), b"hello world".to_vec())],
+                    "session_write_file",
+                    None,
+                )
                 .unwrap();
         }
 
@@ -310,7 +326,11 @@ mod tests {
                 .unwrap()
                 .lock()
                 .unwrap()
-                .write_file("bin.dat", bytes, None)
+                .write_files(
+                    vec![("bin.dat".to_string(), bytes)],
+                    "session_write_file",
+                    None,
+                )
                 .unwrap();
         }
 
@@ -358,7 +378,11 @@ mod tests {
                 .unwrap()
                 .lock()
                 .unwrap()
-                .write_file("a.txt", b"one\nERROR: boom\nthree\n".to_vec(), None)
+                .write_files(
+                    vec![("a.txt".to_string(), b"one\nERROR: boom\nthree\n".to_vec())],
+                    "session_write_file",
+                    None,
+                )
                 .unwrap();
         }
 
@@ -391,7 +415,11 @@ mod tests {
                 .unwrap()
                 .lock()
                 .unwrap()
-                .write_file("a.txt", b"match\nmatch\nmatch\n".to_vec(), None)
+                .write_files(
+                    vec![("a.txt".to_string(), b"match\nmatch\nmatch\n".to_vec())],
+                    "session_write_file",
+                    None,
+                )
                 .unwrap();
         }
 
@@ -421,7 +449,11 @@ mod tests {
                 .unwrap()
                 .lock()
                 .unwrap()
-                .write_file("a.txt", b"hi\n".to_vec(), None)
+                .write_files(
+                    vec![("a.txt".to_string(), b"hi\n".to_vec())],
+                    "session_write_file",
+                    None,
+                )
                 .unwrap();
         }
 
@@ -450,7 +482,11 @@ mod tests {
                 .unwrap()
                 .lock()
                 .unwrap()
-                .write_file("bin.dat", vec![0xff, 0xfe, 0xfd], None)
+                .write_files(
+                    vec![("bin.dat".to_string(), vec![0xff, 0xfe, 0xfd])],
+                    "session_write_file",
+                    None,
+                )
                 .unwrap();
         }
 
@@ -556,7 +592,13 @@ mod tests {
         {
             let sessions = handler.sessions.lock().unwrap();
             let mut session = sessions.get("s1").unwrap().lock().unwrap();
-            session.write_file("a.txt", b"hi".to_vec(), None).unwrap();
+            session
+                .write_files(
+                    vec![("a.txt".to_string(), b"hi".to_vec())],
+                    "session_write_file",
+                    None,
+                )
+                .unwrap();
         }
 
         let result = handler
@@ -656,7 +698,11 @@ mod tests {
                 .unwrap()
                 .lock()
                 .unwrap()
-                .write_file("notes.docx", b"whatever".to_vec(), None)
+                .write_files(
+                    vec![("notes.docx".to_string(), b"whatever".to_vec())],
+                    "session_write_file",
+                    None,
+                )
                 .unwrap();
         }
         let err = handler
@@ -685,7 +731,11 @@ mod tests {
             let mut session = sessions.get("s1").unwrap().lock().unwrap();
             session.mount(&host_file).unwrap();
             session
-                .write_file("a.txt", b"changed".to_vec(), None)
+                .write_files(
+                    vec![("a.txt".to_string(), b"changed".to_vec())],
+                    "session_write_file",
+                    None,
+                )
                 .unwrap();
         }
 
@@ -755,7 +805,11 @@ mod tests {
                 .unwrap()
                 .lock()
                 .unwrap()
-                .write_file("out.txt", b"data".to_vec(), None)
+                .write_files(
+                    vec![("out.txt".to_string(), b"data".to_vec())],
+                    "session_write_file",
+                    None,
+                )
                 .unwrap();
         }
 
@@ -783,7 +837,11 @@ mod tests {
                 .unwrap()
                 .lock()
                 .unwrap()
-                .write_file("out.txt", b"data".to_vec(), None)
+                .write_files(
+                    vec![("out.txt".to_string(), b"data".to_vec())],
+                    "session_write_file",
+                    None,
+                )
                 .unwrap();
         }
 

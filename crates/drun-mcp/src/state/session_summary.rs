@@ -54,7 +54,13 @@ mod tests {
     #[test]
     fn session_summary_all_reflects_current_checkpoint_and_history_length() {
         let mut session = new_session();
-        session.write_file("a.txt", b"hi".to_vec(), None).unwrap();
+        session
+            .write_files(
+                vec![("a.txt".to_string(), b"hi".to_vec())],
+                "session_write_file",
+                None,
+            )
+            .unwrap();
         let mut sessions = HashMap::new();
         sessions.insert("s1".to_string(), Arc::new(Mutex::new(session)));
 
