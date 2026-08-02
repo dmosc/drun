@@ -49,12 +49,12 @@ impl BashExecutor {
     }
 
     /// Symlinks `overlays` into `workspace_dir`, spawns `command` sandboxed
-    /// against it (confined to `workspace_dir` plus `read_paths`), and waits
-    /// for it to finish or hit `timeout_ms`.
+    /// against it (confined to `workspace_dir` plus `read_only_paths`), and
+    /// waits for it to finish or hit `timeout_ms`.
     pub(crate) fn run(
         workspace_dir: &Path,
         overlays: &HashMap<String, PathBuf>,
-        read_paths: Vec<PathBuf>,
+        read_only_paths: Vec<PathBuf>,
         command: &str,
         timeout_ms: u64,
         on_stdout: &mut dyn FnMut(String),
@@ -70,7 +70,7 @@ impl BashExecutor {
         }
 
         let scratch_dir = tempfile::TempDir::new()?;
-        let child = Sandbox::new(workspace_dir, scratch_dir.path(), read_paths)
+        let child = Sandbox::new(workspace_dir, scratch_dir.path(), read_only_paths)
             .command(command)?
             .envs(PackageManager::workspace_env_vars(workspace_dir))
             .current_dir(workspace_dir)
@@ -90,7 +90,8 @@ impl BashExecutor {
             which::which(program).map_err(|_| anyhow::anyhow!("'{program}' not found on PATH"))?;
         }
         let scratch_dir = tempfile::TempDir::new()?;
-        let child = Sandbox::new(staging_dir, scratch_dir.path(), vec![])
+        let read_only_paths = Sandbox::resolve_read_only_paths(&[]);
+        let child = Sandbox::new(staging_dir, scratch_dir.path(), read_only_paths)
             .networked_command(argv)?
             .current_dir(staging_dir)
             .stdout(std::process::Stdio::piped())

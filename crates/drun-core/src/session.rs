@@ -4,6 +4,7 @@ use crate::executor::{BashExecutor, BashOutput};
 use crate::interner::Interner;
 use crate::mounts::MountTable;
 use crate::package_manager::PackageManager;
+use crate::sandbox::Sandbox;
 use crate::snapshot::SessionSnapshot;
 use crate::text_parser_utilities::TextParserUtilities;
 use crate::workspace::Workspace;
@@ -237,8 +238,10 @@ impl Session {
         let workspace = self.workspace()?;
         workspace.sync_to(&files)?;
         let workspace_dir = workspace.path().to_path_buf();
-        let mut read_paths: Vec<PathBuf> = self.mounts.overlays().values().cloned().collect();
-        read_paths.extend(self.config.get().mount_allowlist);
+        let mut extra_read_only_paths: Vec<PathBuf> =
+            self.mounts.overlays().values().cloned().collect();
+        extra_read_only_paths.extend(self.config.get().mount_allowlist);
+        let read_only_paths = Sandbox::resolve_read_only_paths(&extra_read_only_paths);
         let bash_timeout_ms = self.config.get().bash_timeout_ms;
         let BashOutput {
             stdout,
@@ -247,7 +250,7 @@ impl Session {
         } = BashExecutor::run(
             &workspace_dir,
             self.mounts.overlays(),
-            read_paths,
+            read_only_paths,
             command,
             bash_timeout_ms,
             on_stdout,

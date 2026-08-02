@@ -5,23 +5,29 @@
 //! confinement to whatever directory it's pointed at (on macOS, loopback is
 //! still denied — see `sbpl_profile`; on Linux there's no such carve-out).
 
+use std::collections::BTreeSet;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::OnceLock;
 
 pub(crate) struct Sandbox {
-    workspace: PathBuf,
-    scratch: PathBuf,
-    read_paths: Vec<PathBuf>,
+    workspace_dir: PathBuf,
+    scratch_dir: PathBuf,
+    read_only_paths: Vec<PathBuf>,
 }
 
 impl Sandbox {
-    pub(crate) fn new(workspace_dir: &Path, scratch_dir: &Path, read_paths: Vec<PathBuf>) -> Self {
-        let canonicalize = |p: &Path| p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
+    pub(crate) fn new(
+        workspace_dir: &Path,
+        scratch_dir: &Path,
+        read_only_paths: Vec<PathBuf>,
+    ) -> Self {
+        let canonicalize = |path: &Path| path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
         Self {
-            workspace: canonicalize(workspace_dir),
-            scratch: canonicalize(scratch_dir),
-            read_paths,
+            workspace_dir: canonicalize(workspace_dir),
+            scratch_dir: canonicalize(scratch_dir),
+            read_only_paths,
         }
     }
 
@@ -42,7 +48,7 @@ impl Sandbox {
         cmd.envs(
             Self::SCRATCH_ENV_VARS
                 .iter()
-                .map(|(key, subpath)| (*key, self.scratch.join(subpath))),
+                .map(|(key, subpath)| (*key, self.scratch_dir.join(subpath))),
         );
     }
 
@@ -58,35 +64,55 @@ impl Sandbox {
     // Paths the sandboxed process may look at but never modify: fixed OS
     // directories, whatever's on PATH, and any host paths explicitly mounted
     // in for this session.
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
-    fn read_only_paths(&self) -> Vec<PathBuf> {
-        let mut candidates = self.read_paths.clone();
-        candidates.extend(Self::SYSTEM_READ_PATHS.iter().map(PathBuf::from));
-        if let Ok(path_var) = std::env::var("PATH") {
-            candidates.extend(std::env::split_paths(&path_var));
+    fn system_and_path_dirs() -> &'static [PathBuf] {
+        static DIRS: OnceLock<Vec<PathBuf>> = OnceLock::new();
+        DIRS.get_or_init(|| {
+            let mut candidate_paths: Vec<PathBuf> =
+                Self::SYSTEM_READ_PATHS.iter().map(PathBuf::from).collect();
+            if let Ok(path_env_var) = std::env::var("PATH") {
+                candidate_paths.extend(std::env::split_paths(&path_env_var));
+            }
+            candidate_paths
+                .into_iter()
+                .filter_map(|path| path.canonicalize().ok())
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect()
+        })
+    }
+
+    pub(crate) fn resolve_read_only_paths(extra_read_only_paths: &[PathBuf]) -> Vec<PathBuf> {
+        if extra_read_only_paths.is_empty() {
+            return Self::system_and_path_dirs().to_vec();
         }
-        candidates
-            .into_iter()
-            .filter_map(|p| p.canonicalize().ok())
-            .collect::<std::collections::BTreeSet<_>>()
+        extra_read_only_paths
+            .iter()
+            .filter_map(|path| path.canonicalize().ok())
+            .chain(Self::system_and_path_dirs().iter().cloned())
+            .collect::<BTreeSet<_>>()
             .into_iter()
             .collect()
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    fn read_only_paths(&self) -> &[PathBuf] {
+        &self.read_only_paths
     }
 
     // Paths the sandboxed process may both read and write.
     #[cfg(target_os = "macos")]
     fn read_write_paths(&self) -> Vec<PathBuf> {
-        let canonicalize = |p: PathBuf| p.canonicalize().unwrap_or(p);
+        let canonicalize = |path: PathBuf| path.canonicalize().unwrap_or(path);
         vec![
-            self.workspace.clone(),
-            self.scratch.clone(),
+            self.workspace_dir.clone(),
+            self.scratch_dir.clone(),
             canonicalize(PathBuf::from("/tmp")),
         ]
     }
 
     #[cfg(target_os = "linux")]
     fn read_write_paths(&self) -> Vec<PathBuf> {
-        vec![self.workspace.clone(), self.scratch.clone()]
+        vec![self.workspace_dir.clone(), self.scratch_dir.clone()]
     }
 
     // xcrun/clang keep a cache file under the real per-user Darwin temp dir
@@ -103,7 +129,7 @@ impl Sandbox {
     #[cfg(target_os = "macos")]
     fn sbpl_subpaths<'a>(paths: impl Iterator<Item = &'a PathBuf>) -> String {
         paths
-            .map(|p| format!("    (subpath \"{}\")\n", p.display()))
+            .map(|path| format!("    (subpath \"{}\")\n", path.display()))
             .collect()
     }
 
@@ -177,14 +203,22 @@ impl Sandbox {
         Ok(cmd)
     }
 
+    // Whether bwrap is on PATH never changes over the process's lifetime, so
+    // only resolve it once instead of shelling out on every command.
+    #[cfg(target_os = "linux")]
+    fn bwrap_available() -> bool {
+        static AVAILABLE: OnceLock<bool> = OnceLock::new();
+        *AVAILABLE.get_or_init(|| which::which("bwrap").is_ok())
+    }
+
     #[cfg(target_os = "linux")]
     fn bwrap_command(&self) -> anyhow::Result<Command> {
-        which::which("bwrap").map_err(|_| {
-            anyhow::anyhow!(
+        if !Self::bwrap_available() {
+            anyhow::bail!(
                 "bwrap not found; install bubblewrap (e.g. `apt install bubblewrap`) \
                  to enable session_bash"
-            )
-        })?;
+            );
+        }
         let mut cmd = Command::new("bwrap");
         cmd.args(["--dev", "/dev", "--proc", "/proc"]);
         for path in self.read_only_paths() {
@@ -244,6 +278,26 @@ impl Sandbox {
 }
 
 #[cfg(test)]
+mod resolve_read_only_paths_tests {
+    use super::*;
+
+    #[test]
+    fn resolve_read_only_paths_includes_a_canonicalized_extra_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let resolved = Sandbox::resolve_read_only_paths(&[dir.path().to_path_buf()]);
+        assert!(resolved.contains(&dir.path().canonicalize().unwrap()));
+    }
+
+    #[test]
+    fn resolve_read_only_paths_dedupes_an_extra_path_already_on_path_or_system_dirs() {
+        let before = Sandbox::resolve_read_only_paths(&[]).len();
+        let with_duplicate =
+            Sandbox::resolve_read_only_paths(&[PathBuf::from(Sandbox::SYSTEM_READ_PATHS[0])]);
+        assert_eq!(with_duplicate.len(), before);
+    }
+}
+
+#[cfg(test)]
 #[cfg(target_os = "macos")]
 mod tests {
     use super::*;
@@ -269,7 +323,11 @@ mod tests {
 
         let workspace = tempfile::tempdir().unwrap();
         let scratch = tempfile::tempdir().unwrap();
-        let sandbox = Sandbox::new(workspace.path(), scratch.path(), vec![]);
+        let sandbox = Sandbox::new(
+            workspace.path(),
+            scratch.path(),
+            Sandbox::resolve_read_only_paths(&[]),
+        );
         let probe = format!("nc -z -w2 127.0.0.1 {port}");
 
         let denied = sandbox.command(&probe).unwrap().status().unwrap();
@@ -303,7 +361,11 @@ mod tests {
     fn networked_command_still_reaches_the_real_internet() {
         let workspace = tempfile::tempdir().unwrap();
         let scratch = tempfile::tempdir().unwrap();
-        let sandbox = Sandbox::new(workspace.path(), scratch.path(), vec![]);
+        let sandbox = Sandbox::new(
+            workspace.path(),
+            scratch.path(),
+            Sandbox::resolve_read_only_paths(&[]),
+        );
 
         let allowed = sandbox
             .networked_command(&[
