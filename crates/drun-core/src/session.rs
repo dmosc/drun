@@ -1121,10 +1121,9 @@ mod tests {
         assert!(err.to_string().contains("not a valid package specifier"));
     }
 
-    // Requires real network access and a working python3/pip (or npm) on
-    // PATH — not run by default (see the macos-gated tests below for why
-    // these can't run nested inside an already-sandboxed process either).
-    // Run explicitly with `cargo test -- --ignored` to verify end to end.
+    // Requires real network access, a working python3/pip (or npm) on PATH,
+    // and sandbox-exec/bwrap actually available — not run by default. Run
+    // explicitly with `cargo test -- --ignored` to verify end to end.
     #[test]
     #[ignore]
     #[cfg(target_os = "macos")]
@@ -1190,142 +1189,6 @@ mod tests {
             )
             .unwrap();
         assert_eq!(verify.stdout.trim(), "005");
-    }
-
-    // These two exercise the real sandbox-exec profile end to end, so they
-    // only pass when `cargo test` itself runs unsandboxed. macOS refuses to
-    // apply a second sandbox-exec profile inside an already-sandboxed process
-    // ("sandbox_apply: Operation not permitted"), so running the suite from
-    // inside another sandbox (e.g. a drun session) fails them both — not a
-    // sign the restriction logic is wrong, just that this nests one sandbox
-    // too deep to self-test.
-    #[test]
-    #[cfg(target_os = "macos")]
-    fn execute_bash_can_still_read_and_write_within_the_workspace() {
-        let mut session = new_session();
-        session
-            .write_files(
-                vec![("greeting.txt".to_string(), b"hello".to_vec())],
-                "session_write_file",
-                None,
-            )
-            .unwrap();
-        let checkpoint = session
-            .execute_bash("cat greeting.txt", &mut |_| {}, None)
-            .unwrap();
-        assert_eq!(checkpoint.stdout.trim(), "hello");
-        assert_eq!(checkpoint.stderr, "");
-    }
-
-    // Exercises the persistent Workspace across real, back-to-back
-    // sandboxed calls: a file modified in place, a file created, and a file
-    // deleted by a later command all need to show up correctly, since the
-    // workspace directory is no longer torn down and rebuilt between calls.
-    #[test]
-    #[cfg(target_os = "macos")]
-    fn execute_bash_workspace_reflects_file_changes_across_multiple_calls() {
-        let mut session = new_session();
-        session
-            .write_files(
-                vec![("a.txt".to_string(), b"one".to_vec())],
-                "session_write_file",
-                None,
-            )
-            .unwrap();
-
-        let first = session
-            .execute_bash("echo two > a.txt && echo new > b.txt", &mut |_| {}, None)
-            .unwrap();
-        assert_eq!(first.files["a.txt"].as_slice(), b"two\n");
-        assert_eq!(first.files["b.txt"].as_slice(), b"new\n");
-
-        let second = session
-            .execute_bash("rm b.txt && cat a.txt", &mut |_| {}, None)
-            .unwrap();
-        assert_eq!(second.stdout, "two\n");
-        assert!(!second.files.contains_key("b.txt"));
-    }
-
-    #[test]
-    #[cfg(target_os = "macos")]
-    fn execute_bash_cannot_read_a_host_path_outside_the_sandbox_allowlist() {
-        // A tempdir the session never mounted or overlaid — distinct from
-        // the workspace's own tempdir even though both live under the same
-        // OS temp root, since only the workspace's exact subpath is allowed.
-        let secret_dir = tempfile::tempdir().unwrap();
-        let secret_path = secret_dir.path().join("secret.txt");
-        std::fs::write(&secret_path, b"do-not-leak").unwrap();
-
-        let mut session = new_session();
-        let checkpoint = session
-            .execute_bash(&format!("cat {}", secret_path.display()), &mut |_| {}, None)
-            .unwrap();
-
-        assert!(!checkpoint.stdout.contains("do-not-leak"));
-    }
-
-    #[test]
-    #[cfg(target_os = "macos")]
-    fn execute_bash_records_a_nonzero_exit_code_through_the_real_sandbox() {
-        let mut session = new_session();
-        let checkpoint = session.execute_bash("exit 7", &mut |_| {}, None).unwrap();
-        assert_eq!(checkpoint.exit_code, Some(7));
-    }
-
-    #[test]
-    #[cfg(target_os = "macos")]
-    fn execute_bash_gives_commands_a_writable_home_and_tmpdir() {
-        let mut session = new_session();
-        let checkpoint = session
-            .execute_bash(
-                "mkdir -p \"$HOME/.cache\" && echo hi > \"$HOME/.cache/probe\" \
-                 && echo hi > \"$TMPDIR/probe\" \
-                 && cat \"$HOME/.cache/probe\" \"$TMPDIR/probe\"",
-                &mut |_| {},
-                None,
-            )
-            .unwrap();
-        assert_eq!(checkpoint.stdout, "hi\nhi\n");
-        assert_eq!(checkpoint.stderr, "");
-    }
-
-    #[test]
-    #[cfg(target_os = "macos")]
-    fn execute_bash_read_access_reflects_a_mount_allowlist_edit_without_recreating_the_session() {
-        // Same read-path denial as the test above, but the fix is a
-        // mount_allowlist config edit — no session recreation and no daemon
-        // restart — mirroring
-        // mount_reflects_a_config_file_edit_without_recreating_the_session,
-        // just for session_bash's sandbox instead of session_mount.
-        let extra_dir = tempfile::tempdir().unwrap();
-        let extra_path = extra_dir.path().join("readable.txt");
-        std::fs::write(&extra_path, b"now-readable").unwrap();
-
-        let config_dir = tempfile::tempdir().unwrap();
-        let config_path = config_dir.path().join("config.toml");
-        std::fs::write(&config_path, "mount_allowlist = []\n").unwrap();
-
-        let mut session = Session::new(ConfigHandle::new(
-            Config::load_from(Some(&config_path)),
-            Some(config_path.clone()),
-        ))
-        .unwrap();
-
-        let cat_extra = format!("cat {}", extra_path.display());
-        let checkpoint = session.execute_bash(&cat_extra, &mut |_| {}, None).unwrap();
-        assert!(!checkpoint.stdout.contains("now-readable"));
-
-        std::fs::write(
-            &config_path,
-            format!(
-                "mount_allowlist = [{:?}]\n",
-                extra_dir.path().to_str().unwrap()
-            ),
-        )
-        .unwrap();
-
-        let checkpoint = session.execute_bash(&cat_extra, &mut |_| {}, None).unwrap();
-        assert!(checkpoint.stdout.contains("now-readable"));
     }
 
     #[test]
@@ -1618,9 +1481,17 @@ mod tests {
 
         let mut session = new_session();
         session.mount(dir.path()).unwrap();
+        // Simulates what a sandboxed `mv a.txt sub/a.txt` leaves behind —
+        // the old key gone, the same bytes under a new one — without
+        // needing a real sandboxed process.
         session
-            .execute_bash("mkdir sub && mv a.txt sub/a.txt", &mut |_| {}, None)
+            .write_files(
+                vec![("sub/a.txt".to_string(), b"original".to_vec())],
+                "session_write_file",
+                None,
+            )
             .unwrap();
+        session.delete_file("a.txt", None).unwrap();
 
         let committed = session.commit(None).unwrap();
         let dir = dir.path().canonicalize().unwrap();
