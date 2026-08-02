@@ -27,6 +27,16 @@ pub struct Session {
     checkpoints: Vec<Checkpoint>,
     checkpoint_idx: usize,
     mounts: MountTable,
+    // What mount() has actually read from the host, keyed the same way as a
+    // checkpoint's files. Only mount() ever writes to this — never squash,
+    // fork, or any in-sandbox mutation — so commit()/export() can trust it
+    // as "what's really on host" regardless of how checkpoints[0] drifts.
+    // checkpoints[0] looks like the same thing for a session that mounted as
+    // its very first action and was never forked, but a fork's checkpoints[0]
+    // is the *parent's* sandbox state at the fork point, which may already
+    // contain renames the parent never committed — using it as the host
+    // baseline there silently drops both writes and deletes.
+    mount_baseline: FileMap,
     interner: Interner,
     workspace: Option<Workspace>,
     pub label: Option<String>,
@@ -42,6 +52,7 @@ impl Session {
             checkpoints: vec![Checkpoint::empty(0, HashMap::new())],
             checkpoint_idx: 0,
             mounts: MountTable::default(),
+            mount_baseline: FileMap::new(),
             interner: Interner::default(),
             workspace: None,
             label: None,
@@ -54,11 +65,13 @@ impl Session {
     /// Crate-private assembly constructor for a fully-formed `Session` — used
     /// by [`SessionSnapshot::restore`], the only place that needs to build one
     /// from already-decoded parts rather than starting empty.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn from_parts(
         config: ConfigHandle,
         checkpoints: Vec<Checkpoint>,
         checkpoint_idx: usize,
         mounts: MountTable,
+        mount_baseline: FileMap,
         interner: Interner,
         label: Option<String>,
         parent: Option<CheckpointRef>,
@@ -68,6 +81,7 @@ impl Session {
             checkpoints,
             checkpoint_idx,
             mounts,
+            mount_baseline,
             interner,
             workspace: None,
             label,
@@ -83,6 +97,10 @@ impl Session {
 
     pub(crate) fn mounts(&self) -> &MountTable {
         &self.mounts
+    }
+
+    pub(crate) fn mount_baseline(&self) -> &FileMap {
+        &self.mount_baseline
     }
 
     pub fn from_session(
@@ -103,6 +121,7 @@ impl Session {
         }
         session.checkpoints[0].files = forked_files;
         session.mounts = source.mounts.clone();
+        session.mount_baseline = source.mount_baseline.clone();
         session.parent = Some(CheckpointRef {
             session_id: source_session_id.to_string(),
             checkpoint_id: source_checkpoint_idx,
@@ -149,7 +168,8 @@ impl Session {
         let mut mounted_keys: Vec<String> = Vec::new();
         let checkpoint = &mut self.checkpoints[self.checkpoint_idx];
         for (key, arc) in interned_file_entries {
-            checkpoint.files.insert(key.clone(), arc);
+            checkpoint.files.insert(key.clone(), Arc::clone(&arc));
+            self.mount_baseline.insert(key.clone(), arc);
             mounted_keys.push(key);
         }
         for (key, host_path) in overlay_entries {
@@ -540,7 +560,7 @@ impl Session {
         output_dir: &Path,
         keys: Option<Vec<String>>,
     ) -> anyhow::Result<Vec<PathBuf>> {
-        let baseline = &self.checkpoints[0].files;
+        let baseline = &self.mount_baseline;
         let current = &self.current().files;
         let keys_to_export: Vec<&String> = match &keys {
             Some(ks) => ks.iter().collect(),
@@ -576,7 +596,7 @@ impl Session {
         }
 
         let explicit_keys = keys.is_some();
-        let baseline = &self.checkpoints[0].files;
+        let baseline = &self.mount_baseline;
         let current = &self.current().files;
         let keys_to_sync = keys.unwrap_or_else(|| {
             let all: std::collections::BTreeSet<&String> =
@@ -1549,6 +1569,47 @@ mod tests {
         session.mount(dir.path()).unwrap();
 
         assert_eq!(session.commit(None).unwrap(), Vec::<PathBuf>::new());
+    }
+
+    #[test]
+    fn commit_after_a_fork_still_deletes_the_true_original_host_file() {
+        // Regression test for a real bug: forking after an *uncommitted*
+        // in-sandbox rename used to leave the fork with no way to find the
+        // file's true original host path. The fork's checkpoint 0 is the
+        // parent's sandbox state at the fork point — "sub/a.txt", not
+        // "a.txt" — so using it as commit()'s host baseline made the write
+        // to "sub/a.txt" land fine but silently skipped ever deleting the
+        // stale "a.txt" still sitting on the real host directory.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.txt"), b"original").unwrap();
+
+        let mut parent = new_session();
+        parent.mount(dir.path()).unwrap();
+        parent
+            .write_files(
+                vec![("sub/a.txt".to_string(), b"original".to_vec())],
+                "session_write_file",
+                None,
+            )
+            .unwrap();
+        parent.delete_file("a.txt", None).unwrap();
+
+        let child =
+            Session::from_session(Config::default().into(), "parent", &parent, None).unwrap();
+
+        let committed = child.commit(None).unwrap();
+        let dir = dir.path().canonicalize().unwrap();
+        assert_eq!(
+            committed
+                .into_iter()
+                .collect::<std::collections::HashSet<_>>(),
+            [dir.join("a.txt"), dir.join("sub/a.txt")]
+                .into_iter()
+                .collect(),
+            "commit from the fork must still find and delete the true original host file"
+        );
+        assert!(!dir.join("a.txt").exists());
+        assert_eq!(std::fs::read(dir.join("sub/a.txt")).unwrap(), b"original");
     }
 
     #[test]

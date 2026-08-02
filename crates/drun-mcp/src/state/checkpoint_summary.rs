@@ -72,6 +72,7 @@ mod tests {
             label: None,
             roots: Vec::new(),
             overlays: HashMap::new(),
+            mount_baseline: HashMap::new(),
             blobs: vec![],
             checkpoints: vec![
                 CheckpointRecord {
