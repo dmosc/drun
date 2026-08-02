@@ -96,14 +96,13 @@ impl Session {
             return Err(RunnerError::checkpoint_not_found(source_checkpoint_idx).into());
         }
         let forked_files = source.checkpoints[source_checkpoint_idx].files.clone();
-        let inherited_mounts = source.mounts.inherit(|key| forked_files.contains_key(key));
 
         let mut session = Self::new(config)?;
         for arc in forked_files.values() {
             session.interner.seed(arc);
         }
         session.checkpoints[0].files = forked_files;
-        session.mounts = inherited_mounts;
+        session.mounts = source.mounts.clone();
         session.parent = Some(CheckpointRef {
             session_id: source_session_id.to_string(),
             checkpoint_id: source_checkpoint_idx,
@@ -118,8 +117,9 @@ impl Session {
         let config = self.config.get();
         config.check_mount_path(&abs)?;
 
-        let (file_entries, overlay_entries) = if abs.is_dir() {
-            MountTable::scan(&abs, "", &config.mount_overlay_paths)?
+        let (file_entries, overlay_entries, root) = if abs.is_dir() {
+            let (files, overlays) = MountTable::scan(&abs, "", &config.mount_overlay_paths)?;
+            (files, overlays, abs.clone())
         } else {
             let key = abs
                 .file_name()
@@ -131,31 +131,32 @@ impl Session {
                 })?
                 .to_string_lossy()
                 .into_owned();
-            (vec![(key, std::fs::read(&abs)?, abs.clone())], vec![])
+            let root = abs.parent().map_or_else(|| abs.clone(), Path::to_path_buf);
+            (vec![(key, std::fs::read(&abs)?)], vec![], root)
         };
 
-        let interned_file_entries: Vec<(String, Arc<Vec<u8>>, PathBuf)> = file_entries
+        let interned_file_entries: Vec<(String, Arc<Vec<u8>>)> = file_entries
             .into_iter()
-            .map(|(key, bytes, host_path)| (key, self.interner.intern_bytes(bytes), host_path))
+            .map(|(key, bytes)| (key, self.interner.intern_bytes(bytes)))
             .collect();
 
         let mut prospective_files = self.checkpoints[self.checkpoint_idx].files.clone();
-        for (key, arc, _) in &interned_file_entries {
+        for (key, arc) in &interned_file_entries {
             prospective_files.insert(key.clone(), Arc::clone(arc));
         }
         self.check_workspace_size(&prospective_files)?;
 
         let mut mounted_keys: Vec<String> = Vec::new();
         let checkpoint = &mut self.checkpoints[self.checkpoint_idx];
-        for (key, arc, host_path) in interned_file_entries {
+        for (key, arc) in interned_file_entries {
             checkpoint.files.insert(key.clone(), arc);
-            self.mounts.record_origin(key.clone(), host_path);
             mounted_keys.push(key);
         }
         for (key, host_path) in overlay_entries {
             self.mounts.record_overlay(key.clone(), host_path);
             mounted_keys.push(key);
         }
+        self.mounts.record_root(root);
         Ok(mounted_keys)
     }
 
@@ -539,12 +540,13 @@ impl Session {
         output_dir: &Path,
         keys: Option<Vec<String>>,
     ) -> anyhow::Result<Vec<PathBuf>> {
+        let baseline = &self.checkpoints[0].files;
         let current = &self.current().files;
         let keys_to_export: Vec<&String> = match &keys {
             Some(ks) => ks.iter().collect(),
             None => current
                 .keys()
-                .filter(|k| !self.mounts.contains_origin(k))
+                .filter(|k| !baseline.contains_key(*k))
                 .collect(),
         };
         let mut exported_files = Vec::new();
@@ -564,27 +566,52 @@ impl Session {
     }
 
     pub fn commit(&self, keys: Option<Vec<String>>) -> anyhow::Result<Vec<PathBuf>> {
-        let mounted_files = &self.checkpoints[0].files;
+        if self.mounts.roots().is_empty() {
+            return match keys {
+                Some(_) => Err(anyhow::anyhow!(
+                    "no host directory has been mounted in this session"
+                )),
+                None => Ok(Vec::new()),
+            };
+        }
+
+        let explicit_keys = keys.is_some();
+        let baseline = &self.checkpoints[0].files;
         let current = &self.current().files;
-        let keys_to_commit: Vec<&String> = match &keys {
-            Some(ks) => ks.iter().collect(),
-            None => self.mounts.origins().keys().collect(),
-        };
+        let keys_to_sync = keys.unwrap_or_else(|| {
+            let all: std::collections::BTreeSet<&String> =
+                baseline.keys().chain(current.keys()).collect();
+            all.into_iter().cloned().collect()
+        });
+
         let mut committed = Vec::new();
-        for key in keys_to_commit {
-            let host_path = self
-                .mounts
-                .origin(key)
-                .ok_or_else(|| anyhow::anyhow!("'{}' was not mounted from host", key))?;
-            let current_bytes = current
-                .get(key)
-                .ok_or_else(|| RunnerError::file_not_found_in_current(key))?;
-            let mounted_bytes = mounted_files.get(key).map(|a| a.as_slice()).unwrap_or(&[]);
-            if current_bytes.as_slice() == mounted_bytes {
-                continue;
+        for key in keys_to_sync {
+            self.validate_file_path(&key)?;
+            let host_path = self.mounts.resolve(&key).expect("roots is non-empty");
+            match current.get(&key) {
+                Some(bytes)
+                    if baseline.get(&key).map(|a| a.as_slice()) != Some(bytes.as_slice()) =>
+                {
+                    if let Some(parent) = host_path.parent() {
+                        std::fs::create_dir_all(parent)?;
+                    }
+                    std::fs::write(&host_path, bytes.as_slice())?;
+                    committed.push(host_path);
+                }
+                Some(_) => {}
+                None if baseline.contains_key(&key) => {
+                    if let Err(e) = std::fs::remove_file(&host_path)
+                        && e.kind() != std::io::ErrorKind::NotFound
+                    {
+                        return Err(e.into());
+                    }
+                    committed.push(host_path);
+                }
+                None if explicit_keys => {
+                    return Err(RunnerError::file_not_found_in_current(&key).into());
+                }
+                None => {}
             }
-            std::fs::write(host_path, current_bytes.as_slice())?;
-            committed.push(host_path.clone());
         }
         Ok(committed)
     }
@@ -1582,6 +1609,91 @@ mod tests {
         let committed = session.commit(None).unwrap();
         assert_eq!(committed, vec![host_path.canonicalize().unwrap()]);
         assert_eq!(std::fs::read(&host_path).unwrap(), b"changed again");
+    }
+
+    #[test]
+    fn commit_relocates_a_mounted_file_renamed_in_the_sandbox() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.txt"), b"original").unwrap();
+
+        let mut session = new_session();
+        session.mount(dir.path()).unwrap();
+        session
+            .execute_bash("mkdir sub && mv a.txt sub/a.txt", &mut |_| {}, None)
+            .unwrap();
+
+        let committed = session.commit(None).unwrap();
+        let dir = dir.path().canonicalize().unwrap();
+        assert_eq!(
+            committed
+                .into_iter()
+                .collect::<std::collections::HashSet<_>>(),
+            [dir.join("a.txt"), dir.join("sub/a.txt")]
+                .into_iter()
+                .collect(),
+            "commit both deletes the old path and creates the new one"
+        );
+        assert!(!dir.join("a.txt").exists());
+        assert_eq!(std::fs::read(dir.join("sub/a.txt")).unwrap(), b"original");
+    }
+
+    #[test]
+    fn commit_deletes_a_host_file_removed_in_the_sandbox() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.txt"), b"original").unwrap();
+
+        let mut session = new_session();
+        session.mount(dir.path()).unwrap();
+        session.delete_file("a.txt", None).unwrap();
+
+        session.commit(None).unwrap();
+        assert!(!dir.path().join("a.txt").exists());
+    }
+
+    #[test]
+    fn commit_creates_a_brand_new_file_under_the_mounted_root() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.txt"), b"original").unwrap();
+
+        let mut session = new_session();
+        session.mount(dir.path()).unwrap();
+        session
+            .write_files(
+                vec![("new.txt".to_string(), b"fresh".to_vec())],
+                "session_write_file",
+                None,
+            )
+            .unwrap();
+
+        session.commit(None).unwrap();
+        assert_eq!(std::fs::read(dir.path().join("new.txt")).unwrap(), b"fresh");
+    }
+
+    #[test]
+    fn commit_skips_files_unchanged_since_mounting() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.txt"), b"original").unwrap();
+
+        let mut session = new_session();
+        session.mount(dir.path()).unwrap();
+
+        assert_eq!(session.commit(None).unwrap(), Vec::<PathBuf>::new());
+    }
+
+    #[test]
+    fn commit_is_a_noop_when_nothing_is_mounted() {
+        let session = new_session();
+        assert_eq!(session.commit(None).unwrap(), Vec::<PathBuf>::new());
+    }
+
+    #[test]
+    fn commit_with_explicit_keys_errors_when_nothing_is_mounted() {
+        let session = new_session();
+        let err = session.commit(Some(vec!["a.txt".to_string()])).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("no host directory has been mounted")
+        );
     }
 
     #[test]

@@ -1,79 +1,57 @@
-//! Tracks which workspace keys came from a host path (`origins`, committable
-//! back to disk) versus a host directory overlaid read-only into the sandbox
-//! (`overlays`), plus the host-filesystem scan `mount` walks to populate them.
+//! Tracks host directories mounted into the sandbox (`roots`, committable
+//! back to disk) and host directories overlaid read-only into the
+//! sandbox (`overlays`).
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-/// (workspace key, file bytes, host path) for regular files discovered under
-/// a mount.
-pub(crate) type ScannedFiles = Vec<(String, Vec<u8>, PathBuf)>;
+/// (workspace key, file bytes) for regular files discovered under a mount.
+pub(crate) type ScannedFiles = Vec<(String, Vec<u8>)>;
 /// (workspace key, host path) for directories matching `mount_overlay_paths`.
 pub(crate) type ScannedOverlays = Vec<(String, PathBuf)>;
 
 #[derive(Default, Clone)]
 pub(crate) struct MountTable {
-    origins: HashMap<String, PathBuf>,
+    roots: Vec<PathBuf>,
     overlays: HashMap<String, PathBuf>,
 }
 
 impl MountTable {
-    pub(crate) fn from_raw(
-        origins: HashMap<String, PathBuf>,
-        overlays: HashMap<String, PathBuf>,
-    ) -> Self {
-        Self { origins, overlays }
+    pub(crate) fn from_raw(roots: Vec<PathBuf>, overlays: HashMap<String, PathBuf>) -> Self {
+        Self { roots, overlays }
     }
 
-    pub(crate) fn record_origin(&mut self, key: String, host_path: PathBuf) {
-        self.origins.insert(key, host_path);
+    pub(crate) fn record_root(&mut self, host_dir: PathBuf) {
+        if !self.roots.contains(&host_dir) {
+            self.roots.push(host_dir);
+        }
     }
 
     pub(crate) fn record_overlay(&mut self, key: String, host_path: PathBuf) {
         self.overlays.insert(key, host_path);
     }
 
-    pub(crate) fn origins(&self) -> &HashMap<String, PathBuf> {
-        &self.origins
+    pub(crate) fn roots(&self) -> &[PathBuf] {
+        &self.roots
     }
 
     pub(crate) fn overlays(&self) -> &HashMap<String, PathBuf> {
         &self.overlays
     }
 
-    pub(crate) fn origin(&self, key: &str) -> Option<&PathBuf> {
-        self.origins.get(key)
+    /// Resolves a workspace key to a host path.
+    pub(crate) fn resolve(&self, key: &str) -> Option<PathBuf> {
+        self.roots
+            .iter()
+            .map(|root| root.join(key))
+            .find(|path| path.exists())
+            .or_else(|| self.roots.first().map(|root| root.join(key)))
     }
 
-    pub(crate) fn contains_origin(&self, key: &str) -> bool {
-        self.origins.contains_key(key)
-    }
-
-    /// Keeps only origins whose key satisfies `keep`, carrying overlays over
-    /// unchanged — a fork only inherits origins for files still present in
-    /// the forked checkpoint, but overlays are workspace-wide.
-    pub(crate) fn inherit(&self, keep: impl Fn(&str) -> bool) -> Self {
-        Self {
-            origins: self
-                .origins
-                .iter()
-                .filter(|(k, _)| keep(k.as_str()))
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect(),
-            overlays: self.overlays.clone(),
-        }
-    }
-
-    /// Drops entries whose host path no longer exists — used when restoring
-    /// from a snapshot, since a mount/overlay from a previous run may have
-    /// disappeared since.
+    /// Drops roots and overlays whose host path no longer exists.
     pub(crate) fn prune_missing(self) -> Self {
         Self {
-            origins: self
-                .origins
-                .into_iter()
-                .filter(|(_, p)| p.exists())
-                .collect(),
+            roots: self.roots.into_iter().filter(|p| p.exists()).collect(),
             overlays: self
                 .overlays
                 .into_iter()
@@ -114,7 +92,7 @@ impl MountTable {
                     overlay_entries.extend(sub_overlays);
                 }
             } else if file_type.is_file() {
-                file_entries.push((key, std::fs::read(&path)?, path));
+                file_entries.push((key, std::fs::read(&path)?));
             }
         }
         Ok((file_entries, overlay_entries))
@@ -130,11 +108,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("a.txt"), b"hello").unwrap();
         let (files, overlays) = MountTable::scan(dir.path(), "", &[]).unwrap();
-        assert_eq!(files.len(), 1);
-        let (key, bytes, host_path) = &files[0];
-        assert_eq!(key.as_str(), "a.txt");
-        assert_eq!(bytes.as_slice(), b"hello");
-        assert_eq!(*host_path, dir.path().join("a.txt"));
+        assert_eq!(files, vec![("a.txt".to_string(), b"hello".to_vec())]);
         assert!(overlays.is_empty());
     }
 
@@ -145,7 +119,6 @@ mod tests {
         std::fs::write(dir.path().join("sub/b.txt"), b"nested").unwrap();
 
         let (files, _) = MountTable::scan(dir.path(), "", &[]).unwrap();
-        assert_eq!(files.len(), 1);
         assert_eq!(files[0].0.as_str(), "sub/b.txt");
     }
 
@@ -159,8 +132,7 @@ mod tests {
         let overlay_patterns = vec!["node_modules".to_string()];
         let (files, overlays) = MountTable::scan(dir.path(), "", &overlay_patterns).unwrap();
 
-        assert_eq!(files.len(), 1);
-        assert_eq!(files[0].0.as_str(), "real.txt");
+        assert_eq!(files, vec![("real.txt".to_string(), b"kept".to_vec())]);
         assert_eq!(overlays.len(), 1);
         assert_eq!(overlays[0].0.as_str(), "node_modules");
         assert_eq!(overlays[0].1, dir.path().join("node_modules"));
@@ -173,5 +145,61 @@ mod tests {
 
         let (files, _) = MountTable::scan(dir.path(), "prefix", &[]).unwrap();
         assert_eq!(files[0].0.as_str(), "prefix/a.txt");
+    }
+
+    #[test]
+    fn record_root_dedupes_the_same_path() {
+        let mut mounts = MountTable::default();
+        mounts.record_root(PathBuf::from("/project"));
+        mounts.record_root(PathBuf::from("/project"));
+        assert_eq!(mounts.roots(), &[PathBuf::from("/project")]);
+    }
+
+    #[test]
+    fn resolve_joins_the_key_onto_the_primary_root() {
+        let mut mounts = MountTable::default();
+        mounts.record_root(PathBuf::from("/project"));
+        assert_eq!(
+            mounts.resolve("src/main.rs"),
+            Some(PathBuf::from("/project/src/main.rs"))
+        );
+    }
+
+    #[test]
+    fn resolve_returns_none_when_nothing_is_mounted() {
+        assert_eq!(MountTable::default().resolve("a.txt"), None);
+    }
+
+    #[test]
+    fn resolve_prefers_a_root_where_the_key_already_exists_on_disk() {
+        let root_a = tempfile::tempdir().unwrap();
+        let root_b = tempfile::tempdir().unwrap();
+        std::fs::write(root_b.path().join("only-in-b.txt"), b"hi").unwrap();
+
+        let mut mounts = MountTable::default();
+        mounts.record_root(root_a.path().to_path_buf());
+        mounts.record_root(root_b.path().to_path_buf());
+
+        assert_eq!(
+            mounts.resolve("only-in-b.txt"),
+            Some(root_b.path().join("only-in-b.txt"))
+        );
+        // A brand-new key with no home yet falls back to the primary root.
+        assert_eq!(
+            mounts.resolve("new.txt"),
+            Some(root_a.path().join("new.txt"))
+        );
+    }
+
+    #[test]
+    fn prune_missing_drops_a_root_whose_host_path_is_gone() {
+        let dir = tempfile::tempdir().unwrap();
+        let gone = dir.path().join("does-not-exist");
+        let mut mounts = MountTable::default();
+        mounts.record_root(dir.path().to_path_buf());
+        mounts.record_root(gone);
+
+        let pruned = mounts.prune_missing();
+        assert_eq!(pruned.roots(), &[dir.path().to_path_buf()]);
     }
 }

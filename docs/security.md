@@ -132,6 +132,9 @@ Each session keeps its own in-memory `FileMap` and checkpoint history. Sessions
 do not share memory or filesystem state. A session's files exist only in the MCP
 server's in-memory session map; no data is written to the host until
 `session_export`, `session_commit`, or `session_snapshot` is explicitly called.
+`session_commit` mirrors the mounted directory: it also deletes host files that
+were removed in the sandbox. A bad commit is undone by rolling back to an
+earlier checkpoint and committing that instead.
 
 ---
 

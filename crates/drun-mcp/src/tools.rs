@@ -349,7 +349,7 @@ pub struct SessionFork {
 
 #[mcp_tool(
     name = "session_commit",
-    description = "Write the active session's changed files back to their original host paths. Only files that were mounted and have changed since mounting are written. Pass specific keys to commit a subset, or omit to commit all changed mounted files.",
+    description = "Sync the active session's workspace back onto the mounted host directory: new files are created, changed files overwritten, and files removed in the sandbox are deleted from the host. Pass specific keys to commit a subset, or omit to sync everything that changed since mounting. Review with session_diff first — a bad commit is undone by rolling back to an earlier checkpoint and committing that instead.",
     idempotent_hint = false,
     destructive_hint = true,
     read_only_hint = false

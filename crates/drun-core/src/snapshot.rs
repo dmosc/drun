@@ -55,7 +55,8 @@ pub struct SessionSnapshot {
     pub parent: Option<CheckpointRef>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
-    pub origins: HashMap<String, PathBuf>,
+    #[serde(default)]
+    pub roots: Vec<PathBuf>,
     #[serde(default)]
     pub overlays: HashMap<String, PathBuf>,
     pub blobs: Vec<Vec<u8>>,
@@ -132,7 +133,7 @@ impl SessionSnapshot {
             checkpoint_idx: session.checkpoint_idx(),
             parent: session.parent.clone(),
             label: session.label.clone(),
-            origins: session.mounts().origins().clone(),
+            roots: session.mounts().roots().to_vec(),
             overlays: session.mounts().overlays().clone(),
             blobs,
             checkpoints,
@@ -174,7 +175,7 @@ impl SessionSnapshot {
             }
         }
 
-        let mounts = MountTable::from_raw(self.origins, self.overlays).prune_missing();
+        let mounts = MountTable::from_raw(self.roots, self.overlays).prune_missing();
 
         Ok(Session::from_parts(
             config,
@@ -197,7 +198,7 @@ mod tests {
             checkpoint_idx: 1,
             parent: None,
             label: Some("my-session".to_string()),
-            origins: HashMap::new(),
+            roots: Vec::new(),
             overlays: HashMap::new(),
             blobs: vec![b"hello".to_vec(), b"world".to_vec()],
             checkpoints: vec![

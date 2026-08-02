@@ -75,9 +75,10 @@ Grouped by purpose — each tool's schema documents its exact parameters.
 - `session_mount` — load a host file or directory into the session.
 - `session_export` — write sandbox-generated files back out to a host
   directory.
-- `session_commit` — write changed *mounted* files back to their original
-  host paths — narrower than `session_export`: only files that came from
-  `session_mount` and have since changed.
+- `session_commit` — sync the workspace back onto the mounted host directory:
+  creates new files, overwrites changed ones, deletes files removed in the
+  sandbox. Review with `session_diff` first; a bad commit is undone by
+  rolling back to an earlier checkpoint and committing that instead.
 - `session_fetch` — the designated gateway for outbound HTTP; `session_bash`
   has no network access by design. Saves the response (and, for HTML, its
   linked assets) into the session instead of returning it inline. Subject to

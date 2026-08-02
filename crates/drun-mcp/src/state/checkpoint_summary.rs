@@ -70,7 +70,7 @@ mod tests {
             checkpoint_idx: 1,
             parent: None,
             label: None,
-            origins: HashMap::new(),
+            roots: Vec::new(),
             overlays: HashMap::new(),
             blobs: vec![],
             checkpoints: vec![
