@@ -136,7 +136,7 @@ pub struct SessionReadFile {
 
 #[mcp_tool(
     name = "session_diff",
-    description = "Compute a unified diff between two checkpoints of the active session. Defaults to comparing the initial mounted state (checkpoint 0) against the current checkpoint. Returns standard unified diff output across all changed files. Each endpoint accepts an ID or a label; label takes precedence.",
+    description = "Compute a unified diff between two checkpoints of the active session. Defaults to comparing the initial mounted state (checkpoint 0) against the current checkpoint. Returns standard unified diff output across all changed files. Each endpoint accepts an ID or a label; label takes precedence. Pass paths to restrict the diff to specific files instead of every changed file.",
     idempotent_hint = true,
     destructive_hint = false,
     read_only_hint = true
@@ -153,6 +153,8 @@ pub struct SessionDiff {
     /// Label of the checkpoint to diff to. Takes precedence over
     /// to_checkpoint_id.
     pub to_checkpoint_label: Option<String>,
+    /// Path in the session to diff. Leave emtpy for all.
+    pub paths: Option<Vec<String>>,
 }
 
 #[mcp_tool(

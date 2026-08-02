@@ -216,7 +216,7 @@ impl WebServer {
         let from_id = params.from.unwrap_or(0);
         app.with_session(&session_id, move |session| {
             let to_id = params.to.unwrap_or(session.current().id);
-            match session.diff(from_id, to_id) {
+            match session.diff(from_id, to_id, &[]) {
                 Ok(diff) => (StatusCode::OK, diff).into_response(),
                 Err(error) => (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
             }

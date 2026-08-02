@@ -41,12 +41,17 @@ impl DrunSession {
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))
     }
 
-    #[pyo3(signature = (from_id=0, to_id=None))]
-    pub fn diff(&self, from_id: usize, to_id: Option<usize>) -> PyResult<String> {
+    #[pyo3(signature = (from_id=0, to_id=None, paths=None))]
+    pub fn diff(
+        &self,
+        from_id: usize,
+        to_id: Option<usize>,
+        paths: Option<Vec<String>>,
+    ) -> PyResult<String> {
         let inner = self.inner.lock().unwrap();
         let to = to_id.unwrap_or_else(|| inner.current().id);
         inner
-            .diff(from_id, to)
+            .diff(from_id, to, paths.as_deref().unwrap_or_default())
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))
     }
 
@@ -204,7 +209,7 @@ mod tests {
     #[test]
     fn diff_reports_no_changes_between_identical_checkpoints() {
         let session = test_session();
-        assert_eq!(session.diff(0, None).unwrap(), "");
+        assert_eq!(session.diff(0, None, None).unwrap(), "");
     }
 
     #[test]
@@ -213,7 +218,7 @@ mod tests {
         session
             .write_file("a.txt".to_string(), b"hi".to_vec())
             .unwrap();
-        let diff = session.diff(0, None).unwrap();
+        let diff = session.diff(0, None, None).unwrap();
         assert!(diff.contains("a.txt"));
     }
 

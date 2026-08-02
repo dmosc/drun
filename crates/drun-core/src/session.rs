@@ -590,7 +590,7 @@ impl Session {
         Ok(committed)
     }
 
-    pub fn diff(&self, from_id: usize, to_id: usize) -> anyhow::Result<String> {
+    pub fn diff(&self, from_id: usize, to_id: usize, paths: &[String]) -> anyhow::Result<String> {
         if from_id >= self.checkpoints.len() {
             return Err(RunnerError::checkpoint_not_found(from_id).into());
         }
@@ -602,6 +602,9 @@ impl Session {
         let all_keys: std::collections::BTreeSet<&String> = from.keys().chain(to.keys()).collect();
         let mut output = String::new();
         for key in all_keys {
+            if !paths.is_empty() && !paths.contains(key) {
+                continue;
+            }
             let from_bytes = from.get(key).map(|a| a.as_slice()).unwrap_or(&[]);
             let to_bytes = to.get(key).map(|a| a.as_slice()).unwrap_or(&[]);
             if from_bytes == to_bytes {
@@ -1417,7 +1420,7 @@ mod tests {
         session.squash_checkpoints(1, 2, None).unwrap();
         assert!(
             session
-                .diff(0, session.current().id)
+                .diff(0, session.current().id, &[])
                 .unwrap()
                 .contains("original")
         );
@@ -1425,6 +1428,30 @@ mod tests {
         let committed = session.commit(None).unwrap();
         assert_eq!(committed, vec![host_path.canonicalize().unwrap()]);
         assert_eq!(std::fs::read(&host_path).unwrap(), b"changed again");
+    }
+
+    #[test]
+    fn diff_with_paths_restricts_output_to_the_given_files() {
+        let mut session = new_session();
+        session.write_file("a.txt", b"hi".to_vec(), None).unwrap();
+        session.write_file("b.txt", b"bye".to_vec(), None).unwrap();
+
+        let diff = session
+            .diff(0, session.current().id, &["a.txt".to_string()])
+            .unwrap();
+        assert!(diff.contains("a.txt"));
+        assert!(!diff.contains("b.txt"));
+    }
+
+    #[test]
+    fn diff_with_empty_paths_includes_every_changed_file() {
+        let mut session = new_session();
+        session.write_file("a.txt", b"hi".to_vec(), None).unwrap();
+        session.write_file("b.txt", b"bye".to_vec(), None).unwrap();
+
+        let diff = session.diff(0, session.current().id, &[]).unwrap();
+        assert!(diff.contains("a.txt"));
+        assert!(diff.contains("b.txt"));
     }
 
     #[test]

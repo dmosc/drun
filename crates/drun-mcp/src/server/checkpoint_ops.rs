@@ -59,7 +59,7 @@ impl DrunHandler {
                 .map_err(|e| DrunError::from_exec(e).into_tool_err())?
                 .unwrap_or_else(|| session.current().id);
             let diff = session
-                .diff(from, to)
+                .diff(from, to, t.paths.as_deref().unwrap_or_default())
                 .map_err(|e| DrunError::from_exec(e).into_tool_err())?;
             Ok(ResponseBuilder::text(if diff.is_empty() {
                 "no changes".into()
@@ -283,6 +283,7 @@ mod tests {
                     from_checkpoint_label: None,
                     to_checkpoint_id: None,
                     to_checkpoint_label: None,
+                    paths: None,
                 },
             )
             .unwrap();
@@ -302,10 +303,39 @@ mod tests {
                     from_checkpoint_label: None,
                     to_checkpoint_id: Some(0),
                     to_checkpoint_label: None,
+                    paths: None,
                 },
             )
             .unwrap();
         assert_eq!(result_text(&result), "no changes");
+    }
+
+    #[test]
+    fn session_diff_with_paths_ignores_changes_outside_the_given_files() {
+        let handler = DrunHandler::new(Config::default());
+        insert_current_session(&handler, "s1");
+        {
+            let sessions = handler.sessions.lock().unwrap();
+            let mut session = sessions.get("s1").unwrap().lock().unwrap();
+            session.write_file("a.txt", b"hi".to_vec(), None).unwrap();
+            session.write_file("b.txt", b"bye".to_vec(), None).unwrap();
+        }
+
+        let result = handler
+            .handle_session_diff(
+                CLIENT,
+                SessionDiff {
+                    from_checkpoint_id: None,
+                    from_checkpoint_label: None,
+                    to_checkpoint_id: None,
+                    to_checkpoint_label: None,
+                    paths: Some(vec!["a.txt".to_string()]),
+                },
+            )
+            .unwrap();
+        let text = result_text(&result);
+        assert!(text.contains("a.txt"));
+        assert!(!text.contains("b.txt"));
     }
 
     #[test]
