@@ -574,6 +574,12 @@
       color: var(--text-muted);
     }
 
+    .files-head-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
     .column-body {
       overflow-y: auto;
     }
@@ -850,6 +856,13 @@
       padding-left: 12px;
     }
 
+    .tree-dir-name {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
     .tree-removed {
       border-top: 1px solid var(--border);
       margin-top: 2px;
@@ -995,8 +1008,11 @@
 
         <div class="column" id="files-column">
           <div class="column-head">
-            Files
-            <span class="column-head-hint" id="files-counts"></span>
+            <span>Files</span>
+            <span class="files-head-right">
+              <span class="column-head-hint" id="files-counts"></span>
+              <button class="btn btn-link" id="files-toggle-all-btn" onclick="onToggleAllFoldersClick()">Expand all</button>
+            </span>
           </div>
           <div class="column-body" id="files-tree"></div>
           <div class="column-body" id="files-preview"></div>
@@ -1023,6 +1039,8 @@
       failedCheckpointKey: null,
       // `${sessionId}:${cpId}:${path}` → { kind: 'text'|'image'|'binary', content?, url? }
       fileCache: new Map(),
+      // Folder paths the user has manually collapsed in the files tree.
+      collapsedFolders: new Set(),
       daemonStatus: null,
       daemonPanelOpen: false,
       liveOutput: null,   // { running, command, output } for the selected session
@@ -1341,6 +1359,14 @@
       renderDaemonPanel();
     });
 
+    document.getElementById('files-tree').addEventListener('toggle', e => {
+      const details = e.target;
+      const path = details?.dataset?.folderPath;
+      if (path === undefined) return;
+      if (details.open) viewState.collapsedFolders.delete(path);
+      else viewState.collapsedFolders.add(path);
+    }, true);
+
     // ── Rendering: sessions ──────────────────────────────────────────────────
 
     function sessionIdleBadge(session) {
@@ -1534,17 +1560,34 @@
       return root;
     }
 
-    function renderFileTreeChildren(children, deltaByPath) {
+    // Used to render the persisted open/closed state and to bulk-toggle
+    // everything from the "Expand all"/"Collapse all" header button.
+    function collectFolderPaths(children, parentPath, out) {
+      for (const node of children.values()) {
+        if (node.file !== null) continue;
+        const folderPath = parentPath ? `${parentPath}/${node.name}` : node.name;
+        out.push(folderPath);
+        collectFolderPaths(node.children, folderPath, out);
+      }
+    }
+
+    function renderFileTreeChildren(children, deltaByPath, parentPath) {
       const entries = [...children.values()].sort((a, b) => {
         const aIsDir = a.file === null, bIsDir = b.file === null;
         return aIsDir !== bIsDir ? (aIsDir ? -1 : 1) : a.name.localeCompare(b.name);
       });
       return entries.map(node => {
         if (node.file === null) {
+          const folderPath = parentPath ? `${parentPath}/${node.name}` : node.name;
+          const escFolderPath = escHtml(folderPath);
+          const isOpen = !viewState.collapsedFolders.has(folderPath);
           return `
-            <details class="tree-dir" open>
-              <summary class="tree-dir-label">${escHtml(node.name)}</summary>
-              <div class="tree-dir-body">${renderFileTreeChildren(node.children, deltaByPath)}</div>
+            <details class="tree-dir" data-folder-path="${escFolderPath}" ${isOpen ? 'open' : ''}>
+              <summary class="tree-dir-label">
+                <span class="tree-dir-name">${escHtml(node.name)}</span>
+                <button class="file-action-btn" onclick="event.preventDefault(); event.stopPropagation(); copyToClipboard('${escFolderPath}', this)" title="Copy path">Copy</button>
+              </summary>
+              <div class="tree-dir-body">${renderFileTreeChildren(node.children, deltaByPath, folderPath)}</div>
             </details>`;
         }
         const path = node.file.path;
@@ -1564,6 +1607,7 @@
           <div class="file-row tree-file ${isActive ? 'active' : ''}" title="${escPath}">
             ${sigil}<span class="file-path">${escHtml(node.name)}</span><span class="file-size">${fmtBytes(node.file.size_bytes)}</span>
             <span class="file-row-actions">
+              <button class="file-action-btn" onclick="copyToClipboard('${escPath}', this)" title="Copy path">Copy</button>
               <button class="file-action-btn ${viewActive ? 'active' : ''}" onclick="onFileClick('${escPath}', 'content')">view</button>
               ${diffBtn}
             </span>
@@ -1574,9 +1618,15 @@
     function renderFilesTree(cached, hist) {
       const tree = document.getElementById('files-tree');
       const counts = document.getElementById('files-counts');
+      const toggleAllBtn = document.getElementById('files-toggle-all-btn');
       counts.textContent = hist ? `${hist.file_count} total` : '';
 
-      if (!cached?.files) { viewState.lastRenderedFilesTree = null; tree.innerHTML = '<div class="loading-note">Loading…</div>'; return; }
+      if (!cached?.files) {
+        viewState.lastRenderedFilesTree = null;
+        tree.innerHTML = '<div class="loading-note">Loading…</div>';
+        toggleAllBtn.style.display = 'none';
+        return;
+      }
 
       // Skip the rewrite when nothing changed since the last render; otherwise
       // every 2s poll tick recreates every <details> element and collapses
@@ -1596,16 +1646,50 @@
 
       if (cached.files.length === 0 && removed.length === 0) {
         tree.innerHTML = '<div class="empty-column-note">Workspace is empty</div>';
+        toggleAllBtn.style.display = 'none';
         return;
       }
 
       const built = buildFileTree(cached.files);
-      const treeHtml = renderFileTreeChildren(built.children, deltaByPath);
+
+      const folderPaths = [];
+      collectFolderPaths(built.children, '', folderPaths);
+      if (folderPaths.length === 0) {
+        toggleAllBtn.style.display = 'none';
+      } else {
+        toggleAllBtn.style.display = '';
+        const allCollapsed = folderPaths.every(p => viewState.collapsedFolders.has(p));
+        toggleAllBtn.textContent = allCollapsed ? 'Expand all' : 'Collapse all';
+      }
+
+      const treeHtml = renderFileTreeChildren(built.children, deltaByPath, '');
       const removedHtml = removed.length
         ? `<div class="tree-removed">${removed.map(f => `
             <div class="file-row"><span class="file-sigil sigil-r">-</span><span class="file-path">${escHtml(f)}</span></div>`).join('')}</div>`
         : '';
       tree.innerHTML = treeHtml + removedHtml;
+    }
+
+    // Bulk-toggles every folder in the current file tree.
+    function onToggleAllFoldersClick() {
+      const sessionId = viewState.selectedSessionId;
+      const cpId = viewState.selectedCpId;
+      if (sessionId == null || cpId == null) return;
+      const cached = viewState.outputCache.get(`${sessionId}:${cpId}`);
+      if (!cached?.files) return;
+
+      const folderPaths = [];
+      collectFolderPaths(buildFileTree(cached.files).children, '', folderPaths);
+      if (folderPaths.length === 0) return;
+
+      const allCollapsed = folderPaths.every(p => viewState.collapsedFolders.has(p));
+      for (const path of folderPaths) {
+        if (allCollapsed) viewState.collapsedFolders.delete(path);
+        else viewState.collapsedFolders.add(path);
+      }
+
+      viewState.lastRenderedFilesTree = null;
+      renderFilesTree(cached, viewState.checkpointHistory.find(h => h.checkpoint_id === cpId));
     }
 
     // Renders a diff block, or an empty-state message if there's nothing to
@@ -1638,7 +1722,6 @@
       const head = `
         <div class="file-preview-head">
           <span class="mono-id">${escHtml(viewState.selectedFilePath)}</span>
-          <button class="btn" onclick="copyToClipboard('${escHtml(viewState.selectedFilePath)}', this)">Copy path</button>
         </div>`;
 
       let bodyHtml;
