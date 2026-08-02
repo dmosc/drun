@@ -9,15 +9,7 @@ use std::collections::HashSet;
 use std::time::Duration;
 use url::Url;
 
-enum FetchBodyError {
-    Failed(String),
-    TooLarge,
-}
-
 impl DrunHandler {
-    const MAX_ASSETS: usize = 60;
-    const MAX_ASSET_BYTES: u64 = 20 * 1024 * 1024;
-
     pub(super) async fn handle_session_fetch(
         &self,
         connection_id: &str,
@@ -65,21 +57,9 @@ impl DrunHandler {
         let status = response.status().as_u16();
         let content_type = Self::content_type(&response);
 
-        let max_body = config
-            .max_workspace_mb
-            .map(|mb| mb * 1024 * 1024)
-            .unwrap_or(256 * 1024 * 1024);
-        let body_bytes = Self::read_body(response, max_body)
+        let body_bytes = Self::read_body(response)
             .await
-            .map_err(|e| match e {
-                FetchBodyError::Failed(msg) => DrunError::internal(msg).into_tool_err(),
-                FetchBodyError::TooLarge => DrunError::internal(format!(
-                    "response body exceeds the {} MB limit; use a smaller download \
-                     or raise max_workspace_mb in server config",
-                    max_body / 1024 / 1024
-                ))
-                .into_tool_err(),
-            })?;
+            .map_err(|e| DrunError::internal(e).into_tool_err())?;
 
         let is_html = content_type.to_lowercase().contains("text/html");
         let (dir, filename) = Self::bundle_paths(&url, is_html);
@@ -100,12 +80,8 @@ impl DrunHandler {
         let mut skipped = Vec::new();
         let mut failed = Vec::new();
 
-        for (i, asset_url) in asset_urls.iter().enumerate() {
+        for asset_url in &asset_urls {
             let resolved = asset_url.as_str().to_string();
-            if i >= Self::MAX_ASSETS {
-                skipped.push(json!({"url": resolved, "reason": "asset_limit_exceeded"}));
-                continue;
-            }
             let host = asset_url
                 .host_str()
                 .expect("http/https urls always have a host");
@@ -259,12 +235,7 @@ impl DrunHandler {
             return Err(format!("http_{}", status.as_u16()));
         }
         let content_type = Self::content_type(&response);
-        let bytes = Self::read_body(response, Self::MAX_ASSET_BYTES)
-            .await
-            .map_err(|e| match e {
-                FetchBodyError::Failed(msg) => msg,
-                FetchBodyError::TooLarge => "asset_too_large".to_string(),
-            })?;
+        let bytes = Self::read_body(response).await?;
         Ok((status.as_u16(), content_type, bytes))
     }
 
@@ -277,20 +248,10 @@ impl DrunHandler {
             .to_string()
     }
 
-    async fn read_body(
-        mut response: reqwest::Response,
-        limit: u64,
-    ) -> Result<Vec<u8>, FetchBodyError> {
+    async fn read_body(mut response: reqwest::Response) -> Result<Vec<u8>, String> {
         let mut bytes: Vec<u8> = Vec::new();
-        while let Some(chunk) = response
-            .chunk()
-            .await
-            .map_err(|e| FetchBodyError::Failed(e.to_string()))?
-        {
+        while let Some(chunk) = response.chunk().await.map_err(|e| e.to_string())? {
             bytes.extend_from_slice(&chunk);
-            if bytes.len() as u64 > limit {
-                return Err(FetchBodyError::TooLarge);
-            }
         }
         Ok(bytes)
     }
