@@ -71,7 +71,13 @@ Grouped by purpose — each tool's schema documents its exact parameters.
   listing/searching files — e.g. `ls`, `grep`, `find`). Returns state, not
   output — see "Reading command output" above.
 - `session_read_file` / `session_write_file` / `session_delete_file` — read,
-  write, and delete files in the session by session-relative path.
+  write, and delete files in the session by session-relative path. For large
+  files, don't page through blind with offset/limit to find something — set
+  `pattern` to a case-sensitive regex (use `(?i)` for case-insensitive) and
+  `session_read_file` returns only the matching lines, each with its
+  `line_number` and `byte_offset`, searched within the offset/limit byte range
+  (the whole file if omitted). Use a match's `byte_offset` in a follow-up
+  offset/limit read to pull the surrounding context.
 - `session_mount` — load a host file or directory into the session. The
   session doesn't remember where a file came from beyond that call — it's a
   one-time copy into the workspace, not a live link back to host.
@@ -164,6 +170,12 @@ mod tests {
     #[test]
     fn documents_get_config() {
         assert!(SYSTEM_INSTRUCTIONS.contains("get_config"));
+    }
+
+    #[test]
+    fn documents_session_read_file_pattern_search() {
+        assert!(SYSTEM_INSTRUCTIONS.contains("pattern"));
+        assert!(SYSTEM_INSTRUCTIONS.contains("byte_offset"));
     }
 
     #[test]
