@@ -2,7 +2,6 @@
 //! zstd-compressed .drun file, plus a lightweight .drun.meta sidecar.
 
 use crate::interner::Interner;
-use crate::mounts::MountTable;
 use crate::session::Session;
 use crate::{Checkpoint, CheckpointRef, ConfigHandle, FileMap};
 use anyhow::Result;
@@ -131,7 +130,7 @@ impl SessionSnapshot {
             checkpoint_idx: session.checkpoint_idx(),
             parent: session.parent.clone(),
             label: session.label.clone(),
-            overlays: session.mounts().overlays().clone(),
+            overlays: session.overlays().clone(),
             blobs,
             checkpoints,
         }
@@ -172,13 +171,17 @@ impl SessionSnapshot {
             }
         }
 
-        let mounts = MountTable::from_raw(self.overlays).prune_missing();
+        let overlays = self
+            .overlays
+            .into_iter()
+            .filter(|(_, host_path)| host_path.exists())
+            .collect();
 
         Ok(Session::from_parts(
             config,
             checkpoints,
             self.checkpoint_idx,
-            mounts,
+            overlays,
             interner,
             self.label,
             self.parent,
@@ -189,6 +192,7 @@ impl SessionSnapshot {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Config;
 
     fn sample_snapshot() -> SessionSnapshot {
         SessionSnapshot {
@@ -243,6 +247,22 @@ mod tests {
         let mut encoded = snapshot.encode().unwrap();
         encoded.truncate(6); // keeps the magic bytes, drops most of the compressed payload
         assert!(SessionSnapshot::decode(&encoded).is_err());
+    }
+
+    #[test]
+    fn restore_drops_an_overlay_whose_host_path_is_gone() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut snapshot = sample_snapshot();
+        snapshot
+            .overlays
+            .insert("present".to_string(), dir.path().to_path_buf());
+        snapshot
+            .overlays
+            .insert("gone".to_string(), dir.path().join("does-not-exist"));
+
+        let session = snapshot.restore(Config::default().into()).unwrap();
+        assert_eq!(session.overlays().len(), 1);
+        assert!(session.overlays().contains_key("present"));
     }
 
     #[test]

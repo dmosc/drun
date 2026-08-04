@@ -3,7 +3,6 @@ pub mod config;
 pub mod error;
 mod executor;
 mod interner;
-mod mounts;
 mod package_manager;
 mod sandbox;
 mod session;

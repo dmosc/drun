@@ -2,7 +2,6 @@ use crate::config::ConfigHandle;
 use crate::error::RunnerError;
 use crate::executor::{BashExecutor, BashOutput};
 use crate::interner::Interner;
-use crate::mounts::MountTable;
 use crate::package_manager::PackageManager;
 use crate::sandbox::Sandbox;
 use crate::snapshot::SessionSnapshot;
@@ -13,6 +12,9 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
+
+type ScannedFiles = Vec<(String, Vec<u8>)>;
+type ScannedOverlays = Vec<(String, PathBuf)>;
 
 #[derive(Default)]
 struct CommandOutcome {
@@ -26,7 +28,7 @@ pub struct Session {
     config: ConfigHandle,
     checkpoints: Vec<Checkpoint>,
     checkpoint_idx: usize,
-    mounts: MountTable,
+    overlays: HashMap<String, PathBuf>,
     interner: Interner,
     workspace: Option<Workspace>,
     pub label: Option<String>,
@@ -41,7 +43,7 @@ impl Session {
             config,
             checkpoints: vec![Checkpoint::empty(0, HashMap::new())],
             checkpoint_idx: 0,
-            mounts: MountTable::default(),
+            overlays: HashMap::new(),
             interner: Interner::default(),
             workspace: None,
             label: None,
@@ -58,7 +60,7 @@ impl Session {
         config: ConfigHandle,
         checkpoints: Vec<Checkpoint>,
         checkpoint_idx: usize,
-        mounts: MountTable,
+        overlays: HashMap<String, PathBuf>,
         interner: Interner,
         label: Option<String>,
         parent: Option<CheckpointRef>,
@@ -67,7 +69,7 @@ impl Session {
             config,
             checkpoints,
             checkpoint_idx,
-            mounts,
+            overlays,
             interner,
             workspace: None,
             label,
@@ -81,8 +83,8 @@ impl Session {
         self.checkpoint_idx
     }
 
-    pub(crate) fn mounts(&self) -> &MountTable {
-        &self.mounts
+    pub(crate) fn overlays(&self) -> &HashMap<String, PathBuf> {
+        &self.overlays
     }
 
     pub fn from_session(
@@ -102,7 +104,7 @@ impl Session {
             session.interner.seed(arc);
         }
         session.checkpoints[0].files = forked_files;
-        session.mounts = source.mounts.clone();
+        session.overlays = source.overlays.clone();
         session.parent = Some(CheckpointRef {
             session_id: source_session_id.to_string(),
             checkpoint_id: source_checkpoint_idx,
@@ -119,7 +121,7 @@ impl Session {
 
         let is_dir = abs.is_dir();
         let (file_entries, overlay_entries) = if is_dir {
-            MountTable::scan(&abs, "", &config.mount_overlay_paths)?
+            Self::scan_mount(&abs, "", &config.mount_overlay_paths)?
         } else {
             let key = abs
                 .file_name()
@@ -152,10 +154,46 @@ impl Session {
             mounted_keys.push(key);
         }
         for (key, host_path) in overlay_entries {
-            self.mounts.record_overlay(key.clone(), host_path);
+            self.overlays.insert(key.clone(), host_path);
             mounted_keys.push(key);
         }
         Ok(mounted_keys)
+    }
+
+    fn scan_mount(
+        dir: &Path,
+        key_prefix: &str,
+        overlay_patterns: &[String],
+    ) -> anyhow::Result<(ScannedFiles, ScannedOverlays)> {
+        let mut file_entries = vec![];
+        let mut overlay_entries = vec![];
+        for entry in std::fs::read_dir(dir)? {
+            let entry = entry?;
+            let file_type = entry.file_type()?;
+            if file_type.is_symlink() {
+                continue; // avoids cyclical recursion through a symlink back up the tree
+            }
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let key = if key_prefix.is_empty() {
+                name.clone()
+            } else {
+                format!("{key_prefix}/{name}")
+            };
+            let path = entry.path();
+            if file_type.is_dir() {
+                if overlay_patterns.iter().any(|p| p == &name) {
+                    overlay_entries.push((key, path));
+                } else {
+                    let (sub_files, sub_overlays) =
+                        Self::scan_mount(&path, &key, overlay_patterns)?;
+                    file_entries.extend(sub_files);
+                    overlay_entries.extend(sub_overlays);
+                }
+            } else if file_type.is_file() {
+                file_entries.push((key, std::fs::read(&path)?));
+            }
+        }
+        Ok((file_entries, overlay_entries))
     }
 
     pub fn write_files(
@@ -236,8 +274,7 @@ impl Session {
         let workspace = self.workspace()?;
         workspace.sync_to(&files)?;
         let workspace_dir = workspace.path().to_path_buf();
-        let mut extra_read_only_paths: Vec<PathBuf> =
-            self.mounts.overlays().values().cloned().collect();
+        let mut extra_read_only_paths: Vec<PathBuf> = self.overlays.values().cloned().collect();
         extra_read_only_paths.extend(self.config.get().mount_allowlist);
         let read_only_paths = Sandbox::resolve_read_only_paths(&extra_read_only_paths);
         let bash_timeout_ms = self.config.get().bash_timeout_ms;
@@ -247,7 +284,7 @@ impl Session {
             exit_code,
         } = BashExecutor::run(
             &workspace_dir,
-            self.mounts.overlays(),
+            &self.overlays,
             read_only_paths,
             command,
             bash_timeout_ms,
@@ -1203,6 +1240,50 @@ mod tests {
 
         assert_eq!(mounted_keys, vec!["a.txt".to_string()]);
         assert!(!session.current().files.contains_key("loop"));
+    }
+
+    #[test]
+    fn scan_mount_reads_a_flat_file() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.txt"), b"hello").unwrap();
+        let (files, overlays) = Session::scan_mount(dir.path(), "", &[]).unwrap();
+        assert_eq!(files, vec![("a.txt".to_string(), b"hello".to_vec())]);
+        assert!(overlays.is_empty());
+    }
+
+    #[test]
+    fn scan_mount_builds_slash_joined_keys_for_nested_files() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("sub")).unwrap();
+        std::fs::write(dir.path().join("sub/b.txt"), b"nested").unwrap();
+
+        let (files, _) = Session::scan_mount(dir.path(), "", &[]).unwrap();
+        assert_eq!(files[0].0.as_str(), "sub/b.txt");
+    }
+
+    #[test]
+    fn scan_mount_treats_matching_directories_as_overlays_not_files() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("node_modules")).unwrap();
+        std::fs::write(dir.path().join("node_modules/pkg.js"), b"ignored").unwrap();
+        std::fs::write(dir.path().join("real.txt"), b"kept").unwrap();
+
+        let overlay_patterns = vec!["node_modules".to_string()];
+        let (files, overlays) = Session::scan_mount(dir.path(), "", &overlay_patterns).unwrap();
+
+        assert_eq!(files, vec![("real.txt".to_string(), b"kept".to_vec())]);
+        assert_eq!(overlays.len(), 1);
+        assert_eq!(overlays[0].0.as_str(), "node_modules");
+        assert_eq!(overlays[0].1, dir.path().join("node_modules"));
+    }
+
+    #[test]
+    fn scan_mount_respects_key_prefix() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.txt"), b"hi").unwrap();
+
+        let (files, _) = Session::scan_mount(dir.path(), "prefix", &[]).unwrap();
+        assert_eq!(files[0].0.as_str(), "prefix/a.txt");
     }
 
     #[test]
