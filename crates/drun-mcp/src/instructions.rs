@@ -72,13 +72,16 @@ Grouped by purpose — each tool's schema documents its exact parameters.
   output — see "Reading command output" above.
 - `session_read_file` / `session_write_file` / `session_delete_file` — read,
   write, and delete files in the session by session-relative path.
-- `session_mount` — load a host file or directory into the session.
-- `session_export` — write sandbox-generated files back out to a host
-  directory.
-- `session_commit` — sync the workspace back onto the mounted host directory:
-  creates new files, overwrites changed ones, deletes files removed in the
-  sandbox. Review with `session_diff` first; a bad commit is undone by
-  rolling back to an earlier checkpoint and committing that instead.
+- `session_mount` — load a host file or directory into the session. The
+  session doesn't remember where a file came from beyond that call — it's a
+  one-time copy into the workspace, not a live link back to host.
+- `session_export` — write current workspace files to a host directory.
+  Only ever creates/overwrites, never deletes — including a file deleted from
+  the session after being mounted. Doesn't need to be the directory
+  session_mount was called with, or a mount at all. The sandbox is a
+  scratchpad seeded from the host, not something drun keeps in sync with it;
+  if you need the host to reflect a deletion or rename you did in the
+  sandbox, do that on the host yourself.
 - `session_fetch` — the designated gateway for outbound HTTP; `session_bash`
   has no network access by design. Saves the response (and, for HTML, its
   linked assets) into the session instead of returning it inline. Subject to

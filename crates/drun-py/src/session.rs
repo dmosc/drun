@@ -27,20 +27,6 @@ impl DrunSession {
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))
     }
 
-    pub fn commit(&self, keys: Option<Vec<String>>) -> PyResult<Vec<String>> {
-        self.inner
-            .lock()
-            .unwrap()
-            .commit(keys)
-            .map(|paths| {
-                paths
-                    .iter()
-                    .map(|p| p.to_string_lossy().into_owned())
-                    .collect()
-            })
-            .map_err(|e| PyRuntimeError::new_err(e.to_string()))
-    }
-
     #[pyo3(signature = (from_id=0, to_id=None, paths=None))]
     pub fn diff(
         &self,
@@ -185,25 +171,6 @@ mod tests {
 
         let after_delete = session.delete_file("a.txt".to_string()).unwrap();
         assert!(after_delete.files.is_empty());
-    }
-
-    #[test]
-    fn commit_writes_back_a_changed_mounted_file_to_the_host() {
-        let dir = tempfile::tempdir().unwrap();
-        let host_file = dir.path().join("a.txt");
-        std::fs::write(&host_file, b"original").unwrap();
-
-        let session = test_session();
-        session
-            .mount(dir.path().to_string_lossy().into_owned())
-            .unwrap();
-        session
-            .write_file("a.txt".to_string(), b"changed".to_vec())
-            .unwrap();
-
-        let committed = session.commit(None).unwrap();
-        assert_eq!(committed.len(), 1);
-        assert_eq!(std::fs::read(&host_file).unwrap(), b"changed");
     }
 
     #[test]

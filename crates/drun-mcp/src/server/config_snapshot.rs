@@ -110,7 +110,7 @@ impl DrunHandler {
         let restored = Session::from_snapshot(self.config.clone(), snapshot)
             .map_err(|e| DrunError::internal(e).into_tool_err())?;
         let session_id = Uuid::new_v4().to_string();
-        let state = SessionState::compute(&session_id, &restored, None, vec![]);
+        let state = SessionState::compute(&session_id, &restored, None);
         self.insert_session(session_id.clone(), restored)
             .map_err(|max| DrunError::session_limit_reached(max).into_tool_err())?;
         self.current_sessions.set(connection_id, session_id);

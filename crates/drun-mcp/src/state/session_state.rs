@@ -20,8 +20,6 @@ pub(crate) struct SessionState {
     files_added_count: usize,
     files_modified_count: usize,
     files_removed_count: usize,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    committed_files: Vec<String>,
 }
 
 impl SessionState {
@@ -29,7 +27,6 @@ impl SessionState {
         session_id: &str,
         session: &Session,
         previous_files: Option<&FileMap>,
-        committed_files: Vec<String>,
     ) -> SessionState {
         let current = session.current();
         let delta = FileDelta::compute(previous_files, &current.files);
@@ -47,7 +44,6 @@ impl SessionState {
             files_added_count: delta.added.len(),
             files_modified_count: delta.modified.len(),
             files_removed_count: delta.removed.len(),
-            committed_files,
         }
     }
 }
@@ -64,11 +60,10 @@ mod tests {
     #[test]
     fn session_state_compute_reports_zero_deltas_with_no_previous_files() {
         let session = new_session();
-        let state = SessionState::compute("s1", &session, None, vec![]);
+        let state = SessionState::compute("s1", &session, None);
         assert_eq!(state.files_added_count, 0);
         assert_eq!(state.files_modified_count, 0);
         assert_eq!(state.files_removed_count, 0);
-        assert!(state.committed_files.is_empty());
     }
 
     #[test]
@@ -83,23 +78,8 @@ mod tests {
             )
             .unwrap();
 
-        let state = SessionState::compute("s1", &session, Some(&previous_files), vec![]);
+        let state = SessionState::compute("s1", &session, Some(&previous_files));
         assert_eq!(state.files_added_count, 1);
         assert_eq!(state.workspace_file_count, 1);
-    }
-
-    #[test]
-    fn session_state_compute_passes_through_committed_files() {
-        let session = new_session();
-        let state = SessionState::compute(
-            "s1",
-            &session,
-            None,
-            vec!["a.txt".to_string(), "b.txt".to_string()],
-        );
-        assert_eq!(
-            state.committed_files,
-            vec!["a.txt".to_string(), "b.txt".to_string()]
-        );
     }
 }

@@ -190,10 +190,9 @@ two-stage process:
    `session_write_file`, `session_mount`, `session_rollback`, `session_merge`,
    label/squash/drop, etc.) start returning `session_idle` instead of running.
 2. Read and recovery calls like `get_session_state`, `session_history`,
-   `session_read_file`, `session_diff`, `session_commit`, `session_export`,
-   `session_snapshot` and/ or `checkpoint_read_stdstreams`, keep working on an
-   idle session. Use one of these to pull the session's state out before it is
-   physically evicted.
+   `session_read_file`, `session_diff`, `session_export`, `session_snapshot`
+   and/or `checkpoint_read_stdstreams`, keep working on an idle session. Use one
+   of these to pull the session's state out before it is physically evicted.
 3. The idle reaper sweeps roughly every
    `max(session_idle_timeout_secs / 2,
    30)` seconds and removes sessions
@@ -201,10 +200,10 @@ two-stage process:
    `session_not_found`.
 
 **Fix:** As soon as you see `session_idle`, call `session_snapshot` (or
-`session_export` / `session_commit`) to persist the session before the next
-reaper sweep evicts it, then `session_restore` to reload it into a fresh
-session. Alternatively, increase the idle timeout in config so long analyses
-don't cross it in the first place.
+`session_export`) to persist the session before the next reaper sweep evicts it,
+then `session_restore` to reload it into a fresh session. Alternatively,
+increase the idle timeout in config so long analyses don't cross it in the first
+place.
 
 ---
 

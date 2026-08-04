@@ -279,11 +279,14 @@ pub struct SessionDeleteFile {
 
 #[mcp_tool(
     name = "session_export",
-    description = "Write sandbox-generated files from the active session to a host directory. \
-                   By default exports all files with no host origin (i.e. created inside the \
-                   sandbox, not from session_mount) into output_dir. Pass keys to select \
-                   specific files. output_dir is subject to the same mount_allowlist as \
-                   session_mount — check get_config to see permitted prefixes.",
+    description = "Write the active session's workspace files to a host directory. By default \
+                   writes every current file into output_dir; pass keys to select a subset. \
+                   Only ever creates/overwrites — never deletes anything at output_dir, even if \
+                   a file was deleted from the session after being mounted. output_dir doesn't \
+                   need to be the directory session_mount was called with, or a mount at all — \
+                   the session doesn't track where anything was originally mounted from. \
+                   output_dir is subject to the same mount_allowlist as session_mount — check \
+                   get_config to see permitted prefixes.",
     idempotent_hint = false,
     destructive_hint = false,
     read_only_hint = false
@@ -293,7 +296,7 @@ pub struct SessionExport {
     /// Absolute path to a directory on the host to write files into. Must be under one of the
     /// server's mount_allowlist prefixes.
     pub output_dir: String,
-    /// Specific workspace-relative file keys to export. Omit to export all sandbox-generated files.
+    /// Specific workspace-relative file keys to export. Omit to export every current file.
     pub keys: Option<Vec<String>>,
 }
 
@@ -345,19 +348,6 @@ pub struct SessionFork {
     /// Label of the checkpoint to branch from. Takes precedence over
     /// checkpoint_id.
     pub checkpoint_label: Option<String>,
-}
-
-#[mcp_tool(
-    name = "session_commit",
-    description = "Sync the active session's workspace back onto the mounted host directory: new files are created, changed files overwritten, and files removed in the sandbox are deleted from the host. Pass specific keys to commit a subset, or omit to sync everything that changed since mounting. Review with session_diff first — a bad commit is undone by rolling back to an earlier checkpoint and committing that instead.",
-    idempotent_hint = false,
-    destructive_hint = true,
-    read_only_hint = false
-)]
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct SessionCommit {
-    /// Specific file keys to commit. Omit to commit all changed mounted files.
-    pub keys: Option<Vec<String>>,
 }
 
 #[mcp_tool(
@@ -519,9 +509,8 @@ pub struct SessionCheckpointLabel {
                    terminal file state and merging all stdout/stderr. Useful for cleaning up \
                    exploration history before committing to a direction. The range is \
                    inclusive on both ends and must start at checkpoint 1 or later — checkpoint \
-                   0 is the mounted baseline that session_commit and session_diff compare \
-                   against, so it can never be folded into a squash. Returns the updated \
-                   checkpoint history.",
+                   0 is the baseline session_diff compares against by default, so it can never \
+                   be folded into a squash. Returns the updated checkpoint history.",
     idempotent_hint = false,
     destructive_hint = true,
     read_only_hint = false
@@ -573,10 +562,9 @@ pub struct CheckpointReadStdstreams {
     name = "session_checkpoint_drop",
     description = "Remove a range of checkpoints from the active session's history to free \
                    memory or stay under the checkpoint limit. The range is inclusive on both \
-                   ends and must start at checkpoint 1 or later — checkpoint 0 is the mounted \
-                   baseline that session_commit and session_diff compare against, so it can \
-                   never be dropped. Cannot drop the current checkpoint. Returns the updated \
-                   checkpoint history.",
+                   ends and must start at checkpoint 1 or later — checkpoint 0 is the baseline \
+                   session_diff compares against by default, so it can never be dropped. Cannot \
+                   drop the current checkpoint. Returns the updated checkpoint history.",
     idempotent_hint = false,
     destructive_hint = true,
     read_only_hint = false
@@ -608,7 +596,6 @@ tool_box!(
         SessionMount,
         SessionExtractText,
         SessionDiff,
-        SessionCommit,
         SessionExport,
         SessionTree,
         SessionFetch,

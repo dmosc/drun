@@ -6,6 +6,28 @@ All notable changes to drun are documented here.
 
 ## Unreleased
 
+### Removed `session_commit`
+
+- **`session_commit` is gone.** It tried to make a mounted host directory an
+  exact two-way mirror of the sandbox — including deleting host files the
+  sandbox no longer had — which meant tracking where every file was mounted
+  from well enough to still get that right after a rename, a squash, or a
+  fork, and every attempt at that tracking (root-based resolution, a
+  fork-inherited baseline, a fresh-rescan-every-time mirror) either went stale
+  or quietly deleted something outside the sandbox's own history. The sandbox
+  was never meant to be a synced mirror of the host — it's a scratchpad
+  seeded from it via `session_mount`. `session_export` already covers writing
+  workspace files back out to a host path; it just creates/overwrites,
+  never deletes, and doesn't need to be the directory a mount came from (or a
+  mount at all). If a sandbox reorganization needs to delete or move files on
+  the actual host, that's now explicitly the caller's job, not drun's.
+- `MountTable` no longer tracks mounted directory/file roots for write-back
+  purposes — it only tracks read-only `overlays` (`node_modules`, `.venv`,
+  etc.) for `session_bash`. `session_mount` is now a one-time copy into the
+  workspace with no memory of where it came from.
+- `SessionState`'s `committed_files` field is gone along with it — it existed
+  solely to report `session_commit`'s output.
+
 ### `drun chat` agent hardening
 
 - **A failing tool call no longer kills the agent run.** `ChatAgent` now

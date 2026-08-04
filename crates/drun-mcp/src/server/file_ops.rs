@@ -3,8 +3,8 @@ use crate::errors::DrunError;
 use crate::handler::DrunHandler;
 use crate::state::SessionState;
 use crate::tools::{
-    SessionCommit, SessionDeleteFile, SessionExport, SessionExtractText, SessionMount,
-    SessionReadFile, SessionWriteFile,
+    SessionDeleteFile, SessionExport, SessionExtractText, SessionMount, SessionReadFile,
+    SessionWriteFile,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use drun_core::TextParserUtilities;
@@ -90,7 +90,6 @@ impl DrunHandler {
                 session_id,
                 session,
                 Some(&previous_files),
-                vec![],
             )))
         })
     }
@@ -109,7 +108,6 @@ impl DrunHandler {
                 session_id,
                 session,
                 Some(&previous_files),
-                vec![],
             )))
         })
     }
@@ -128,7 +126,6 @@ impl DrunHandler {
                 session_id,
                 session,
                 Some(&previous_files),
-                vec![],
             )))
         })
     }
@@ -178,28 +175,6 @@ impl DrunHandler {
                 })
                 .to_string(),
             ))
-        })
-    }
-
-    pub(super) fn handle_session_commit(
-        &self,
-        connection_id: &str,
-        t: SessionCommit,
-    ) -> Result<CallToolResult, CallToolError> {
-        self.with_current_session(connection_id, |session_id, session| {
-            let paths = session
-                .commit(t.keys)
-                .map_err(|e| DrunError::from_exec(e).into_tool_err())?;
-            let committed_files = paths
-                .iter()
-                .map(|p| p.to_string_lossy().into_owned())
-                .collect();
-            Ok(ResponseBuilder::json(&SessionState::compute(
-                session_id,
-                session,
-                None,
-                committed_files,
-            )))
         })
     }
 }
@@ -716,41 +691,6 @@ mod tests {
             )
             .unwrap_err();
         assert!(err.to_string().contains("unsupported_extraction_format"));
-    }
-
-    #[test]
-    fn session_commit_writes_back_a_changed_mounted_file_to_the_host() {
-        let source = tempfile::tempdir().unwrap();
-        let host_file = source.path().join("a.txt");
-        std::fs::write(&host_file, b"original").unwrap();
-
-        let handler = DrunHandler::new(Config::default());
-        insert_current_session(&handler, "s1");
-        {
-            let sessions = handler.sessions.lock().unwrap();
-            let mut session = sessions.get("s1").unwrap().lock().unwrap();
-            session.mount(&host_file).unwrap();
-            session
-                .write_files(
-                    vec![("a.txt".to_string(), b"changed".to_vec())],
-                    "session_write_file",
-                    None,
-                )
-                .unwrap();
-        }
-
-        let result = handler
-            .handle_session_commit(CLIENT, SessionCommit { keys: None })
-            .unwrap();
-        assert_eq!(
-            result_json(&result)["committed_files"][0],
-            host_file
-                .canonicalize()
-                .unwrap()
-                .to_string_lossy()
-                .into_owned()
-        );
-        assert_eq!(std::fs::read(&host_file).unwrap(), b"changed");
     }
 
     #[test]

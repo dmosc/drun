@@ -41,7 +41,6 @@ impl DrunHandler {
                         &session_id,
                         session,
                         Some(&previous_files),
-                        vec![],
                     )))
                 })
                 .map_err(|e| e.to_string())

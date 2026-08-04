@@ -336,7 +336,7 @@ impl WebServer {
                 }
             };
             let fork_id = Uuid::new_v4().to_string();
-            let state = state::SessionState::compute(&fork_id, &forked, None, vec![]);
+            let state = state::SessionState::compute(&fork_id, &forked, None);
             match app.handler.insert_session(fork_id, forked) {
                 Ok(()) => Self::json_response(&state),
                 Err(max) => (
@@ -377,7 +377,6 @@ impl WebServer {
                     &session_id,
                     session,
                     Some(&previous_files),
-                    vec![],
                 )),
                 Err(error) => (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
             }
@@ -392,12 +391,7 @@ impl WebServer {
         let response_id = session_id.clone();
         app.with_session_mut(&session_id, move |session| {
             session.set_label(body.label);
-            Self::json_response(&state::SessionState::compute(
-                &response_id,
-                session,
-                None,
-                vec![],
-            ))
+            Self::json_response(&state::SessionState::compute(&response_id, session, None))
         })
     }
 

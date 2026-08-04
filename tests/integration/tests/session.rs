@@ -10,7 +10,7 @@ fn cfg() -> Config {
 }
 
 #[test]
-fn using_drun_api_mount_modify_commit_updates_host_file_test() {
+fn using_drun_api_mount_modify_export_updates_host_file_test() {
     let dir = tempfile::tempdir().unwrap();
     let host_file = dir.path().join("data.txt");
     std::fs::write(&host_file, b"original").unwrap();
@@ -23,7 +23,7 @@ fn using_drun_api_mount_modify_commit_updates_host_file_test() {
         None,
     )
     .unwrap();
-    s.commit(None).unwrap();
+    s.export(dir.path(), None).unwrap();
 
     assert_eq!(std::fs::read(&host_file).unwrap(), b"modified");
 }

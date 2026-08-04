@@ -77,14 +77,14 @@ bundled interpreter.
 
 The server enforces a set of policy restrictions on all sessions:
 
-| Config key                | What it restricts                                                                                                                                                                                                                                                                                                                                     |
-| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `domain_allowlist`        | Domains reachable via `session_fetch`. Supports exact hostnames and `*.example.com` wildcards, or `["*"]` for all.                                                                                                                                                                                                                                    |
-| `mount_allowlist`         | Host path prefixes that `session_mount` may read from and `session_export`/`session_commit` may write back to (empty means all paths allowed there) — and, separately, host directories `session_bash`'s sandbox may read from directly, in addition to the workspace, overlays, and fixed system/PATH dirs (empty means no extra directories there). |
-| `env_allowlist`           | Host environment variable names readable via `session_get_env`.                                                                                                                                                                                                                                                                                       |
-| `bash_command_denylist`   | Command substrings always rejected by `session_bash` before execution.                                                                                                                                                                                                                                                                                |
-| `bash_command_allowlist`  | Command substrings permitted by `session_bash`. Empty means all commands allowed (subject to the denylist).                                                                                                                                                                                                                                           |
-| `package_install_enabled` | Whether `session_package_install` is available at all. Disabled by default since, unlike every other tool, its sandbox has network access.                                                                                                                                                                                                            |
+| Config key                | What it restricts                                                                                                                                                                                                                                                                                                               |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `domain_allowlist`        | Domains reachable via `session_fetch`. Supports exact hostnames and `*.example.com` wildcards, or `["*"]` for all.                                                                                                                                                                                                              |
+| `mount_allowlist`         | Host path prefixes that `session_mount` may read from and `session_export` may write to (empty means all paths allowed there) — and, separately, host directories `session_bash`'s sandbox may read from directly, in addition to the workspace, overlays, and fixed system/PATH dirs (empty means no extra directories there). |
+| `env_allowlist`           | Host environment variable names readable via `session_get_env`.                                                                                                                                                                                                                                                                 |
+| `bash_command_denylist`   | Command substrings always rejected by `session_bash` before execution.                                                                                                                                                                                                                                                          |
+| `bash_command_allowlist`  | Command substrings permitted by `session_bash`. Empty means all commands allowed (subject to the denylist).                                                                                                                                                                                                                     |
+| `package_install_enabled` | Whether `session_package_install` is available at all. Disabled by default since, unlike every other tool, its sandbox has network access.                                                                                                                                                                                      |
 
 Agents operate within whatever the operator configured. They cannot expand their
 own permissions at runtime.
@@ -119,10 +119,10 @@ explicitly.
 ## Path traversal prevention
 
 Workspace file keys containing `..` components are rejected at write time in
-`session_write_file` and `session_fetch`'s `save_to` parameter. Export and
-commit paths are re-validated after joining to confirm they remain within the
-configured output directory. An agent cannot write a workspace key that escapes
-to an arbitrary host path.
+`session_write_file` and `session_fetch`'s `save_to` parameter. Export paths are
+re-validated after joining to confirm they remain within the configured output
+directory. An agent cannot write a workspace key that escapes to an arbitrary
+host path.
 
 ---
 
@@ -131,10 +131,12 @@ to an arbitrary host path.
 Each session keeps its own in-memory `FileMap` and checkpoint history. Sessions
 do not share memory or filesystem state. A session's files exist only in the MCP
 server's in-memory session map; no data is written to the host until
-`session_export`, `session_commit`, or `session_snapshot` is explicitly called.
-`session_commit` mirrors the mounted directory: it also deletes host files that
-were removed in the sandbox. A bad commit is undone by rolling back to an
-earlier checkpoint and committing that instead.
+`session_export` or `session_snapshot` is explicitly called. The sandbox is a
+scratchpad seeded from the host via `session_mount`, not something drun keeps in
+sync with it afterward — `session_mount` doesn't remember where a file came from
+beyond the initial copy, and `session_export` only ever creates or overwrites at
+its target path, never deletes. A rename or delete performed inside the sandbox
+has no host-side effect unless you explicitly reproduce it on the host yourself.
 
 ---
 

@@ -15,7 +15,7 @@ impl DrunHandler {
         let session_id = Uuid::new_v4().to_string();
         let session = Session::new(self.config.clone())
             .map_err(|e| DrunError::internal(e).into_tool_err())?;
-        let state = SessionState::compute(&session_id, &session, None, vec![]);
+        let state = SessionState::compute(&session_id, &session, None);
         self.insert_session(session_id.clone(), session)
             .map_err(|max| DrunError::session_limit_reached(max).into_tool_err())?;
         self.current_sessions.set(connection_id, session_id);
@@ -35,7 +35,6 @@ impl DrunHandler {
             &t.session_id,
             &session,
             None,
-            vec![],
         )))
     }
 
@@ -55,7 +54,7 @@ impl DrunHandler {
                 .map_err(|e| DrunError::from_exec(e).into_tool_err())?
         };
         let fork_id = Uuid::new_v4().to_string();
-        let state = SessionState::compute(&fork_id, &forked_session, None, vec![]);
+        let state = SessionState::compute(&fork_id, &forked_session, None);
         self.insert_session(fork_id.clone(), forked_session)
             .map_err(|max| DrunError::session_limit_reached(max).into_tool_err())?;
         self.current_sessions.set(connection_id, fork_id);
@@ -94,10 +93,7 @@ impl DrunHandler {
     ) -> Result<CallToolResult, CallToolError> {
         self.with_current_session(connection_id, |session_id, session| {
             Ok(ResponseBuilder::json(&SessionState::compute(
-                session_id,
-                session,
-                None,
-                vec![],
+                session_id, session, None,
             )))
         })
     }
@@ -118,10 +114,7 @@ impl DrunHandler {
         self.with_current_session_mut(connection_id, |session_id, session| {
             session.set_label(t.label);
             Ok(ResponseBuilder::json(&SessionState::compute(
-                session_id,
-                session,
-                None,
-                vec![],
+                session_id, session, None,
             )))
         })
     }
@@ -148,7 +141,6 @@ impl DrunHandler {
                 &session_id,
                 session,
                 None,
-                vec![],
             )))
         })
     }

@@ -56,11 +56,7 @@ pub struct SessionSnapshot {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
     #[serde(default)]
-    pub roots: Vec<PathBuf>,
-    #[serde(default)]
     pub overlays: HashMap<String, PathBuf>,
-    #[serde(default)]
-    pub mount_baseline: HashMap<String, usize>,
     pub blobs: Vec<Vec<u8>>,
     pub checkpoints: Vec<CheckpointRecord>,
 }
@@ -99,14 +95,6 @@ impl SessionSnapshot {
     pub(crate) fn from_session(session: &Session) -> Self {
         let mut blob_ptr_to_index: HashMap<usize, usize> = HashMap::new();
         let mut blobs: Vec<Vec<u8>> = Vec::new();
-        let mut intern_blob = |arc: &Arc<Vec<u8>>| -> usize {
-            let ptr = Arc::as_ptr(arc) as usize;
-            *blob_ptr_to_index.entry(ptr).or_insert_with(|| {
-                let idx = blobs.len();
-                blobs.push((**arc).clone());
-                idx
-            })
-        };
 
         let checkpoints = session
             .history()
@@ -115,7 +103,15 @@ impl SessionSnapshot {
                 let files = checkpoint
                     .files
                     .iter()
-                    .map(|(key, arc)| (key.clone(), intern_blob(arc)))
+                    .map(|(key, arc)| {
+                        let ptr = Arc::as_ptr(arc) as usize;
+                        let blob_index = *blob_ptr_to_index.entry(ptr).or_insert_with(|| {
+                            let idx = blobs.len();
+                            blobs.push((**arc).clone());
+                            idx
+                        });
+                        (key.clone(), blob_index)
+                    })
                     .collect();
                 CheckpointRecord {
                     id: checkpoint.id,
@@ -131,27 +127,19 @@ impl SessionSnapshot {
             })
             .collect();
 
-        let mount_baseline = session
-            .mount_baseline()
-            .iter()
-            .map(|(key, arc)| (key.clone(), intern_blob(arc)))
-            .collect();
-
         Self {
             checkpoint_idx: session.checkpoint_idx(),
             parent: session.parent.clone(),
             label: session.label.clone(),
-            roots: session.mounts().roots().to_vec(),
             overlays: session.mounts().overlays().clone(),
-            mount_baseline,
             blobs,
             checkpoints,
         }
     }
 
     /// Rebuilds a `Session` from a decoded snapshot, re-seeding the interner
-    /// so already-shared blobs stay deduplicated, and dropping any origin or
-    /// overlay whose host path has since disappeared.
+    /// so already-shared blobs stay deduplicated, and dropping any overlay
+    /// whose host path has since disappeared.
     pub(crate) fn restore(self, config: ConfigHandle) -> Result<Session> {
         let blob_arcs: Vec<Arc<Vec<u8>>> = self.blobs.into_iter().map(Arc::new).collect();
         let checkpoints: Vec<Checkpoint> = self
@@ -184,23 +172,13 @@ impl SessionSnapshot {
             }
         }
 
-        let mount_baseline: FileMap = self
-            .mount_baseline
-            .into_iter()
-            .map(|(key, blob_index)| (key, Arc::clone(&blob_arcs[blob_index])))
-            .collect();
-        for arc in mount_baseline.values() {
-            interner.seed(arc);
-        }
-
-        let mounts = MountTable::from_raw(self.roots, self.overlays).prune_missing();
+        let mounts = MountTable::from_raw(self.overlays).prune_missing();
 
         Ok(Session::from_parts(
             config,
             checkpoints,
             self.checkpoint_idx,
             mounts,
-            mount_baseline,
             interner,
             self.label,
             self.parent,
@@ -217,9 +195,7 @@ mod tests {
             checkpoint_idx: 1,
             parent: None,
             label: Some("my-session".to_string()),
-            roots: Vec::new(),
             overlays: HashMap::new(),
-            mount_baseline: HashMap::new(),
             blobs: vec![b"hello".to_vec(), b"world".to_vec()],
             checkpoints: vec![
                 CheckpointRecord {

@@ -256,7 +256,7 @@ four Fibonacci algorithms.
 | Execution  | `session_bash`, `session_get_env`                                                                                                 |
 | Navigation | `session_rollback`, `session_fork`, `session_merge`, `session_history`, `get_session_state`                                       |
 | Files      | `session_read_file`, `session_write_file`, `session_delete_file`, `session_mount`, `session_diff`                                 |
-| Host I/O   | `session_export`, `session_commit`, `session_fetch`, `get_config`                                                                 |
+| Host I/O   | `session_export`, `session_fetch`, `get_config`                                                                                   |
 | Snapshots  | `session_snapshot`, `session_restore`, `list_snapshots`                                                                           |
 | Labels     | `session_label`, `session_checkpoint_label`, `session_checkpoint_squash`, `session_checkpoint_drop`, `checkpoint_read_stdstreams` |
 
