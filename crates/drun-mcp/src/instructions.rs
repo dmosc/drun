@@ -85,9 +85,11 @@ Grouped by purpose — each tool's schema documents its exact parameters.
   Only ever creates/overwrites, never deletes — including a file deleted from
   the session after being mounted. Doesn't need to be the directory
   session_mount was called with, or a mount at all. The sandbox is a
-  scratchpad seeded from the host, not something drun keeps in sync with it;
-  if you need the host to reflect a deletion or rename you did in the
-  sandbox, do that on the host yourself.
+  scratchpad seeded from the host, not something drun keeps in sync with it.
+- `delete_from_host` — delete a file or directory on the host outright.
+  This is the only way to make a host deletion happen; session_export can
+  never do it. No-ops if the path is already gone. See "Applying session changes
+  back to the host" below for how the two combine.
 - `session_fetch` — the designated gateway for outbound HTTP; `session_bash`
   has no network access by design. Saves the response (and, for HTML, its
   linked assets) into the session instead of returning it inline. Subject to
@@ -136,11 +138,32 @@ Grouped by purpose — each tool's schema documents its exact parameters.
 - `list_snapshots` — see what's already been saved.
 - `session_restore` — reload a `.drun` file as a new active session.
 
+## Applying session changes back to the host
+
+session_export and delete_from_host are separate tools on purpose — neither
+tracks enough about the other to safely do both at once. The usual sequence
+to make the host reflect what happened in the session:
+
+1. `session_mount` the host path into the session.
+2. Mutate the session's files (session_write_file, session_delete_file,
+   session_bash, etc.) — add, remove, modify as needed.
+3. `session_export` the target paths to the host. This only creates or
+   overwrites; a file you deleted from the session is still sitting on the
+   host afterward.
+4. `delete_from_host` anything you deleted from the session (or just want
+   gone from the host directly) that step 3 couldn't touch.
+
+Skip step 4 if you only ever added or modified files. To fully sync the two
+states — including removals — you post to host with session_export and then
+delete_from_host the specific targets that shouldn't survive on the host;
+drun won't infer deletions from the session diff for you.
+
 ## If a fetch or mount is denied
 
-`session_fetch` and `session_mount` are restricted to an allowlist — check
-`get_config` first to see what's already permitted. If either is denied for a
-domain or path you need, tell the user to run:
+`session_fetch`, `session_mount`, `session_export`, and `delete_from_host`
+are restricted to an allowlist — check `get_config` first to see what's
+already permitted. If any is denied for a domain or path you need, tell the
+user to run:
 
 - `drun-mcp config add-domain <domain>` to allow a new domain for
   `session_fetch`
@@ -183,6 +206,12 @@ mod tests {
         assert!(SYSTEM_INSTRUCTIONS.contains("session_tree"));
         assert!(SYSTEM_INSTRUCTIONS.contains("session_history"));
         assert!(SYSTEM_INSTRUCTIONS.contains("get_session_state"));
+    }
+
+    #[test]
+    fn documents_deleting_from_host() {
+        assert!(SYSTEM_INSTRUCTIONS.contains("delete_from_host"));
+        assert!(SYSTEM_INSTRUCTIONS.contains("Applying session changes back to the host"));
     }
 
     #[test]

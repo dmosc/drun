@@ -301,6 +301,26 @@ pub struct SessionExport {
 }
 
 #[mcp_tool(
+    name = "delete_from_host",
+    description = "Delete a file or directory on the host filesystem. Falls back to a no-op \
+                   (deleted: false) if the path is already gone. session_export can only \
+                   create or overwrite host paths — this is the only way to make a host \
+                   deletion happen, whether because the path was removed from the session or \
+                   you just want it gone from the host directly. Subject to the same \
+                   mount_allowlist as session_mount and session_export — check get_config to \
+                   see permitted prefixes.",
+    idempotent_hint = true,
+    destructive_hint = true,
+    read_only_hint = false
+)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct DeleteFromHost {
+    /// Absolute path to a file or directory on the host filesystem to delete.
+    /// Must be under one of the server's mount_allowlist prefixes.
+    pub path: String,
+}
+
+#[mcp_tool(
     name = "session_merge",
     description = "Overlay files from another session's checkpoint onto the active session, \
                    creating a new checkpoint with the merged workspace. Useful for combining \
@@ -597,6 +617,7 @@ tool_box!(
         SessionExtractText,
         SessionDiff,
         SessionExport,
+        DeleteFromHost,
         SessionTree,
         SessionFetch,
         GetConfig,

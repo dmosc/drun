@@ -3,8 +3,8 @@ use crate::errors::DrunError;
 use crate::handler::DrunHandler;
 use crate::state::SessionState;
 use crate::tools::{
-    SessionDeleteFile, SessionExport, SessionExtractText, SessionMount, SessionReadFile,
-    SessionWriteFile,
+    DeleteFromHost, SessionDeleteFile, SessionExport, SessionExtractText, SessionMount,
+    SessionReadFile, SessionWriteFile,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use drun_core::TextParserUtilities;
@@ -176,6 +176,37 @@ impl DrunHandler {
                 .to_string(),
             ))
         })
+    }
+
+    pub(super) fn handle_delete_from_host(
+        &self,
+        t: DeleteFromHost,
+    ) -> Result<CallToolResult, CallToolError> {
+        let path = PathBuf::from(&t.path);
+        self.config
+            .get()
+            .check_mount_path(&path)
+            .map_err(|e| DrunError::from_exec(e.into()).into_tool_err())?;
+        let deleted = match std::fs::symlink_metadata(&path) {
+            Ok(meta) if meta.is_dir() => {
+                std::fs::remove_dir_all(&path)
+                    .map_err(|e| DrunError::internal(e).into_tool_err())?;
+                true
+            }
+            Ok(_) => {
+                std::fs::remove_file(&path).map_err(|e| DrunError::internal(e).into_tool_err())?;
+                true
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
+            Err(e) => return Err(DrunError::internal(e).into_tool_err()),
+        };
+        Ok(ResponseBuilder::text(
+            serde_json::json!({
+                "path": path.to_string_lossy(),
+                "deleted": deleted,
+            })
+            .to_string(),
+        ))
     }
 }
 
@@ -795,5 +826,86 @@ mod tests {
             )
             .unwrap();
         assert!(dir.path().join("out.txt").exists());
+    }
+
+    #[test]
+    fn delete_from_host_removes_a_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("a.txt");
+        std::fs::write(&file_path, b"hi").unwrap();
+        let handler = DrunHandler::new(Config::default());
+
+        let result = handler
+            .handle_delete_from_host(DeleteFromHost {
+                path: file_path.to_string_lossy().into_owned(),
+            })
+            .unwrap();
+        assert_eq!(result_json(&result)["deleted"], true);
+        assert!(!file_path.exists());
+    }
+
+    #[test]
+    fn delete_from_host_removes_a_directory_recursively() {
+        let dir = tempfile::tempdir().unwrap();
+        let sub_dir = dir.path().join("sub");
+        std::fs::create_dir(&sub_dir).unwrap();
+        std::fs::write(sub_dir.join("a.txt"), b"hi").unwrap();
+        let handler = DrunHandler::new(Config::default());
+
+        let result = handler
+            .handle_delete_from_host(DeleteFromHost {
+                path: sub_dir.to_string_lossy().into_owned(),
+            })
+            .unwrap();
+        assert_eq!(result_json(&result)["deleted"], true);
+        assert!(!sub_dir.exists());
+    }
+
+    #[test]
+    fn delete_from_host_no_ops_when_the_path_is_already_gone() {
+        let dir = tempfile::tempdir().unwrap();
+        let handler = DrunHandler::new(Config::default());
+
+        let result = handler
+            .handle_delete_from_host(DeleteFromHost {
+                path: dir
+                    .path()
+                    .join("missing.txt")
+                    .to_string_lossy()
+                    .into_owned(),
+            })
+            .unwrap();
+        assert_eq!(result_json(&result)["deleted"], false);
+    }
+
+    #[test]
+    fn delete_from_host_rejects_a_path_outside_the_mount_allowlist() {
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("a.txt");
+        std::fs::write(&file_path, b"hi").unwrap();
+        let config = Config {
+            mount_allowlist: vec![PathBuf::from("/allowed")],
+            ..Config::default()
+        };
+        let handler = DrunHandler::new(config);
+
+        let err = handler
+            .handle_delete_from_host(DeleteFromHost {
+                path: file_path.to_string_lossy().into_owned(),
+            })
+            .unwrap_err();
+        assert!(err.to_string().contains("mount_denied"));
+        assert!(file_path.exists());
+    }
+
+    #[test]
+    fn delete_from_host_rejects_a_path_containing_dotdot() {
+        let handler = DrunHandler::new(Config::default());
+        let err = handler
+            .handle_delete_from_host(DeleteFromHost {
+                path: "../escape.txt".to_string(),
+            })
+            .unwrap_err();
+        assert!(err.to_string().contains("mount_denied"));
     }
 }
