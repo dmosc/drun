@@ -479,3 +479,20 @@ outside. See
 [docs/troubleshooting.md's Health check section](docs/troubleshooting.md#health-check--is-drun-actually-running)
 for commands to confirm it's running exactly once, actually listening, and not
 stuck being killed and retried by launchd/systemd.
+
+### Manage drun remotely
+
+We recommend setting up [Tailscale](https://tailscale.com/) across your devices
+to remotely manage drun. Roughly the steps are as follows:
+
+1. Install drun and make sure that the web service is up by visiting
+   `http://127.0.0.1:7274`.
+1. Download Tailscale on the different devices you want to connect (e.g.
+   computer and phone).
+1. Boot up a Tailscale server pointing at the drun webserver with:
+
+   ```bash
+   tailscale serve --bg --https=443 http://127.0.0.1:7274
+   ```
+1. If the command succeeds, your web server UI should be accessible at the
+   domain printed in the console by Tailscale.
