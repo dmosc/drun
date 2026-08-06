@@ -107,21 +107,10 @@
     #status-strip {
       display: flex;
       align-items: center;
-      gap: 7px;
-      padding: 5px 16px;
+      gap: 8px;
+      padding: 8px 16px;
       background: var(--s1);
       border-bottom: 1px solid var(--border);
-      font-family: var(--mono);
-      font-size: 11px;
-      color: var(--text-dim);
-    }
-
-    .stat-item {
-      white-space: nowrap;
-    }
-
-    .stat-sep {
-      color: var(--text-muted);
     }
 
     .stat-warn {
@@ -132,42 +121,12 @@
       color: var(--red);
     }
 
-    #daemon-toggle {
-      margin-left: auto;
-      background: none;
-      border: none;
-      color: var(--text-muted);
-      font-family: var(--mono);
-      font-size: 11px;
-      cursor: pointer;
-      padding: 2px 4px;
-    }
-
-    #daemon-toggle:hover {
-      color: var(--text-dim);
-    }
-
-    #daemon-panel {
-      background: var(--s1);
-      border-bottom: 1px solid var(--border);
-      padding: 8px 16px 10px;
-    }
-
-    #daemon-panel.hidden {
-      display: none;
-    }
-
     .daemon-row {
       display: flex;
       gap: 10px;
-      padding: 2px 0;
+      padding: 4px 0;
       font-size: 11.5px;
       line-height: 1.5;
-    }
-
-    .daemon-row-first {
-      justify-content: space-between;
-      align-items: center;
     }
 
     .daemon-row-label {
@@ -182,8 +141,8 @@
       word-break: break-word;
     }
 
-    /* ── Config modal ──────────────────────────────────────────────────── */
-    #config-modal-overlay {
+    /* ── Modals ────────────────────────────────────────────────────────── */
+    .modal-overlay {
       position: fixed;
       inset: 0;
       background: rgba(0, 0, 0, 0.6);
@@ -191,13 +150,14 @@
       align-items: center;
       justify-content: center;
       z-index: 100;
+      padding: 16px;
     }
 
-    #config-modal-overlay.hidden {
+    .modal-overlay.hidden {
       display: none;
     }
 
-    #config-modal {
+    .modal-box {
       background: var(--s1);
       border: 1px solid var(--border-hi);
       border-radius: var(--radius);
@@ -207,7 +167,7 @@
       flex-direction: column;
     }
 
-    #config-modal-head {
+    .modal-head {
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -216,6 +176,19 @@
       font-size: 12px;
       font-weight: 600;
       color: var(--text);
+    }
+
+    .modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      padding: 10px 14px;
+      border-top: 1px solid var(--border);
+    }
+
+    #status-modal-body {
+      padding: 4px 14px 12px;
+      overflow-y: auto;
     }
 
     #config-modal-textarea {
@@ -241,14 +214,6 @@
 
     #config-modal-error:empty {
       display: none;
-    }
-
-    #config-modal-actions {
-      display: flex;
-      justify-content: flex-end;
-      gap: 8px;
-      padding: 10px 14px;
-      border-top: 1px solid var(--border);
     }
 
     /* ── Page body ─────────────────────────────────────────────────────── */
@@ -289,9 +254,12 @@
 
     /* ── Session cards ─────────────────────────────────────────────────── */
     #sessions-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      display: flex;
       gap: 8px;
+      overflow-x: auto;
+      overflow-y: hidden;
+      padding-bottom: 6px;
+      -webkit-overflow-scrolling: touch;
     }
 
     .empty-state {
@@ -299,7 +267,7 @@
       font-size: 12.5px;
       padding: 24px 0;
       text-align: center;
-      grid-column: 1 / -1;
+      flex: 1;
     }
 
     .session-card {
@@ -310,7 +278,8 @@
       transition: border-color 0.12s, background 0.12s;
       display: flex;
       flex-direction: column;
-      height: 100%;
+      flex: 0 0 220px;
+      width: 220px;
     }
 
     .session-card.active {
@@ -957,19 +926,33 @@
     </div>
   </header>
 
-  <div id="status-strip"></div>
+  <div id="status-strip">
+    <button class="btn" onclick="openStatusModal()">Server status</button>
+    <button class="btn" onclick="onEditConfigClick()">Edit config</button>
+  </div>
 
-  <div id="daemon-panel" class="hidden"></div>
+  <div id="status-modal-overlay" class="modal-overlay hidden" onclick="if (event.target === this) closeStatusModal()">
+    <div class="modal-box">
+      <div class="modal-head">
+        <span>Server status</span>
+        <button class="btn" onclick="closeStatusModal()">✕</button>
+      </div>
+      <div id="status-modal-body"></div>
+      <div class="modal-actions">
+        <button class="btn" onclick="closeStatusModal()">Close</button>
+      </div>
+    </div>
+  </div>
 
-  <div id="config-modal-overlay" class="hidden" onclick="if (event.target === this) closeConfigModal()">
-    <div id="config-modal">
-      <div id="config-modal-head">
+  <div id="config-modal-overlay" class="modal-overlay hidden" onclick="if (event.target === this) closeConfigModal()">
+    <div class="modal-box">
+      <div class="modal-head">
         <span>Edit configuration</span>
         <button class="btn" onclick="closeConfigModal()">✕</button>
       </div>
       <textarea id="config-modal-textarea" spellcheck="false"></textarea>
       <div id="config-modal-error"></div>
-      <div id="config-modal-actions">
+      <div class="modal-actions">
         <button class="btn" onclick="closeConfigModal()">Cancel</button>
         <button class="btn" id="config-modal-save" onclick="onSaveConfigClick()">Save</button>
       </div>
@@ -1011,7 +994,8 @@
             <span>Files</span>
             <span class="files-head-right">
               <span class="column-head-hint" id="files-counts"></span>
-              <button class="btn btn-link" id="files-toggle-all-btn" onclick="onToggleAllFoldersClick()">Expand all</button>
+              <button class="btn btn-link" id="files-toggle-all-btn" onclick="onToggleAllFoldersClick()">Expand
+                all</button>
             </span>
           </div>
           <div class="column-body" id="files-tree"></div>
@@ -1042,7 +1026,7 @@
       // Folder paths the user has manually collapsed in the files tree.
       collapsedFolders: new Set(),
       daemonStatus: null,
-      daemonPanelOpen: false,
+      statusModalOpen: false,
       liveOutput: null,   // { running, command, output } for the selected session
       // { path, mode, fileState } last rendered by renderFilesPreview, so the 2s
       // poll doesn't rebuild an unchanged iframe/audio/video and restart playback.
@@ -1296,10 +1280,11 @@
 
     // ── Rendering: daemon status ─────────────────────────────────────────────
 
-    function renderStatusStrip() {
+    function renderStatusModal() {
+      if (!viewState.statusModalOpen) return;
+      const body = document.getElementById('status-modal-body');
       const status = viewState.daemonStatus;
-      const strip = document.getElementById('status-strip');
-      if (!status) { strip.innerHTML = ''; return; }
+      if (!status) { body.innerHTML = '<div class="loading-note">Loading…</div>'; return; }
 
       const capacity = status.max_sessions
         ? `${status.session_count}/${status.max_sessions} sessions`
@@ -1307,26 +1292,6 @@
       const capacityClass = status.max_sessions && status.session_count / status.max_sessions >= 0.9
         ? 'stat-danger' : status.max_sessions && status.session_count / status.max_sessions >= 0.7
           ? 'stat-warn' : '';
-
-      const items = [
-        `v${escHtml(status.version)}`,
-        `pid ${status.pid}`,
-        `up ${fmtDuration(status.uptime_secs)}`,
-        `<span class="${capacityClass}">${capacity}</span>`,
-      ];
-      if (status.memory_rss_bytes != null) items.push(fmtBytes(status.memory_rss_bytes));
-
-      strip.innerHTML = items
-        .map(item => `<span class="stat-item">${item}</span>`)
-        .join('<span class="stat-sep">·</span>')
-        + `<button id="daemon-toggle">${viewState.daemonPanelOpen ? '▾' : '▸'} Daemon</button>`;
-    }
-
-    function renderDaemonPanel() {
-      const panel = document.getElementById('daemon-panel');
-      const status = viewState.daemonStatus;
-      panel.classList.toggle('hidden', !viewState.daemonPanelOpen || !status);
-      if (!viewState.daemonPanelOpen || !status) return;
 
       const idleTimeout = status.session_idle_timeout_secs != null
         ? `${fmtDuration(status.session_idle_timeout_secs)} idle timeout` : 'No idle timeout';
@@ -1336,28 +1301,34 @@
         ? `${status.max_checkpoints} checkpoints per session` : 'No checkpoint cap';
 
       const rows = [
+        ['Version', `v${escHtml(status.version)}`],
+        ['PID', status.pid],
+        ['Uptime', fmtDuration(status.uptime_secs)],
+        ['Sessions', `<span class="${capacityClass}">${capacity}</span>`],
+        ...(status.memory_rss_bytes != null ? [['Memory', fmtBytes(status.memory_rss_bytes)]] : []),
         ['Ports', `MCP :${status.mcp_port} · Web :${status.web_port}`],
         ['Limits', `${idleTimeout} · ${workspace} · ${checkpoints}`],
         ['Domains', status.domain_allowlist.length ? escHtml(status.domain_allowlist.join(', ')) : 'None allowed'],
         ['Mounts', status.mount_allowlist.length ? escHtml(status.mount_allowlist.join(', ')) : 'All host paths allowed'],
       ];
 
-      panel.innerHTML = rows.map(([label, value], i) => `
-        <div class="daemon-row${i === 0 ? ' daemon-row-first' : ''}">
-          <span>
-            <span class="daemon-row-label">${label}</span>
-            <span class="daemon-row-value">${value}</span>
-          </span>
-          ${i === 0 ? `<button class="btn" onclick="onEditConfigClick()">Edit configuration</button>` : ''}
+      body.innerHTML = rows.map(([label, value]) => `
+        <div class="daemon-row">
+          <span class="daemon-row-label">${label}</span>
+          <span class="daemon-row-value">${value}</span>
         </div>`).join('');
     }
 
-    document.addEventListener('click', e => {
-      if (e.target.id !== 'daemon-toggle') return;
-      viewState.daemonPanelOpen = !viewState.daemonPanelOpen;
-      renderStatusStrip();
-      renderDaemonPanel();
-    });
+    function openStatusModal() {
+      viewState.statusModalOpen = true;
+      document.getElementById('status-modal-overlay').classList.remove('hidden');
+      renderStatusModal();
+    }
+
+    function closeStatusModal() {
+      viewState.statusModalOpen = false;
+      document.getElementById('status-modal-overlay').classList.add('hidden');
+    }
 
     document.getElementById('files-tree').addEventListener('toggle', e => {
       const details = e.target;
@@ -1387,7 +1358,9 @@
 
     function renderSessionGrid() {
       const grid = document.getElementById('sessions-grid');
-      const sessions = viewState.flatSessions;
+      // Newest first (smallest age) so a freshly created session is inserted
+      // at the front of the horizontal scroll rather than off to the right.
+      const sessions = [...viewState.flatSessions].sort((a, b) => a.age_secs - b.age_secs);
 
       if (sessions.length === 0) {
         grid.innerHTML = '<div class="empty-state">No active sessions — start an agent to see trajectory data here.</div>';
@@ -2007,8 +1980,7 @@
         document.getElementById('live-dot').classList.remove('offline');
         document.getElementById('status-label').textContent = `Updated ${new Date().toLocaleTimeString()}`;
 
-        renderStatusStrip();
-        renderDaemonPanel();
+        renderStatusModal();
         renderSessionGrid();
 
         if (viewState.selectedSessionId && findSession(viewState.selectedSessionId)) {
