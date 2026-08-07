@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>drun · trajectory viewer</title>
+  <title>drun</title>
   <style>
     *,
     *::before,
@@ -410,26 +410,7 @@
       background: var(--red-bg);
     }
 
-    /* ── Context bar ───────────────────────────────────────────────────── */
-    .context-bar {
-      display: flex;
-      align-items: center;
-      flex-wrap: wrap;
-      gap: 8px;
-      background: var(--s1);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 8px 11px;
-      margin-bottom: 10px;
-    }
-
-    .context-actions {
-      display: flex;
-      gap: 6px;
-      margin-left: auto;
-      flex-shrink: 0;
-    }
-
+    /* ── Checkpoint info ───────────────────────────────────────────────── */
     .context-description {
       flex-basis: 100%;
       color: var(--text-muted);
@@ -461,16 +442,100 @@
       padding: 2px 4px;
     }
 
+    /* ── Tabs panel ────────────────────────────────────────────────────── */
+    .tabs-panel {
+      background: var(--s1);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    .controls-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    #checkpoint-select {
+      flex: 0 1 auto;
+      width: auto;
+      max-width: 150px;
+      background: var(--s2);
+      border: 1px solid var(--border-hi);
+      border-radius: 4px;
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 12px;
+      padding: 5px 8px;
+    }
+
+    .tabs-spacer {
+      flex: 1;
+    }
+
+    .tabs-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
+    .tabs-head {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .tab-btn {
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: var(--text-dim);
+      font-size: 12px;
+      font-weight: 600;
+      padding: 10px 16px;
+      cursor: pointer;
+      transition: color 0.12s, border-color 0.12s;
+    }
+
+    .tab-btn:hover {
+      color: var(--text);
+    }
+
+    .tab-btn.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+    }
+
+    .tab-body {
+      padding: 12px 14px;
+    }
+
+    .cp-info-stats {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-top: 10px;
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+
+    .cp-info-delta {
+      display: flex;
+      gap: 10px;
+    }
+
     /* ── Columns ───────────────────────────────────────────────────────── */
-    .columns-grid {
+    .files-columns {
       display: grid;
-      grid-template-columns: 240px minmax(220px, 1fr) minmax(260px, 1.3fr);
+      grid-template-columns: 280px minmax(260px, 1fr);
       gap: 10px;
       align-items: start;
     }
 
     @media (max-width: 900px) {
-      .columns-grid {
+      .files-columns {
         grid-template-columns: 1fr;
       }
 
@@ -518,10 +583,6 @@
       overflow-y: auto;
     }
 
-    #checkpoints-list {
-      max-height: 480px;
-    }
-
     #output-body {
       height: 600px;
       min-height: 100px;
@@ -531,15 +592,14 @@
     }
 
     #files-tree {
-      height: 170px;
-      min-height: 60px;
+      height: 600px;
+      min-height: 100px;
       max-height: 90vh;
-      border-bottom: 1px solid var(--border);
       resize: vertical;
     }
 
     #files-preview {
-      height: 430px;
+      height: 600px;
       min-height: 100px;
       max-height: 90vh;
       overflow-y: auto;
@@ -550,63 +610,6 @@
       padding: 12px 10px;
       font-size: 12px;
       color: var(--text-muted);
-    }
-
-    /* ── Checkpoint list ───────────────────────────────────────────────── */
-    .cp-row {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      padding: 6px 10px;
-      cursor: pointer;
-      border-left: 2px solid transparent;
-      font-family: var(--mono);
-      font-size: 11.5px;
-    }
-
-    .cp-row:hover {
-      background: var(--s2);
-    }
-
-    .cp-row.selected {
-      background: var(--accent-bg);
-      border-left-color: var(--accent);
-    }
-
-    .cp-row.is-head:not(.selected) {
-      border-left-color: rgba(79, 217, 138, 0.4);
-    }
-
-    .cp-row.selected.is-head {
-      background: var(--green-bg);
-      border-left-color: var(--green);
-    }
-
-    .cp-row-num {
-      color: var(--text-dim);
-      flex-shrink: 0;
-    }
-
-    .cp-row-label {
-      color: var(--accent);
-      flex: 1;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .cp-row-tool {
-      color: var(--text-dim);
-      flex-shrink: 0;
-      font-size: 10px;
-      opacity: 0.75;
-    }
-
-    .cp-row-delta {
-      flex-shrink: 0;
-      font-size: 10px;
-      display: flex;
-      gap: 4px;
     }
 
     /* ── Output column ─────────────────────────────────────────────────── */
@@ -946,30 +949,45 @@
     </section>
 
     <section id="workspace-section" class="hidden">
-      <div class="context-bar" id="context-bar"></div>
-
-      <div class="columns-grid">
-        <div class="column" id="checkpoints-column">
-          <div class="column-head">Checkpoints</div>
-          <div class="column-body" id="checkpoints-list"></div>
+      <div class="tabs-panel">
+        <div class="controls-row">
+          <select id="checkpoint-select" onchange="onCheckpointClick(Number(this.value))"></select>
+          <div class="tabs-spacer"></div>
+          <div class="tabs-actions" id="tabs-actions"></div>
         </div>
 
-        <div class="column" id="output-column">
-          <div class="column-head">Output</div>
-          <div class="column-body" id="output-body"></div>
+        <div class="tabs-head">
+          <button class="tab-btn" data-tab="info" onclick="onTabClick('info')">Info</button>
+          <button class="tab-btn" data-tab="output" onclick="onTabClick('output')">Output</button>
+          <button class="tab-btn" data-tab="files" onclick="onTabClick('files')">Filesystem</button>
         </div>
 
-        <div class="column" id="files-column">
-          <div class="column-head">
-            <span>Files</span>
-            <span class="files-head-right">
-              <span class="column-head-hint" id="files-counts"></span>
-              <button class="btn btn-link" id="files-toggle-all-btn" onclick="onToggleAllFoldersClick()">Expand
-                all</button>
-            </span>
+        <div class="tab-body" data-tab="info">
+          <div id="checkpoint-info-body"></div>
+        </div>
+
+        <div class="tab-body" data-tab="output">
+          <div id="output-body"></div>
+        </div>
+
+        <div class="tab-body" data-tab="files">
+          <div class="files-columns">
+            <div class="column">
+              <div class="column-head">
+                <span>Files</span>
+                <span class="files-head-right">
+                  <span class="column-head-hint" id="files-counts"></span>
+                  <button class="btn btn-link" id="files-toggle-all-btn" onclick="onToggleAllFoldersClick()">Expand
+                    all</button>
+                </span>
+              </div>
+              <div class="column-body" id="files-tree"></div>
+            </div>
+
+            <div class="column">
+              <div class="column-body" id="files-preview"></div>
+            </div>
           </div>
-          <div class="column-body" id="files-tree"></div>
-          <div class="column-body" id="files-preview"></div>
         </div>
       </div>
     </section>
@@ -984,6 +1002,8 @@
       selectedSessionId: null,
       checkpointHistory: [],
       selectedCpId: null,
+      // 'info' | 'output' | 'files' — which workspace tab is showing.
+      activeTab: 'info',
       selectedFilePath: null,
       // 'content' | 'diff' — which view the selected file is showing.
       filePreviewMode: 'content',
@@ -1228,7 +1248,7 @@
 
     function onChatClick(sessionId) {
       chatModalSessionId = sessionId;
-      document.getElementById('chat-modal-title').textContent = `Chat · ${shortId(sessionId)}`;
+      document.getElementById('chat-modal-title').textContent = `Chat ${shortId(sessionId)}`;
       document.getElementById('chat-modal-prompt').value = '';
       document.getElementById('chat-modal-error').textContent = '';
       document.getElementById('chat-modal-overlay').classList.remove('hidden');
@@ -1315,8 +1335,8 @@
         ['Uptime', fmtDuration(status.uptime_secs)],
         ['Sessions', `<span class="${capacityClass}">${capacity}</span>`],
         ...(status.memory_rss_bytes != null ? [['Memory', fmtBytes(status.memory_rss_bytes)]] : []),
-        ['Ports', `MCP :${status.mcp_port} · Web :${status.web_port}`],
-        ['Limits', `${idleTimeout} · ${workspace} · ${checkpoints}`],
+        ['Ports', `MCP :${status.mcp_port}  Web :${status.web_port}`],
+        ['Limits', `${idleTimeout} ${workspace} ${checkpoints}`],
         ['Domains', status.domain_allowlist.length ? escHtml(status.domain_allowlist.join(', ')) : 'None allowed'],
         ['Mounts', status.mount_allowlist.length ? escHtml(status.mount_allowlist.join(', ')) : 'All host paths allowed'],
       ];
@@ -1361,7 +1381,7 @@
       }
       const remaining = Math.max(idleTimeout - session.idle_secs, 0);
       const cls = frac >= 0.9 ? 'badge-danger' : 'badge-warn';
-      const text = frac >= 1 ? `${idleAgo} · reaping soon` : `${idleAgo} · reaps in ${fmtDuration(remaining)}`;
+      const text = frac >= 1 ? `${idleAgo} reaping soon` : `${idleAgo} reaps in ${fmtDuration(remaining)}`;
       return `<span class="badge ${cls}">${text}</span>`;
     }
 
@@ -1416,70 +1436,90 @@
       }).join('');
     }
 
-    // ── Rendering: checkpoint list ────────────────────────────────────────────
+    // ── Rendering: checkpoint picker ────────────────────────────────────────────
 
-    function renderCheckpointList() {
+    function renderCheckpointSelect() {
       const session = findSession(viewState.selectedSessionId);
       if (!session) return;
 
-      const list = document.getElementById('checkpoints-list');
-      const byId = new Map(viewState.checkpointHistory.map(h => [h.checkpoint_id, h]));
-
-      list.innerHTML = [...session.checkpoints].reverse().map(checkpoint => {
-        const isHead = checkpoint.is_current;
-        const isSelected = checkpoint.checkpoint_id === viewState.selectedCpId;
-        const hist = byId.get(checkpoint.checkpoint_id);
-
-        const delta = hist ? [
-          hist.files_added_count > 0 ? `<span class="sigil-a">+${hist.files_added_count}</span>` : '',
-          hist.files_modified_count > 0 ? `<span class="sigil-m">~${hist.files_modified_count}</span>` : '',
-          hist.files_removed_count > 0 ? `<span class="sigil-r">-${hist.files_removed_count}</span>` : '',
-        ].join('') : '';
-
-        const toolHtml = hist?.tool
-          ? `<span class="cp-row-tool" title="Created by ${escHtml(hist.tool)}">${escHtml(hist.tool)}</span>` : '';
-
-        return `
-          <div class="cp-row ${isHead ? 'is-head' : ''} ${isSelected ? 'selected' : ''}"
-               onclick="onCheckpointClick(${checkpoint.checkpoint_id})">
-            <span class="cp-row-num">#${checkpoint.checkpoint_id}</span>
-            ${toolHtml}
-            <span class="cp-row-label">${checkpoint.label ? escHtml(checkpoint.label) : ''}</span>
-            <span class="cp-row-delta">${delta}</span>
-          </div>`;
+      const select = document.getElementById('checkpoint-select');
+      select.innerHTML = [...session.checkpoints].reverse().map(checkpoint => {
+        const label = checkpoint.label ? ` ${escHtml(checkpoint.label)}` : '';
+        return `<option value="${checkpoint.checkpoint_id}">Checkpoint ${checkpoint.checkpoint_id}${label}</option>`;
       }).join('');
+      select.value = viewState.selectedCpId;
     }
 
-    // ── Rendering: context bar ────────────────────────────────────────────────
+    // ── Rendering: checkpoint info tab ──────────────────────────────────────────
 
-    function renderContextBar() {
+    function renderCheckpointInfo() {
       const cpId = viewState.selectedCpId;
       const sessionId = viewState.selectedSessionId;
-      const bar = document.getElementById('context-bar');
-      if (cpId == null || !sessionId) { bar.innerHTML = ''; return; }
+      const body = document.getElementById('checkpoint-info-body');
+      if (cpId == null || !sessionId) { body.innerHTML = ''; return; }
 
       const session = findSession(sessionId);
       const treeCp = session?.checkpoints.find(c => c.checkpoint_id === cpId);
       const hist = viewState.checkpointHistory.find(h => h.checkpoint_id === cpId);
-      const labelSuffix = treeCp?.label ? ` · "${escHtml(treeCp.label)}"` : '';
-      const toolSuffix = hist?.tool ? ` · ${escHtml(hist.tool)}` : '';
-      const rollbackHidden = treeCp?.is_current ? 'style="display:none"' : '';
-
-      const forkButtons = (treeCp?.forks || []).map(f => `
-        <button class="btn" onclick="onSessionClick('${escHtml(f.session_id)}')" title="${escHtml(f.session_id)}">Forked to ${escHtml(shortId(f.session_id))}</button>
-      `).join('');
+      const labelSuffix = treeCp?.label ? ` "${escHtml(treeCp.label)}"` : '';
+      const toolSuffix = hist?.tool ? ` ${escHtml(hist.tool)}` : '';
 
       const descriptionHtml = hist?.description
         ? `<div class="context-description" title="${escHtml(hist.description)}">${escHtml(hist.description)}</div>` : '';
 
-      bar.innerHTML = `
-        <span class="mono-id">Checkpoint #${cpId}${labelSuffix}${toolSuffix}</span>
-        <div class="context-actions">
-          ${forkButtons}
-          <button class="btn" onclick="onForkFromHereClick()">Fork from here</button>
-          <button class="btn" id="rollback-here-btn" ${rollbackHidden} onclick="onRollbackHereClick()">Roll back to here</button>
-        </div>
-        ${descriptionHtml}`;
+      const delta = hist ? [
+        hist.files_added_count > 0 ? `<span class="sigil-a">+${hist.files_added_count} added</span>` : '',
+        hist.files_modified_count > 0 ? `<span class="sigil-m">~${hist.files_modified_count} modified</span>` : '',
+        hist.files_removed_count > 0 ? `<span class="sigil-r">-${hist.files_removed_count} removed</span>` : '',
+      ].filter(Boolean) : [];
+
+      const statsHtml = hist ? `
+        <div class="cp-info-stats">
+          <span>${hist.file_count} files total</span>
+          ${delta.length ? `<span class="cp-info-delta">${delta.join('')}</span>` : ''}
+        </div>` : '';
+
+      body.innerHTML = `
+        <div class="mono-id">${labelSuffix}${toolSuffix}</div>
+        ${descriptionHtml}
+        ${statsHtml}`;
+    }
+
+    // Fork/rollback actions, rendered into the tabs-head bar (right of the tabs).
+    function renderCheckpointActions() {
+      const cpId = viewState.selectedCpId;
+      const sessionId = viewState.selectedSessionId;
+      const container = document.getElementById('tabs-actions');
+      if (cpId == null || !sessionId) { container.innerHTML = ''; return; }
+
+      const session = findSession(sessionId);
+      const treeCp = session?.checkpoints.find(c => c.checkpoint_id === cpId);
+      const rollbackHidden = treeCp?.is_current ? 'style="display:none"' : '';
+
+      const forkButtons = (treeCp?.forks || []).map(f => `
+        <button class="btn" onclick="onSessionClick('${escHtml(f.session_id)}')">Forked to ${escHtml(f.session_id)}</button>
+      `).join('');
+
+      container.innerHTML = `
+        ${forkButtons}
+        <button class="btn" onclick="onForkFromHereClick()">Fork from here</button>
+        <button class="btn" id="rollback-here-btn" ${rollbackHidden} onclick="onRollbackHereClick()">Roll back to here</button>`;
+    }
+
+    // ── Rendering: tabs ──────────────────────────────────────────────────────
+
+    function onTabClick(tab) {
+      viewState.activeTab = tab;
+      applyActiveTab();
+    }
+
+    function applyActiveTab() {
+      for (const btn of document.querySelectorAll('.tab-btn')) {
+        btn.classList.toggle('active', btn.dataset.tab === viewState.activeTab);
+      }
+      for (const panel of document.querySelectorAll('.tab-body')) {
+        panel.hidden = panel.dataset.tab !== viewState.activeTab;
+      }
     }
 
     // ── Rendering: output column ──────────────────────────────────────────────
@@ -1757,7 +1797,9 @@
       const cached = viewState.outputCache.get(cacheKey);
       const hist = viewState.checkpointHistory.find(h => h.checkpoint_id === cpId);
 
-      renderContextBar();
+      renderCheckpointInfo();
+      renderCheckpointActions();
+      applyActiveTab();
 
       if (viewState.failedCheckpointKey === cacheKey) {
         const errorHtml = `
@@ -1811,7 +1853,7 @@
       viewState.selectedFilePath = null;
       viewState.filePreviewMode = 'content';
 
-      renderCheckpointList();
+      renderCheckpointSelect();
       renderWorkspacePanel();
 
       const sessionId = viewState.selectedSessionId;
@@ -1946,7 +1988,7 @@
       const sessionId = viewState.selectedSessionId;
       const cpId = viewState.selectedCpId;
       if (sessionId == null || cpId == null) return;
-      if (!confirm(`Roll back session ${shortId(sessionId)} to checkpoint #${cpId}?\n\nEvery checkpoint after this point is permanently discarded on the next write — it cannot be undone.`)) {
+      if (!confirm(`Roll back session ${shortId(sessionId)} to checkpoint ${cpId}?\n\nEvery checkpoint after this point is permanently discarded on the next write — it cannot be undone.`)) {
         return;
       }
       try {
@@ -1992,7 +2034,7 @@
           try {
             viewState.checkpointHistory = await Api.checkpointHistory(viewState.selectedSessionId);
           } catch (_) { }
-          renderCheckpointList();
+          renderCheckpointSelect();
           if (viewState.selectedCpId != null) renderWorkspacePanel();
         } else if (viewState.selectedSessionId) {
           // Selected session no longer exists (destroyed or reaped) — clear the stale detail view.
