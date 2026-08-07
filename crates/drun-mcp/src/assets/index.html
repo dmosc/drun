@@ -278,8 +278,8 @@
       transition: border-color 0.12s, background 0.12s;
       display: flex;
       flex-direction: column;
-      flex: 0 0 220px;
-      width: 220px;
+      flex: 0 0 260px;
+      width: 260px;
     }
 
     .session-card.active {
@@ -287,7 +287,7 @@
     }
 
     .session-card-main {
-      padding: 9px 11px;
+      padding: 14px 16px;
       cursor: pointer;
       user-select: none;
       flex: 1;
@@ -308,14 +308,14 @@
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
-      margin-bottom: 4px;
+      margin-bottom: 6px;
     }
 
     .card-session-label {
       font-size: 12.5px;
       font-weight: 600;
       color: var(--text);
-      margin-bottom: 8px;
+      margin-bottom: 10px;
     }
 
     .card-session-label.unlabeled {
@@ -325,18 +325,23 @@
 
     .card-badges {
       display: flex;
-      flex-wrap: wrap;
-      gap: 4px;
+      gap: 6px;
     }
 
     .badge {
       display: inline-flex;
       align-items: center;
+      justify-content: center;
       gap: 3px;
       font-size: 10.5px;
       font-family: var(--mono);
-      padding: 1px 6px;
+      padding: 3px 6px;
       border-radius: 4px;
+      flex: 1 1 0;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     .badge-neutral {
@@ -368,23 +373,6 @@
       background: var(--green-bg);
       color: var(--green);
       border: 1px solid rgba(79, 217, 138, 0.35);
-    }
-
-    @keyframes livePulse {
-
-      0%,
-      100% {
-        opacity: 1;
-      }
-
-      50% {
-        opacity: 0.35;
-      }
-    }
-
-    .live-indicator-dot {
-      display: inline-block;
-      animation: livePulse 1.4s ease-in-out infinite;
     }
 
     .card-actions-row {
@@ -467,37 +455,6 @@
     .btn-link {
       border: none;
       padding: 2px 4px;
-    }
-
-    /* ── Live bar ──────────────────────────────────────────────────────── */
-    .live-bar {
-      background: var(--s1);
-      border: 1px solid rgba(79, 217, 138, 0.3);
-      border-radius: var(--radius);
-      margin-bottom: 10px;
-      overflow: hidden;
-    }
-
-    .live-bar.hidden {
-      display: none;
-    }
-
-    .live-bar-head {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 6px 11px;
-      border-bottom: 1px solid var(--border);
-      font-family: var(--mono);
-      font-size: 11.5px;
-    }
-
-    .live-bar-command {
-      flex: 1;
-      color: var(--text-dim);
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
     }
 
     /* ── Columns ───────────────────────────────────────────────────────── */
@@ -968,16 +925,6 @@
     <section id="workspace-section" class="hidden">
       <div class="context-bar" id="context-bar"></div>
 
-      <div class="live-bar hidden" id="live-bar">
-        <div class="live-bar-head">
-          <span class="badge badge-live"><span class="live-indicator-dot">●</span>&nbsp;Running</span>
-          <span class="live-bar-command" id="live-command"></span>
-        </div>
-        <div class="column-body" id="live-output-body" style="max-height:160px; padding:10px">
-          <pre class="output-pre" id="live-output-pre"></pre>
-        </div>
-      </div>
-
       <div class="columns-grid">
         <div class="column" id="checkpoints-column">
           <div class="column-head">Checkpoints</div>
@@ -1027,7 +974,6 @@
       collapsedFolders: new Set(),
       daemonStatus: null,
       statusModalOpen: false,
-      liveOutput: null,   // { running, command, output } for the selected session
       // { path, mode, fileState } last rendered by renderFilesPreview, so the 2s
       // poll doesn't rebuild an unchanged iframe/audio/video and restart playback.
       lastRenderedPreview: null,
@@ -1037,6 +983,8 @@
       // { cached, path, mode } last rendered by renderFilesTree, so the 2s poll
       // doesn't rebuild the tree and collapse open <details> folders.
       lastRenderedFilesTree: null,
+      // session_ids with a delete request in flight.
+      deletingSessions: new Set(),
     };
 
     // ── Helpers ──────────────────────────────────────────────────────────────
@@ -1139,10 +1087,10 @@
     // function builds a `/api/...` URL by hand.
 
     // The session lock is briefly held per request, so a handful of reads
-    // fired at once (e.g. the four checkpoint fetches below, or a live-output
-    // poll landing mid-click) can transiently 503 on `try_lock` contention
-    // even though nothing is actually busy. A couple of short retries absorb
-    // that without surfacing a false "empty" state to the user.
+    // fired at once (e.g. the four checkpoint fetches below) can transiently
+    // 503 on `try_lock` contention even though nothing is actually busy. A
+    // couple of short retries absorb that without surfacing a false "empty"
+    // state to the user.
     async function fetchWithRetry(url, read, attempts = 3, delayMs = 120) {
       for (let attempt = 1; ; attempt++) {
         const res = await fetch(url);
@@ -1175,7 +1123,6 @@
     const Api = {
       status: () => fetchJson('/api/status'),
       sessionsTree: () => fetchJson('/api/sessions/tree'),
-      liveOutput: sessionId => fetchJson(`/api/sessions/${sessionId}/live`),
       checkpointHistory: sessionId => fetchJson(`/api/sessions/${sessionId}/history`),
       checkpointFiles: (sessionId, cpId) => fetchJson(`/api/sessions/${sessionId}/checkpoints/${cpId}/files`),
       stdout: (sessionId, cpId) => fetchText(`/api/sessions/${sessionId}/checkpoints/${cpId}/stdout`),
@@ -1356,6 +1303,19 @@
       return `<span class="badge ${cls}">${text}</span>`;
     }
 
+    // Single source of truth for the session card's status pill. Priority
+    // order matters: a session mid-delete is about to disappear regardless
+    // of whatever else it's doing, so that takes precedence over "running".
+    function sessionStatusBadge(session) {
+      if (viewState.deletingSessions.has(session.session_id)) {
+        return '<span class="badge badge-danger">Deleting…</span>';
+      }
+      if (session.running) {
+        return '<span class="badge badge-live">Running</span>';
+      }
+      return sessionIdleBadge(session);
+    }
+
     function renderSessionGrid() {
       const grid = document.getElementById('sessions-grid');
       // Newest first (smallest age) so a freshly created session is inserted
@@ -1370,7 +1330,6 @@
       grid.innerHTML = sessions.map(s => {
         const isActive = s.session_id === viewState.selectedSessionId;
         const headCpId = currentCpIdForSession(s);
-        const totalCps = s.checkpoints.length;
         const isForked = !!s.parent_session_id;
 
         return `
@@ -1379,8 +1338,8 @@
               <div class="card-session-id" title="${escHtml(s.session_id)}">${escHtml(shortId(s.session_id))}</div>
               <div class="card-session-label ${s.label ? '' : 'unlabeled'}">${s.label ? escHtml(s.label) : 'Unlabeled'}</div>
               <div class="card-badges">
-                <span class="badge badge-neutral">Checkpoint ${headCpId ?? '—'} / ${totalCps - 1}</span>
-                ${s.running ? '<span class="badge badge-live"><span class="live-indicator-dot">●</span>&nbsp;Running</span>' : sessionIdleBadge(s)}
+                <span class="badge badge-neutral">Checkpoint ${headCpId ?? '—'}</span>
+                ${sessionStatusBadge(s)}
                 ${isForked ? `<span class="badge badge-fork" title="Forked from ${escHtml(s.parent_session_id)} at checkpoint ${s.parent_checkpoint_id}">⑂ ${escHtml(shortId(s.parent_session_id))}</span>` : ''}
               </div>
             </div>
@@ -1426,20 +1385,6 @@
             <span class="cp-row-delta">${delta}</span>
           </div>`;
       }).join('');
-    }
-
-    // ── Rendering: live bar ───────────────────────────────────────────────────
-
-    function renderLiveBar() {
-      const bar = document.getElementById('live-bar');
-      const live = viewState.liveOutput;
-      if (!live?.running) { bar.classList.add('hidden'); return; }
-
-      bar.classList.remove('hidden');
-      document.getElementById('live-command').textContent = live.command ? `$ ${live.command}` : '';
-
-      const pre = document.getElementById('live-output-pre');
-      pre.textContent = live.output || '(No output yet)';
     }
 
     // ── Rendering: context bar ────────────────────────────────────────────────
@@ -1779,11 +1724,9 @@
       viewState.selectedFilePath = null;
       viewState.filePreviewMode = 'content';
       viewState.checkpointHistory = [];
-      viewState.liveOutput = null;
 
       renderSessionGrid();
       document.getElementById('workspace-section').classList.add('hidden');
-      renderLiveBar();
 
       try {
         viewState.checkpointHistory = await Api.checkpointHistory(sessionId);
@@ -1797,21 +1740,6 @@
       if (headCpId != null) {
         await onCheckpointClick(headCpId);
       }
-
-      await refreshLiveOutput();
-    }
-
-    async function refreshLiveOutput() {
-      const sessionId = viewState.selectedSessionId;
-      if (!sessionId) { viewState.liveOutput = null; renderLiveBar(); return; }
-
-      try {
-        viewState.liveOutput = await Api.liveOutput(sessionId);
-      } catch (e) {
-        console.error('Failed to load live output:', e);
-        viewState.liveOutput = null;
-      }
-      if (viewState.selectedSessionId === sessionId) renderLiveBar();
     }
 
     async function onCheckpointClick(cpId) {
@@ -1889,21 +1817,24 @@
       if (!confirm(`Destroy session ${sessionId}?\n\nThis permanently discards its workspace and checkpoint history — it cannot be undone.`)) {
         return;
       }
+      viewState.deletingSessions.add(sessionId);
+      renderSessionGrid();
       try {
         await Api.deleteSession(sessionId);
       } catch (e) {
         console.error('Failed to destroy session:', e);
         alert(`Failed to destroy session: ${e.message}`);
+        viewState.deletingSessions.delete(sessionId);
+        renderSessionGrid();
         return;
       }
+      viewState.deletingSessions.delete(sessionId);
       if (viewState.selectedSessionId === sessionId) {
         viewState.selectedSessionId = null;
         viewState.selectedCpId = null;
         viewState.selectedFilePath = null;
         viewState.filePreviewMode = 'content';
-        viewState.liveOutput = null;
         document.getElementById('workspace-section').classList.add('hidden');
-        renderLiveBar();
       }
       await refresh();
     }
@@ -1974,7 +1905,18 @@
           Api.status(),
         ]);
         viewState.sessionTree = tree;
-        viewState.flatSessions = flattenTree(tree);
+        // A busy session (its own lock held by an in-flight session_bash)
+        // comes back from the server as a bare placeholder — running:true
+        // but no checkpoints/label, since those aren't safely readable
+        // without blocking on that lock. Reuse the last known data for it
+        // instead of blanking out its card and checkpoints column for
+        // however long the command runs.
+        const previousById = new Map(viewState.flatSessions.map(s => [s.session_id, s]));
+        viewState.flatSessions = flattenTree(tree).map(s => {
+          if (!s.running || s.checkpoints.length > 0) return s;
+          const previous = previousById.get(s.session_id);
+          return previous ? { ...previous, running: true } : s;
+        });
         viewState.daemonStatus = status;
 
         document.getElementById('live-dot').classList.remove('offline');
@@ -1989,16 +1931,13 @@
           } catch (_) { }
           renderCheckpointList();
           if (viewState.selectedCpId != null) renderWorkspacePanel();
-          await refreshLiveOutput();
         } else if (viewState.selectedSessionId) {
           // Selected session no longer exists (destroyed or reaped) — clear the stale detail view.
           viewState.selectedSessionId = null;
           viewState.selectedCpId = null;
           viewState.selectedFilePath = null;
           viewState.filePreviewMode = 'content';
-          viewState.liveOutput = null;
           document.getElementById('workspace-section').classList.add('hidden');
-          renderLiveBar();
         }
       } catch (e) {
         document.getElementById('live-dot').classList.add('offline');

@@ -107,10 +107,18 @@ impl SessionTreeNode {
         sessions: &HashMap<String, Arc<Mutex<Session>>>,
         live_output: &LiveOutputRegistry,
     ) -> Vec<SessionTreeNode> {
-        let locked_sessions: Vec<(String, std::sync::MutexGuard<Session>)> = sessions
-            .iter()
-            .map(|(id, arc)| (id.clone(), DrunHandler::lock_recovering(id, arc)))
-            .collect();
+        let mut locked_sessions: Vec<(String, std::sync::MutexGuard<Session>)> = Vec::new();
+        let mut busy_ids: Vec<String> = Vec::new();
+        for (id, arc) in sessions {
+            match arc.try_lock() {
+                Ok(guard) => locked_sessions.push((id.clone(), guard)),
+                Err(std::sync::TryLockError::WouldBlock) => busy_ids.push(id.clone()),
+                Err(std::sync::TryLockError::Poisoned(poisoned)) => {
+                    locked_sessions.push((id.clone(), DrunHandler::recover_poison(id, poisoned)))
+                }
+            }
+        }
+
         let mut children: HashMap<(String, usize), Vec<(String, &Session)>> = HashMap::new();
         let mut roots: Vec<(&str, &Session)> = Vec::new();
 
@@ -131,10 +139,25 @@ impl SessionTreeNode {
             }
         }
 
-        roots
+        let mut result: Vec<SessionTreeNode> = roots
             .into_iter()
             .map(|(id, session)| SessionTreeNode::from_session(id, session, &children, live_output))
-            .collect()
+            .collect();
+
+        for id in busy_ids {
+            result.push(SessionTreeNode {
+                session_id: id,
+                label: None,
+                parent_session_id: None,
+                parent_checkpoint_id: None,
+                age_secs: 0,
+                idle_secs: 0,
+                running: true,
+                checkpoints: Vec::new(),
+            });
+        }
+
+        result
     }
 }
 
@@ -258,5 +281,37 @@ mod tests {
         drop(guard);
         let forest = SessionTreeNode::forest(&sessions, &live_output);
         assert!(!forest[0].running);
+    }
+
+    #[test]
+    fn session_tree_node_forest_does_not_block_on_a_busy_sessions_own_lock() {
+        // Reproduces the real shape of an in-flight session_bash: the
+        // session's own Mutex is held (not just a live_output entry) for the
+        // call's duration. forest() must not block waiting for it — that
+        // would stall /api/sessions/tree, and therefore the whole 2s UI
+        // poll, for as long as the command runs.
+        let arc = Arc::new(Mutex::new(new_session()));
+        let mut sessions = HashMap::new();
+        sessions.insert("s1".to_string(), arc.clone());
+        let live_output = LiveOutputRegistry::default();
+
+        let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+        let hold_thread = std::thread::spawn(move || {
+            let _guard = arc.lock().unwrap();
+            let _ = release_rx.recv();
+        });
+        // Give the spawned thread time to actually acquire the lock before
+        // this thread's forest() call races it.
+        std::thread::sleep(Duration::from_millis(50));
+        let _live_guard = live_output.start("s1", "sleep 30");
+
+        let forest = SessionTreeNode::forest(&sessions, &live_output);
+
+        release_tx.send(()).unwrap();
+        hold_thread.join().unwrap();
+
+        assert_eq!(forest.len(), 1, "the busy session must still appear");
+        assert_eq!(forest[0].session_id, "s1");
+        assert!(forest[0].running);
     }
 }
