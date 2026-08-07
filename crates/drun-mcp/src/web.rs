@@ -21,6 +21,7 @@ pub(crate) struct WebServer {
 
 impl WebServer {
     const EMBEDDED_INDEX_HTML: &'static str = include_str!("assets/index.html");
+    const CHAT_CLI_MISSING: &'static str = "drun chat CLI not found. Install with: pip install 'drun-sandbox[chat]'. See README.md § Chat from the web UI.";
 
     pub(crate) fn new(handler: DrunHandler, port: u16, started_at: Instant) -> Self {
         Self {
@@ -100,6 +101,10 @@ impl WebServer {
             .route(
                 "/api/sessions/{session_id}/snapshot",
                 post(Self::handle_session_snapshot),
+            )
+            .route(
+                "/api/sessions/{session_id}/chat",
+                post(Self::handle_session_chat),
             )
             .with_state(AppState {
                 handler,
@@ -418,6 +423,54 @@ impl WebServer {
         })
     }
 
+    async fn handle_session_chat(
+        State(app): State<AppState>,
+        Path(session_id): Path<String>,
+        Json(body): Json<ChatRequest>,
+    ) -> Response {
+        if !app
+            .handler
+            .sessions
+            .lock()
+            .unwrap()
+            .contains_key(&session_id)
+        {
+            return (
+                StatusCode::NOT_FOUND,
+                format!("session '{session_id}' not found"),
+            )
+                .into_response();
+        }
+        if body.prompt.trim().is_empty() {
+            return (StatusCode::BAD_REQUEST, "prompt is required").into_response();
+        }
+
+        let mcp_url = format!("http://127.0.0.1:{}/mcp", crate::Env.mcp_port());
+        match tokio::process::Command::new("drun")
+            .args([
+                "chat",
+                &body.prompt,
+                "--session-id",
+                &session_id,
+                "--mcp-url",
+                &mcp_url,
+            ])
+            .output()
+            .await
+        {
+            Ok(output) if output.status.success() => Self::json_response(&serde_json::json!({})),
+            Ok(output) => (
+                StatusCode::BAD_GATEWAY,
+                String::from_utf8_lossy(&output.stderr).trim().to_string(),
+            )
+                .into_response(),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                (StatusCode::BAD_GATEWAY, Self::CHAT_CLI_MISSING).into_response()
+            }
+            Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()).into_response(),
+        }
+    }
+
     fn file_response(path: &str, bytes: &[u8]) -> Response {
         let mut headers = HeaderMap::new();
         if let Some(content_type) = Self::content_type_for_extension(path) {
@@ -599,6 +652,11 @@ struct RollbackRequest {
 #[derive(Deserialize)]
 struct LabelRequest {
     label: String,
+}
+
+#[derive(Deserialize)]
+struct ChatRequest {
+    prompt: String,
 }
 
 #[derive(Serialize)]

@@ -191,9 +191,9 @@
       overflow-y: auto;
     }
 
-    #config-modal-textarea {
+    .modal-textarea {
       flex: 1;
-      min-height: 320px;
+      min-height: 90px;
       margin: 12px 14px;
       padding: 10px;
       background: var(--s2);
@@ -206,13 +206,17 @@
       resize: vertical;
     }
 
-    #config-modal-error {
+    #config-modal-textarea {
+      min-height: 320px;
+    }
+
+    .modal-error {
       margin: 0 14px 10px;
       color: var(--red);
       font-size: 11.5px;
     }
 
-    #config-modal-error:empty {
+    .modal-error:empty {
       display: none;
     }
 
@@ -907,11 +911,26 @@
         <span>Edit configuration</span>
         <button class="btn" onclick="closeConfigModal()">✕</button>
       </div>
-      <textarea id="config-modal-textarea" spellcheck="false"></textarea>
-      <div id="config-modal-error"></div>
+      <textarea id="config-modal-textarea" class="modal-textarea" spellcheck="false"></textarea>
+      <div id="config-modal-error" class="modal-error"></div>
       <div class="modal-actions">
         <button class="btn" onclick="closeConfigModal()">Cancel</button>
         <button class="btn" id="config-modal-save" onclick="onSaveConfigClick()">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="chat-modal-overlay" class="modal-overlay hidden" onclick="if (event.target === this) closeChatModal()">
+    <div class="modal-box">
+      <div class="modal-head">
+        <span id="chat-modal-title">Chat</span>
+        <button class="btn" onclick="closeChatModal()">✕</button>
+      </div>
+      <textarea id="chat-modal-prompt" class="modal-textarea" placeholder="Tell the agent what to do…" spellcheck="false"></textarea>
+      <div id="chat-modal-error" class="modal-error"></div>
+      <div class="modal-actions">
+        <button class="btn" onclick="closeChatModal()">Close</button>
+        <button class="btn" onclick="onSendChatClick()">Send</button>
       </div>
     </div>
   </div>
@@ -985,6 +1004,8 @@
       lastRenderedFilesTree: null,
       // session_ids with a delete request in flight.
       deletingSessions: new Set(),
+      // session_ids with a chat request in flight.
+      chattingSessions: new Set(),
     };
 
     // ── Helpers ──────────────────────────────────────────────────────────────
@@ -1158,6 +1179,8 @@
         const res = await fetch('/api/config', { method: 'PUT', body: contents });
         if (!res.ok) throw new Error(await res.text());
       },
+
+      chat: (sessionId, prompt) => postJson(`/api/sessions/${sessionId}/chat`, { prompt }),
     };
 
     // ── Config modal ─────────────────────────────────────────────────────────
@@ -1192,6 +1215,41 @@
         error.textContent = e.message;
       } finally {
         btn.disabled = false;
+      }
+    }
+
+    // ── Chat modal ───────────────────────────────────────────────────────────
+
+    let chatModalSessionId = null;
+
+    function onChatClick(sessionId) {
+      chatModalSessionId = sessionId;
+      document.getElementById('chat-modal-title').textContent = `Chat · ${shortId(sessionId)}`;
+      document.getElementById('chat-modal-prompt').value = '';
+      document.getElementById('chat-modal-error').textContent = '';
+      document.getElementById('chat-modal-overlay').classList.remove('hidden');
+    }
+
+    function closeChatModal() {
+      chatModalSessionId = null;
+      document.getElementById('chat-modal-overlay').classList.add('hidden');
+    }
+
+    async function onSendChatClick() {
+      const sessionId = chatModalSessionId;
+      const prompt = document.getElementById('chat-modal-prompt').value.trim();
+      if (!sessionId || !prompt) return;
+
+      closeChatModal();
+      viewState.chattingSessions.add(sessionId);
+      renderSessionGrid();
+      try {
+        await Api.chat(sessionId, prompt);
+      } catch (e) {
+        alert(`Chat request failed: ${e.message}`);
+      } finally {
+        viewState.chattingSessions.delete(sessionId);
+        renderSessionGrid();
       }
     }
 
@@ -1310,7 +1368,7 @@
       if (viewState.deletingSessions.has(session.session_id)) {
         return '<span class="badge badge-danger">Deleting…</span>';
       }
-      if (session.running) {
+      if (session.running || viewState.chattingSessions.has(session.session_id)) {
         return '<span class="badge badge-live">Running</span>';
       }
       return sessionIdleBadge(session);
@@ -1347,6 +1405,7 @@
               <button class="card-action" onclick="copyToClipboard('${escHtml(s.session_id)}', this)">Copy</button>
               <button class="card-action" onclick="onEditLabelClick('${escHtml(s.session_id)}')">Label</button>
               <button class="card-action" onclick="onSnapshotClick('${escHtml(s.session_id)}', this)">Snapshot</button>
+              <button class="card-action" onclick="onChatClick('${escHtml(s.session_id)}')">Chat</button>
               <button class="card-action card-action-danger" onclick="onDestroySessionClick('${escHtml(s.session_id)}')">Delete</button>
             </div>
           </div>`;

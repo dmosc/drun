@@ -206,4 +206,9 @@ echo "Done! drun is ready."
 echo "  MCP  → $MCP_URL"
 echo "  UI   → http://127.0.0.1:7274"
 echo ""
+
+if ! command -v drun &>/dev/null; then
+  echo "Tip: to chat with sessions from the web UI, run: pip install 'drun-sandbox[chat]'"
+  echo ""
+fi
 echo "Run 'drun-mcp bridges list' to integrate drun with different providers."

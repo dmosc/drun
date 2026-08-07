@@ -496,3 +496,22 @@ to remotely manage drun. Roughly the steps are as follows:
    ```
 1. If the command succeeds, your web server UI should be accessible at the
    domain printed in the console by Tailscale.
+
+### Chat from the web UI
+
+Each session card has a **Chat** button — send it a prompt and the daemon runs
+`drun chat` against that exact session, so the agent gets the daemon's full
+sandboxed tool suite (`session_bash`, `session_fetch`, ...) under the same
+guardrails as any other bridge. Handy paired with
+[remote management](#manage-drun-remotely): drive a session from your phone
+without a terminal.
+
+Requires the [standalone CLI](#standalone-cli) installed on the same machine as
+the daemon:
+
+```bash
+pip install 'drun-sandbox[chat]'
+```
+
+The card's status pill shows "Running" while the agent works; refresh the
+session's checkpoint list to see what it did.
