@@ -180,16 +180,51 @@ async def test_bootstrap_attaches_to_an_existing_session_id_without_creating_one
     ]
 
 
-async def test_bootstrap_raises_when_the_given_session_id_does_not_exist():
-    result = CallToolResult(
+async def test_bootstrap_raises_when_the_given_session_id_matches_neither_a_session_nor_a_snapshot():
+    switch_failure = CallToolResult(
         isError=True,
         content=[TextContent(type="text", text="session 'missing' not found")],
     )
-    session = FakeSession(results={"session_switch": result})
+    restore_failure = CallToolResult(
+        isError=True,
+        content=[TextContent(type="text", text="No such file or directory")],
+    )
+    session = FakeSession(results={
+        "session_switch": switch_failure,
+        "get_config": ok_result(json.dumps({"snapshots_dir": "/snaps"})),
+        "session_restore": restore_failure,
+    })
     bridge = bridge_with(session, session_id="missing")
 
-    with pytest.raises(RuntimeError, match="session 'missing' not found"):
+    with pytest.raises(RuntimeError, match="No such file or directory"):
         await bridge._bootstrap()
+
+
+async def test_bootstrap_falls_back_to_a_snapshot_when_the_session_id_is_not_active():
+    session = FakeSession(results={
+        "session_switch": CallToolResult(
+            isError=True,
+            content=[TextContent(
+                type="text", text="session 'archived' not found")],
+        ),
+        "get_config": ok_result(json.dumps({"snapshots_dir": "/snaps"})),
+        "session_restore": ok_result(json.dumps({"session_id": "restored-1"})),
+        "get_system_instructions": ok_result("tool guide"),
+        "session_history": ok_result("[]"),
+    })
+    bridge = bridge_with(session, session_id="archived")
+
+    await bridge._bootstrap()
+
+    assert bridge.session_id == "restored-1"
+    assert session.calls == [
+        ("session_switch", {"session_id": "archived"}),
+        ("get_config", {}),
+        ("session_restore", {"path": "/snaps/archived.drun"}),
+        ("get_system_instructions", {}),
+        ("session_history", {
+            "description": "Loading session context."}),
+    ]
 
 
 async def test_default_system_prompt_embeds_the_resolved_session_id():

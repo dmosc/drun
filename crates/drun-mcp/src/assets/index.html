@@ -97,7 +97,7 @@
     /* ── Status strip ──────────────────────────────────────────────────── */
     #status-strip {
       display: flex;
-      flex-wrap: wrap;
+      flex-wrap: nowrap;
       align-items: center;
       gap: 8px;
       padding: 8px 16px;
@@ -539,6 +539,31 @@
     .checkpoint-modal-item.current {
       background: var(--green-bg);
       color: var(--green);
+    }
+
+    .snapshot-modal-item {
+      padding: 8px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    .snapshot-modal-item:hover {
+      background: var(--s2);
+    }
+
+    .snapshot-modal-item-name {
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--text);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .snapshot-modal-item-meta {
+      font-size: 11px;
+      color: var(--text-dim);
+      margin-top: 2px;
     }
 
     .tabs-spacer {
@@ -1051,16 +1076,16 @@
   </header>
 
   <div id="status-strip">
-    <button class="btn" onclick="openStatusModal()">Server status</button>
+    <button class="btn" onclick="openStatusModal()">Status</button>
     <button class="btn" onclick="onEditConfigClick()">Edit config</button>
-    <button class="btn" onclick="onReloadClick()">Reload</button>
     <button class="btn" onclick="onNewSessionClick()">New session</button>
+    <button class="btn" id="load-snapshot-btn" onclick="openSnapshotModal()">Load snapshot</button>
   </div>
 
   <div id="status-modal-overlay" class="modal-overlay hidden" onclick="if (event.target === this) closeStatusModal()">
     <div class="modal-box">
       <div class="modal-head">
-        <span>Server status</span>
+        <span>Status</span>
       </div>
       <div id="status-modal-body"></div>
       <div class="modal-actions">
@@ -1119,6 +1144,19 @@
       <div id="checkpoint-modal-list" class="checkpoint-modal-list"></div>
       <div class="modal-actions">
         <button class="btn" onclick="closeCheckpointModal()">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="snapshot-modal-overlay" class="modal-overlay hidden" onclick="if (event.target === this) closeSnapshotModal()">
+    <div class="modal-box">
+      <div class="modal-head">
+        <span>Load from snapshot</span>
+      </div>
+      <div id="snapshot-modal-list" class="checkpoint-modal-list"></div>
+      <div id="snapshot-modal-error" class="modal-error"></div>
+      <div class="modal-actions">
+        <button class="btn" onclick="closeSnapshotModal()">Cancel</button>
       </div>
     </div>
   </div>
@@ -1219,6 +1257,10 @@
       // whether the checkpoint picker modal is open, so the 2s poll knows
       // whether to keep its list live.
       checkpointModalOpen: false,
+      // whether the load-from-snapshot modal is open.
+      snapshotModalOpen: false,
+      // catalog last fetched by openSnapshotModal.
+      snapshotCatalog: [],
       // session_ids with a delete request in flight.
       deletingSessions: new Set(),
       // session_ids with a chat request in flight.
@@ -1373,6 +1415,8 @@
       setLabel: (sessionId, label) => postJson(`/api/sessions/${sessionId}/label`, { label }),
       snapshot: sessionId => postJson(`/api/sessions/${sessionId}/snapshot`, undefined),
       createSession: () => postJson('/api/sessions', undefined),
+      listSnapshots: () => fetchJson('/api/snapshots'),
+      restoreSession: path => postJson('/api/sessions/restore', { path }),
 
       async fileContent(sessionId, cpId, path) {
         const url = `/api/sessions/${sessionId}/checkpoints/${cpId}/files/${path.split('/').map(encodeURIComponent).join('/')}`;
@@ -1409,7 +1453,7 @@
       const textarea = document.getElementById('config-modal-textarea');
       const error = document.getElementById('config-modal-error');
       error.textContent = '';
-      textarea.value = 'Loading…';
+      textarea.value = 'Loading';
       document.getElementById('config-modal-overlay').classList.remove('hidden');
       try {
         textarea.value = await Api.getConfig();
@@ -1420,10 +1464,6 @@
 
     function closeConfigModal() {
       document.getElementById('config-modal-overlay').classList.add('hidden');
-    }
-
-    function onReloadClick() {
-      location.reload();
     }
 
     async function onNewSessionClick() {
@@ -1526,7 +1566,7 @@
       if (!viewState.statusModalOpen) return;
       const body = document.getElementById('status-modal-body');
       const status = viewState.daemonStatus;
-      if (!status) { body.innerHTML = '<div class="loading-note">Loading…</div>'; return; }
+      if (!status) { body.innerHTML = '<div class="loading-note">Loading</div>'; return; }
 
       const capacity = status.max_sessions
         ? `${status.session_count}/${status.max_sessions} sessions`
@@ -1721,6 +1761,66 @@
       onCheckpointClick(cpId);
     }
 
+    // ── Snapshot modal ───────────────────────────────────────────────────────
+
+    async function openSnapshotModal() {
+      viewState.snapshotModalOpen = true;
+      const list = document.getElementById('snapshot-modal-list');
+      const error = document.getElementById('snapshot-modal-error');
+      error.textContent = '';
+      list.innerHTML = '<div class="loading-note">Loading</div>';
+      document.getElementById('snapshot-modal-overlay').classList.remove('hidden');
+      try {
+        viewState.snapshotCatalog = await Api.listSnapshots();
+      } catch (e) {
+        viewState.snapshotCatalog = [];
+        error.textContent = `Failed to load snapshots: ${e.message}`;
+      }
+      renderSnapshotModalList();
+    }
+
+    function closeSnapshotModal() {
+      viewState.snapshotModalOpen = false;
+      document.getElementById('snapshot-modal-overlay').classList.add('hidden');
+    }
+
+    function renderSnapshotModalList() {
+      if (!viewState.snapshotModalOpen) return;
+      const list = document.getElementById('snapshot-modal-list');
+      if (viewState.snapshotCatalog.length === 0) {
+        list.innerHTML = '<div class="loading-note">No snapshots found.</div>';
+        return;
+      }
+      list.innerHTML = viewState.snapshotCatalog.map(entry => {
+        const name = entry.label ? escHtml(entry.label) : escHtml(entry.path.split('/').pop());
+        const checkpoints = `${entry.checkpoint_count} checkpoint${entry.checkpoint_count === 1 ? '' : 's'}`;
+        return `
+          <div class="snapshot-modal-item" onclick="onSnapshotModalItemClick('${escHtml(entry.path)}')" title="${escHtml(entry.path)}">
+            <div class="snapshot-modal-item-name">${name}</div>
+            <div class="snapshot-modal-item-meta">${fmtBytes(entry.size_bytes)} · ${checkpoints}</div>
+          </div>`;
+      }).join('');
+    }
+
+    async function onSnapshotModalItemClick(path) {
+      closeSnapshotModal();
+      const btn = document.getElementById('load-snapshot-btn');
+      const originalText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = 'Loading';
+      try {
+        const restored = await Api.restoreSession(path);
+        await refresh();
+        await onSessionClick(restored.session_id);
+      } catch (e) {
+        console.error('Failed to load snapshot:', e);
+        alert(`Failed to load snapshot: ${e.message}`);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = originalText;
+      }
+    }
+
     // ── Rendering: checkpoint steps tab ─────────────────────────────────────────
 
     function renderCheckpointSteps() {
@@ -1806,7 +1906,7 @@
       const body = document.getElementById('output-body');
       if (!cached) {
         viewState.lastRenderedOutput = null;
-        body.innerHTML = '<div class="loading-note">Loading…</div>';
+        body.innerHTML = '<div class="loading-note">Loading</div>';
         return;
       }
 
@@ -1922,7 +2022,7 @@
 
       if (!cached?.files) {
         viewState.lastRenderedFilesTree = null;
-        tree.innerHTML = '<div class="loading-note">Loading…</div>';
+        tree.innerHTML = '<div class="loading-note">Loading</div>';
         toggleAllBtn.style.display = 'none';
         return;
       }
@@ -1995,7 +2095,7 @@
     // show yet (still loading) or nothing changed. Shared by the no-file-selected
     // default (whole checkpoint) and the per-file diff under a file's preview.
     function diffBlockHtml(diffText, emptyMessage) {
-      if (diffText === undefined) return '<div class="loading-note">Loading…</div>';
+      if (diffText === undefined) return '<div class="loading-note">Loading</div>';
       if (!diffText) return `<div class="file-preview-body"><span class="output-empty">${escHtml(emptyMessage)}</span></div>`;
       const lines = diffText.split('\n').map(line => {
         if (line.startsWith('+++ ') || line.startsWith('--- ')) return `<span class="diff-line meta">${escHtml(line)}</span>`;
@@ -2030,7 +2130,7 @@
           `<div class="file-preview-diff-label">Diff from previous checkpoint</div>`
           + diffBlockHtml(fileDiff, 'No changes from the previous checkpoint');
       } else if (fileState === undefined) {
-        bodyHtml = '<div class="loading-note">Loading…</div>';
+        bodyHtml = '<div class="loading-note">Loading</div>';
       } else if (fileState.kind === 'image') {
         bodyHtml = `<div class="file-preview-body"><img class="file-preview-image" src="${fileState.url}" alt="${escHtml(viewState.selectedFilePath)}"></div>`;
       } else if (fileState.kind === 'pdf') {

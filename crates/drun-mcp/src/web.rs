@@ -54,6 +54,8 @@ impl WebServer {
             )
             .route("/api/sessions/tree", get(Self::handle_session_tree))
             .route("/api/sessions", post(Self::handle_session_create))
+            .route("/api/snapshots", get(Self::handle_list_snapshots))
+            .route("/api/sessions/restore", post(Self::handle_session_restore))
             .route(
                 "/api/sessions/{session_id}/live",
                 get(Self::handle_live_output),
@@ -330,6 +332,42 @@ impl WebServer {
             }
         };
         match app.handler.insert_session(session) {
+            Ok((session_id, arc)) => {
+                let session = DrunHandler::lock_recovering(&session_id, &arc);
+                let state = state::SessionState::compute(&session_id, &session, None);
+                Self::json_response(&state)
+            }
+            Err(max) => (
+                StatusCode::TOO_MANY_REQUESTS,
+                format!("session limit reached (max {max})"),
+            )
+                .into_response(),
+        }
+    }
+
+    async fn handle_list_snapshots(State(app): State<AppState>) -> Response {
+        let snapshots_dir = app.handler.config.get().snapshots_dir;
+        Self::json_response(&state::SnapshotEntry::catalog(&snapshots_dir))
+    }
+
+    async fn handle_session_restore(
+        State(app): State<AppState>,
+        Json(body): Json<RestoreRequest>,
+    ) -> Response {
+        let bytes = match std::fs::read(&body.path) {
+            Ok(bytes) => bytes,
+            Err(error) => return (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
+        };
+        let snapshot = match drun_core::SessionSnapshot::decode(&bytes) {
+            Ok(snapshot) => snapshot,
+            Err(error) => return (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
+        };
+        let restored = match drun_core::Session::from_snapshot(app.handler.config.clone(), snapshot)
+        {
+            Ok(restored) => restored,
+            Err(error) => return (StatusCode::BAD_REQUEST, error.to_string()).into_response(),
+        };
+        match app.handler.insert_session(restored) {
             Ok((session_id, arc)) => {
                 let session = DrunHandler::lock_recovering(&session_id, &arc);
                 let state = state::SessionState::compute(&session_id, &session, None);
@@ -686,6 +724,11 @@ struct RollbackRequest {
 #[derive(Deserialize)]
 struct LabelRequest {
     label: String,
+}
+
+#[derive(Deserialize)]
+struct RestoreRequest {
+    path: String,
 }
 
 #[derive(Deserialize)]
@@ -1323,6 +1366,75 @@ mod tests {
 
         assert_eq!(response.status(), StatusCode::OK);
         assert!(dir.path().join("s1.drun").exists());
+    }
+
+    #[tokio::test]
+    async fn handle_list_snapshots_returns_the_catalog_for_the_configured_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = Session::new(Config::default().into()).unwrap();
+        source
+            .snapshot()
+            .write(&dir.path().join("s1.drun"))
+            .unwrap();
+        let config = Config {
+            snapshots_dir: dir.path().to_path_buf(),
+            ..Config::default()
+        };
+        let state = AppState {
+            handler: test_handler(session_map(vec![]), config),
+            mcp_port: crate::Env::DEFAULT_MCP_PORT,
+            web_port: 7274,
+            started_at: Instant::now(),
+        };
+
+        let response = WebServer::handle_list_snapshots(State(state)).await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = body_string(response).await;
+        assert!(body.contains("s1.drun"));
+    }
+
+    #[tokio::test]
+    async fn handle_session_restore_recreates_a_session_from_a_snapshot_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut source = Session::new(Config::default().into()).unwrap();
+        source
+            .write_files(
+                vec![("a.txt".to_string(), b"hi".to_vec())],
+                "session_write_file",
+                None,
+            )
+            .unwrap();
+        let snapshot_path = dir.path().join("original.drun");
+        source.snapshot().write(&snapshot_path).unwrap();
+        let sessions = session_map(vec![]);
+        let state = app_state(sessions.clone());
+
+        let response = WebServer::handle_session_restore(
+            State(state),
+            Json(RestoreRequest {
+                path: snapshot_path.to_string_lossy().into_owned(),
+            }),
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(sessions.lock().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn handle_session_restore_returns_400_for_a_missing_file() {
+        let state = app_state(session_map(vec![]));
+
+        let response = WebServer::handle_session_restore(
+            State(state),
+            Json(RestoreRequest {
+                path: "/nonexistent/path.drun".to_string(),
+            }),
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]

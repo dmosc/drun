@@ -57,7 +57,12 @@ class ChatCommand:
         )
         chat.add_argument(
             "--session-id", default=None, metavar="ID",
-            help="Attach to an existing session instead of creating a new one",
+            help=(
+                "Attach to an existing session instead of creating a new one. "
+                "If no such session is currently active in the daemon, falls "
+                "back to loading a matching <id>.drun file from the server's "
+                "configured snapshots directory."
+            ),
         )
         chat.add_argument(
             "--mount", action="append", default=[], metavar="PATH",
@@ -130,7 +135,8 @@ class ChatCommand:
         try:
             await bridge.call("session_chat_record", {"prompt": prompt, "response": response})
         except Exception as exc:
-            print(f"warning: failed to record chat turn: {exc}", file=sys.stderr)
+            print(
+                f"warning: failed to record chat turn: {exc}", file=sys.stderr)
 
 
 def main() -> None:

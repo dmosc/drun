@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from contextlib import AsyncExitStack
 from typing import TYPE_CHECKING, Any
 
@@ -130,11 +131,22 @@ re-pass session_id yourself.
 
     async def _resolve_session_id(self) -> str:
         if self._requested_session_id is not None:
-            # Fails fast with a clear daemon error if the session doesn't exist.
-            await self.call("session_switch", {"session_id": self._requested_session_id})
-            return self._requested_session_id
+            try:
+                await self.call("session_switch", {"session_id": self._requested_session_id})
+                return self._requested_session_id
+            except RuntimeError:
+                print(
+                    f'Session {self._requested_session_id} not found in active session; checking in snapshots_dir')
+                config = json.loads(await self.call("get_config"))
+                snapshot_path = os.path.join(
+                    config["snapshots_dir"], f"{self._requested_session_id}.drun")
+                return await self._restore_from_snapshot(snapshot_path)
         created = await self.call("create_session")
         return json.loads(created)["session_id"]
+
+    async def _restore_from_snapshot(self, path: str) -> str:
+        restored = await self.call("session_restore", {"path": path})
+        return json.loads(restored)["session_id"]
 
     def _require_session(self) -> ClientSession:
         if self._session is None:
