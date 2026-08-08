@@ -59,9 +59,14 @@ This installs and configures a few things (skips if not applicable):
 3. `drun-mcp` as a persistent background daemon (`launchd` on macOS, `systemd`
    on Linux) so a single process serves all simultaneous sessions running on the
    host.
+4. `drun-sandbox[chat]` via `pip`, best-effort — powers the
+   [standalone CLI](#standalone-cli) and the web UI's per-session Chat button.
+   Skipped quietly if `pip` isn't on `PATH`; see
+   [Standalone CLI](#standalone-cli) to install it by hand afterward.
 
-`install.sh` only handles the binary and the daemon — it does not wire up any
-agent. Once it's done, point the binary at whichever bridge you use:
+`install.sh` only handles the binary, the daemon, and (best-effort) the chat CLI
+— it does not wire up any agent. Once it's done, point the binary at whichever
+bridge you use:
 
 ```bash
 # Run from a project root — `claude`/`gemini` init are per-project scoped;
@@ -103,6 +108,9 @@ curl -fsSL https://raw.githubusercontent.com/dmosc/drun/main/update.sh | bash
 # Update to a specific version
 curl -fsSL https://raw.githubusercontent.com/dmosc/drun/main/update.sh | bash -s -- v0.3.16
 ```
+
+`update.sh` also upgrades `drun-sandbox[chat]` to its latest version, best-effort,
+if it's already installed — skipped quietly otherwise.
 
 #### Uninstalling
 
@@ -339,9 +347,12 @@ sandboxed session.
 #### Requirements
 
 - Python 3.9+.
-- The `drun-mcp` daemon [installed](#global-install-once-per-machine) above.
+- The `drun-mcp` daemon [installed](#installing) above.
 - [Ollama](https://ollama.com) for local models, or an API key for a cloud
   model.
+
+`install.sh` already installs this if `pip` was on `PATH` — check with
+`command -v drun` before running this by hand:
 
 ```bash
 pip install 'drun-sandbox[chat]'
@@ -491,6 +502,13 @@ to remotely manage drun. Roughly the steps are as follows:
 1. If the command succeeds, your web server UI should be accessible at the
    domain printed in the console by Tailscale.
 
+To drive sessions from your phone via the web UI's
+[Chat button](#chat-from-the-web-ui) — the main point of remote management,
+since it needs no terminal — the host also needs `drun-sandbox[chat]` installed.
+`install.sh` does this automatically when `pip` is on `PATH`; confirm with
+`command -v drun` on the host, or see [Standalone CLI](#standalone-cli) to
+install it by hand.
+
 ### Chat from the web UI
 
 Each session card has a **Chat** button — send it a prompt and the daemon runs
@@ -501,7 +519,7 @@ guardrails as any other bridge. Handy paired with
 without a terminal.
 
 Requires the [standalone CLI](#standalone-cli) installed on the same machine as
-the daemon:
+the daemon — already done by `install.sh` if `pip` was on `PATH`, otherwise:
 
 ```bash
 pip install 'drun-sandbox[chat]'

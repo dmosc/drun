@@ -85,8 +85,33 @@ restart_daemon() {
   esac
 }
 
+# ── standalone chat CLI ───────────────────────────────────────────────────────
+
+update_chat_cli() {
+  if ! command -v drun &>/dev/null; then
+    echo "drun not installed, skipping drun-sandbox[chat] update."
+    return
+  fi
+
+  local pip_cmd
+  pip_cmd="$(command -v pip3 || command -v pip || true)"
+  if [[ -z "$pip_cmd" ]]; then
+    echo "pip not found — skipping drun-sandbox[chat] update."
+    return
+  fi
+
+  echo "Updating drun-sandbox[chat]..."
+  if "$pip_cmd" install --upgrade --quiet --user 'drun-sandbox[chat]'; then
+    echo "drun-sandbox[chat] updated."
+  else
+    echo "Could not update drun-sandbox[chat] automatically."
+    echo "  Update it yourself with: pip install --upgrade 'drun-sandbox[chat]'"
+  fi
+}
+
 # ── main ──────────────────────────────────────────────────────────────────────
 
 detect_platform
 update_binary
 restart_daemon
+update_chat_cli
