@@ -70,17 +70,24 @@ impl DaemonStatus {
     /// Current RSS via the same mach task_info call Activity Monitor uses.
     #[cfg(target_os = "macos")]
     fn current_rss_bytes_macos() -> Option<u64> {
-        let mut info: libc::mach_task_basic_info = unsafe { std::mem::zeroed() };
-        let mut count = libc::MACH_TASK_BASIC_INFO_COUNT;
+        use mach2::kern_return::KERN_SUCCESS;
+        use mach2::task::task_info;
+        use mach2::task_info::{
+            MACH_TASK_BASIC_INFO, MACH_TASK_BASIC_INFO_COUNT, mach_task_basic_info,
+        };
+        use mach2::traps::mach_task_self;
+
+        let mut info: mach_task_basic_info = unsafe { std::mem::zeroed() };
+        let mut count = MACH_TASK_BASIC_INFO_COUNT;
         let result = unsafe {
-            libc::task_info(
-                libc::mach_task_self_,
-                libc::MACH_TASK_BASIC_INFO,
-                &mut info as *mut _ as libc::task_info_t,
+            task_info(
+                mach_task_self(),
+                MACH_TASK_BASIC_INFO,
+                &mut info as *mut _ as *mut _,
                 &mut count,
             )
         };
-        (result == libc::KERN_SUCCESS).then_some(info.resident_size)
+        (result == KERN_SUCCESS).then_some(info.resident_size)
     }
 
     /// Current RSS from the VmRSS line of /proc/self/status.

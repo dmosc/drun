@@ -570,6 +570,7 @@ dependencies = [
  "base64",
  "drun-core",
  "libc",
+ "mach2",
  "reqwest",
  "rust-mcp-sdk",
  "scraper",
@@ -1374,6 +1375,12 @@ name = "mac"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c41e0c4fef86961ac6d6f8a82609f55f31b05e4fce149ac5710e439df7619ba4"
+
+[[package]]
+name = "mach2"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dae608c151f68243f2b000364e1f7b186d9c29845f7d2d85bd31b9ad77ad552b"
 
 [[package]]
 name = "markup5ever"
