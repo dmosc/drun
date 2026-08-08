@@ -131,7 +131,7 @@ impl DrunHandler {
 
         self.with_session_mut(&session_id, |session| {
             session
-                .write_files(files, "session_fetch", None)
+                .write_files(files, "session_fetch", Some(&t.description))
                 .map_err(|e| DrunError::from_exec(e).into_tool_err())?;
             Ok(ResponseBuilder::text(
                 json!({
@@ -312,6 +312,7 @@ mod tests {
             method: None,
             headers: None,
             body: None,
+            description: "test".to_string(),
         }
     }
 

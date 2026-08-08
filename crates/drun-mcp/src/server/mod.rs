@@ -55,8 +55,8 @@ impl ServerHandler for DrunHandler {
             DrunTools::SessionFork(t) => self.handle_session_fork(&connection_id, t),
             DrunTools::SessionList(_) => self.handle_session_list(&connection_id),
             DrunTools::SessionClose(_) => self.handle_session_close(&connection_id),
-            DrunTools::SessionHistory(_) => self.handle_session_history(&connection_id),
-            DrunTools::GetSessionState(_) => self.handle_get_session_state(&connection_id),
+            DrunTools::SessionHistory(t) => self.handle_session_history(&connection_id, t),
+            DrunTools::GetSessionState(t) => self.handle_get_session_state(&connection_id, t),
             DrunTools::SessionBash(t) => {
                 self.handle_session_bash(&connection_id, t, runtime, progress_token)
                     .await

@@ -217,23 +217,6 @@ impl DrunHandler {
             .ok_or_else(|| DrunError::session_not_found(session_id).into_tool_err())
     }
 
-    pub(crate) fn with_session(
-        &self,
-        session_id: &str,
-        f: impl FnOnce(&Session) -> Result<CallToolResult, CallToolError>,
-    ) -> Result<CallToolResult, CallToolError> {
-        let session = self.resolve_session(session_id)?;
-        match session.try_lock() {
-            Ok(guard) => f(&guard),
-            Err(std::sync::TryLockError::WouldBlock) => {
-                Err(DrunError::session_busy(session_id).into_tool_err())
-            }
-            Err(std::sync::TryLockError::Poisoned(poisoned)) => {
-                f(&Self::recover_poison(session_id, poisoned))
-            }
-        }
-    }
-
     pub(crate) fn with_session_mut(
         &self,
         session_id: &str,
@@ -252,15 +235,6 @@ impl DrunHandler {
         self.check_idle(session_id, &guard)?;
         guard.last_activity = std::time::Instant::now();
         f(&mut guard)
-    }
-
-    pub(crate) fn with_current_session(
-        &self,
-        connection_id: &str,
-        f: impl FnOnce(&str, &Session) -> Result<CallToolResult, CallToolError>,
-    ) -> Result<CallToolResult, CallToolError> {
-        let session_id = self.current_sessions.resolve(connection_id)?;
-        self.with_session(&session_id, |session| f(&session_id, session))
     }
 
     pub(crate) fn with_current_session_mut(
@@ -387,74 +361,6 @@ mod tests {
             Arc::new(Mutex::new(Session::new(Config::default().into()).unwrap())),
         );
         (handler, session_id)
-    }
-
-    #[test]
-    fn with_session_returns_session_not_found_for_unknown_id() {
-        let handler = DrunHandler::new(Config::default());
-        let err = handler
-            .with_session("missing", |_session| Ok(ResponseBuilder::text("ok")))
-            .unwrap_err();
-        assert!(err.to_string().contains("session_not_found"));
-    }
-
-    #[test]
-    fn with_session_runs_closure_and_returns_its_result() {
-        let (handler, session_id) = handler_with_session();
-        let result =
-            handler.with_session(&session_id, |_session| Ok(ResponseBuilder::text("hello")));
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn with_session_returns_session_busy_when_session_is_already_locked() {
-        let (handler, session_id) = handler_with_session();
-        let session_arc = handler
-            .sessions
-            .lock()
-            .unwrap()
-            .get(&session_id)
-            .unwrap()
-            .clone();
-        let _guard = session_arc.lock().unwrap(); // simulate an in-flight call
-
-        let err = handler
-            .with_session(&session_id, |_session| Ok(ResponseBuilder::text("ok")))
-            .unwrap_err();
-        assert!(err.to_string().contains("session_busy"));
-    }
-
-    #[test]
-    fn with_session_recovers_from_a_poisoned_lock_instead_of_staying_busy_forever() {
-        let (handler, session_id) = handler_with_session();
-        let session_arc = handler
-            .sessions
-            .lock()
-            .unwrap()
-            .get(&session_id)
-            .unwrap()
-            .clone();
-
-        // Poison the mutex the same way a real bug would: panic while
-        // holding its guard.
-        let arc_for_panic = session_arc.clone();
-        let _ = std::thread::spawn(move || {
-            let _guard = arc_for_panic.lock().unwrap();
-            panic!("simulated panic while holding the session lock");
-        })
-        .join();
-        assert!(session_arc.is_poisoned());
-
-        // Repeated calls must keep recovering and succeeding, not
-        // permanently report session_busy.
-        for _ in 0..2 {
-            let result =
-                handler.with_session(&session_id, |_session| Ok(ResponseBuilder::text("ok")));
-            assert!(
-                result.is_ok(),
-                "a poisoned session must recover, not stay busy forever"
-            );
-        }
     }
 
     #[test]

@@ -23,6 +23,8 @@ pub struct DrunCheckpoint {
     pub tool: Option<String>,
     #[pyo3(get)]
     pub description: Option<String>,
+    #[pyo3(get)]
+    pub steps: Vec<(String, String)>,
 }
 
 impl DrunCheckpoint {
@@ -41,6 +43,11 @@ impl DrunCheckpoint {
             exit_code: c.exit_code,
             tool: c.tool.clone(),
             description: c.description.clone(),
+            steps: c
+                .steps
+                .iter()
+                .map(|s| (s.tool.clone(), s.description.clone()))
+                .collect(),
         }
     }
 }
@@ -64,6 +71,7 @@ mod tests {
             exit_code: Some(0),
             tool: Some("session_bash".to_string()),
             description: Some("checking for stray files".to_string()),
+            steps: Vec::new(),
         };
         let py_checkpoint = DrunCheckpoint::from_checkpoint(&checkpoint);
 

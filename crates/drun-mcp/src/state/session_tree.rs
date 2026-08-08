@@ -1,7 +1,7 @@
 use crate::handler::DrunHandler;
 use crate::live_output::LiveOutputRegistry;
 use crate::state::file_delta::FileDelta;
-use drun_core::{CheckpointRef, Session};
+use drun_core::{CheckpointRef, Session, Step};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -18,6 +18,8 @@ struct CheckpointTreeNode {
     command: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     description: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    steps: Vec<Step>,
     #[serde(skip_serializing_if = "Option::is_none")]
     exit_code: Option<i32>,
     stdout_bytes: usize,
@@ -79,6 +81,7 @@ impl SessionTreeNode {
                     tool: checkpoint.tool.clone(),
                     command: checkpoint.command.clone(),
                     description: checkpoint.description.clone(),
+                    steps: checkpoint.steps.clone(),
                     exit_code: checkpoint.exit_code,
                     stdout_bytes: checkpoint.stdout.len(),
                     stderr_bytes: checkpoint.stderr.len(),

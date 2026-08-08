@@ -101,6 +101,8 @@ pub struct SessionRollback {
     pub checkpoint_id: Option<u64>,
     /// Label of the checkpoint to restore. Takes precedence over checkpoint_id.
     pub checkpoint_label: Option<String>,
+    /// Description documenting the operation.
+    pub description: String,
 }
 
 #[mcp_tool(
@@ -132,6 +134,8 @@ pub struct SessionReadFile {
     /// Case-sensitive regex; when set, returns matching lines within the
     /// offset/limit byte range instead of raw content.
     pub pattern: Option<String>,
+    /// Description documenting the operation.
+    pub description: String,
 }
 
 #[mcp_tool(
@@ -155,6 +159,8 @@ pub struct SessionDiff {
     pub to_checkpoint_label: Option<String>,
     /// Path in the session to diff. Leave emtpy for all.
     pub paths: Option<Vec<String>>,
+    /// Description documenting the operation.
+    pub description: String,
 }
 
 #[mcp_tool(
@@ -172,6 +178,8 @@ pub struct SessionDiff {
 pub struct SessionMount {
     /// Absolute path to a file or directory on the host filesystem.
     pub path: String,
+    /// Description documenting the operation.
+    pub description: String,
 }
 
 #[mcp_tool(
@@ -229,7 +237,10 @@ pub struct SessionClose {}
     read_only_hint = true
 )]
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct SessionHistory {}
+pub struct SessionHistory {
+    /// Description documenting the operation.
+    pub description: String,
+}
 
 #[mcp_tool(
     name = "get_session_state",
@@ -242,7 +253,10 @@ pub struct SessionHistory {}
     read_only_hint = true
 )]
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct GetSessionState {}
+pub struct GetSessionState {
+    /// Description documenting the operation.
+    pub description: String,
+}
 
 #[mcp_tool(
     name = "session_write_file",
@@ -298,6 +312,8 @@ pub struct SessionExport {
     pub output_dir: String,
     /// Specific workspace-relative file keys to export. Omit to export every current file.
     pub keys: Option<Vec<String>>,
+    /// Description documenting the operation.
+    pub description: String,
 }
 
 #[mcp_tool(
@@ -428,6 +444,8 @@ pub struct SessionFetch {
     pub headers: Option<Vec<HttpHeader>>,
     /// Request body for POST/PUT/PATCH.
     pub body: Option<String>,
+    /// Description documenting the operation.
+    pub description: String,
 }
 
 #[mcp_tool(
@@ -465,6 +483,8 @@ pub struct ListSnapshots {}
 pub struct SessionSnapshotTool {
     /// Absolute path for the output .drun file. Defaults to ./drun-snapshots/<session_id>.drun.
     pub path: Option<String>,
+    /// Description documenting the operation.
+    pub description: String,
 }
 
 #[mcp_tool(
@@ -521,6 +541,8 @@ pub struct SessionCheckpointLabel {
     pub checkpoint_id: Option<u64>,
     /// Human-readable label for the checkpoint. Empty string clears the label.
     pub label: String,
+    /// Description documenting the operation.
+    pub description: String,
 }
 
 #[mcp_tool(
@@ -543,6 +565,8 @@ pub struct SessionCheckpointSquash {
     pub to_checkpoint_id: u64,
     /// Optional label to attach to the resulting squashed checkpoint.
     pub label: Option<String>,
+    /// Description documenting the operation.
+    pub description: String,
 }
 
 #[mcp_tool(
@@ -576,6 +600,8 @@ pub struct CheckpointReadStdstreams {
     /// Case-sensitive regex; when set, returns matching lines within the
     /// offset/limit byte range instead of raw content.
     pub pattern: Option<String>,
+    /// Description documenting the operation.
+    pub description: String,
 }
 
 #[mcp_tool(
@@ -595,6 +621,8 @@ pub struct SessionCheckpointDrop {
     pub from_checkpoint_id: u64,
     /// Last checkpoint in the range to drop (inclusive).
     pub to_checkpoint_id: u64,
+    /// Description documenting the operation.
+    pub description: String,
 }
 
 tool_box!(

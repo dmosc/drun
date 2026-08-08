@@ -3,7 +3,7 @@
 
 use crate::interner::Interner;
 use crate::session::Session;
-use crate::{Checkpoint, CheckpointRef, ConfigHandle, FileMap};
+use crate::{Checkpoint, CheckpointRef, ConfigHandle, FileMap, Step};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -28,6 +28,8 @@ pub struct CheckpointRecord {
     pub tool: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    #[serde(default)]
+    pub steps: Vec<Step>,
     pub files: HashMap<String, usize>,
 }
 
@@ -121,6 +123,7 @@ impl SessionSnapshot {
                     exit_code: checkpoint.exit_code,
                     tool: checkpoint.tool.clone(),
                     description: checkpoint.description.clone(),
+                    steps: checkpoint.steps.clone(),
                     files,
                 }
             })
@@ -159,6 +162,7 @@ impl SessionSnapshot {
                     exit_code: record.exit_code,
                     tool: record.tool,
                     description: record.description,
+                    steps: record.steps,
                     files,
                 }
             })
@@ -211,6 +215,7 @@ mod tests {
                     exit_code: None,
                     tool: None,
                     description: None,
+                    steps: Vec::new(),
                     files: HashMap::new(),
                 },
                 CheckpointRecord {
@@ -222,6 +227,10 @@ mod tests {
                     exit_code: Some(0),
                     tool: Some("session_bash".to_string()),
                     description: Some("checking for stray files".to_string()),
+                    steps: vec![Step {
+                        tool: "session_bash".to_string(),
+                        description: "checking for stray files".to_string(),
+                    }],
                     files: [("a.txt".to_string(), 0)].into_iter().collect(),
                 },
             ],

@@ -17,7 +17,7 @@ impl DrunHandler {
         connection_id: &str,
         t: SessionReadFile,
     ) -> Result<CallToolResult, CallToolError> {
-        self.with_current_session(connection_id, |_session_id, session| {
+        self.with_current_session_mut(connection_id, |_session_id, session| {
             let all_bytes = session
                 .current()
                 .files
@@ -31,37 +31,38 @@ impl DrunHandler {
                 .unwrap_or(total);
             let slice = &all_bytes[start..end];
 
-            if let Some(pattern) = &t.pattern {
+            let response = if let Some(pattern) = &t.pattern {
                 let grep = TextParserUtilities::grep(slice, pattern)
                     .map_err(|e| DrunError::from_exec(e.into()).into_tool_err())?;
-                return Ok(ResponseBuilder::text(
+                ResponseBuilder::text(
                     serde_json::json!({
                         "path": t.path,
                         "total_matches": grep.total_matches,
                         "matches": grep.matches,
                     })
                     .to_string(),
-                ));
-            }
-
-            if t.offset.is_none() && t.limit.is_none() {
-                return Ok(ResponseBuilder::file_content(&t.path, all_bytes.as_slice()));
-            }
-            let (content, encoding) = match std::str::from_utf8(slice) {
-                Ok(s) => (s.to_string(), "text"),
-                Err(_) => (BASE64.encode(slice), "base64"),
+                )
+            } else if t.offset.is_none() && t.limit.is_none() {
+                ResponseBuilder::file_content(&t.path, all_bytes.as_slice())
+            } else {
+                let (content, encoding) = match std::str::from_utf8(slice) {
+                    Ok(s) => (s.to_string(), "text"),
+                    Err(_) => (BASE64.encode(slice), "base64"),
+                };
+                ResponseBuilder::text(
+                    serde_json::json!({
+                        "offset": start,
+                        "length": slice.len(),
+                        "total_bytes": total,
+                        "has_more": end < total,
+                        "encoding": encoding,
+                        "content": content,
+                    })
+                    .to_string(),
+                )
             };
-            Ok(ResponseBuilder::text(
-                serde_json::json!({
-                    "offset": start,
-                    "length": slice.len(),
-                    "total_bytes": total,
-                    "has_more": end < total,
-                    "encoding": encoding,
-                    "content": content,
-                })
-                .to_string(),
-            ))
+            session.record_step(None, "session_read_file", &t.description);
+            Ok(response)
         })
     }
 
@@ -122,6 +123,7 @@ impl DrunHandler {
             session
                 .mount(std::path::Path::new(&t.path))
                 .map_err(|e| DrunError::from_exec(e).into_tool_err())?;
+            session.record_step(None, "session_mount", &t.description);
             Ok(ResponseBuilder::json(&SessionState::compute(
                 session_id,
                 session,
@@ -160,7 +162,7 @@ impl DrunHandler {
             .get()
             .check_mount_path(&output_dir)
             .map_err(|e| DrunError::from_exec(e.into()).into_tool_err())?;
-        self.with_session(&session_id, |session| {
+        self.with_session_mut(&session_id, |session| {
             let exported = session
                 .export(&output_dir, t.keys)
                 .map_err(|e| DrunError::from_exec(e).into_tool_err())?;
@@ -168,6 +170,7 @@ impl DrunHandler {
                 .iter()
                 .map(|p| p.to_string_lossy().into_owned())
                 .collect();
+            session.record_step(None, "session_export", &t.description);
             Ok(ResponseBuilder::text(
                 serde_json::json!({
                     "output_dir": output_dir.to_string_lossy(),
@@ -243,6 +246,7 @@ mod tests {
                     offset: None,
                     limit: None,
                     pattern: None,
+                    description: "test".to_string(),
                 },
             )
             .unwrap();
@@ -276,6 +280,7 @@ mod tests {
                     offset: Some(6),
                     limit: Some(5),
                     pattern: None,
+                    description: "test".to_string(),
                 },
             )
             .unwrap();
@@ -312,6 +317,7 @@ mod tests {
                     offset: Some(6),
                     limit: Some(u64::MAX),
                     pattern: None,
+                    description: "test".to_string(),
                 },
             )
             .unwrap();
@@ -348,6 +354,7 @@ mod tests {
                     offset: Some(0),
                     limit: Some(3),
                     pattern: None,
+                    description: "test".to_string(),
                 },
             )
             .unwrap();
@@ -367,6 +374,7 @@ mod tests {
                     offset: None,
                     limit: None,
                     pattern: None,
+                    description: "test".to_string(),
                 },
             )
             .unwrap_err();
@@ -400,6 +408,7 @@ mod tests {
                     offset: None,
                     limit: None,
                     pattern: Some("^ERROR".to_string()),
+                    description: "test".to_string(),
                 },
             )
             .unwrap();
@@ -437,6 +446,7 @@ mod tests {
                     offset: Some(0),
                     limit: Some(6),
                     pattern: Some("match".to_string()),
+                    description: "test".to_string(),
                 },
             )
             .unwrap();
@@ -471,6 +481,7 @@ mod tests {
                     offset: None,
                     limit: None,
                     pattern: Some("(unclosed".to_string()),
+                    description: "test".to_string(),
                 },
             )
             .unwrap_err();
@@ -504,6 +515,7 @@ mod tests {
                     offset: None,
                     limit: None,
                     pattern: Some("anything".to_string()),
+                    description: "test".to_string(),
                 },
             )
             .unwrap_err();
@@ -647,6 +659,7 @@ mod tests {
                 CLIENT,
                 SessionMount {
                     path: source.path().to_string_lossy().into_owned(),
+                    description: "test".to_string(),
                 },
             )
             .unwrap();
@@ -670,6 +683,7 @@ mod tests {
                 CLIENT,
                 SessionMount {
                     path: source.path().to_string_lossy().into_owned(),
+                    description: "test".to_string(),
                 },
             )
             .unwrap_err();
@@ -734,6 +748,7 @@ mod tests {
                 SessionExport {
                     output_dir: "../escape".to_string(),
                     keys: None,
+                    description: "test".to_string(),
                 },
             )
             .unwrap_err();
@@ -754,6 +769,7 @@ mod tests {
                 SessionExport {
                     output_dir: "/tmp/somewhere-else".to_string(),
                     keys: None,
+                    description: "test".to_string(),
                 },
             )
             .unwrap_err();
@@ -790,6 +806,7 @@ mod tests {
                 SessionExport {
                     output_dir: dir.path().join("sub").to_string_lossy().into_owned(),
                     keys: Some(vec!["out.txt".to_string()]),
+                    description: "test".to_string(),
                 },
             )
             .unwrap();
@@ -822,6 +839,7 @@ mod tests {
                 SessionExport {
                     output_dir: dir.path().to_string_lossy().into_owned(),
                     keys: Some(vec!["out.txt".to_string()]),
+                    description: "test".to_string(),
                 },
             )
             .unwrap();

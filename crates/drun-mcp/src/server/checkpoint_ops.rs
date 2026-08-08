@@ -4,7 +4,7 @@ use crate::handler::DrunHandler;
 use crate::state::{CheckpointSummary, SessionState};
 use crate::tools::{
     CheckpointReadStdstreams, SessionCheckpointDrop, SessionCheckpointLabel,
-    SessionCheckpointSquash, SessionDiff, SessionRollback,
+    SessionCheckpointSquash, SessionDiff, SessionHistory, SessionRollback,
 };
 use drun_core::TextParserUtilities;
 use rust_mcp_sdk::schema::{CallToolResult, schema_utils::CallToolError};
@@ -13,8 +13,10 @@ impl DrunHandler {
     pub(super) fn handle_session_history(
         &self,
         connection_id: &str,
+        t: SessionHistory,
     ) -> Result<CallToolResult, CallToolError> {
-        self.with_current_session(connection_id, |_session_id, session| {
+        self.with_current_session_mut(connection_id, |_session_id, session| {
+            session.record_step(None, "session_history", &t.description);
             Ok(ResponseBuilder::json(&CheckpointSummary::history(session)))
         })
     }
@@ -35,6 +37,7 @@ impl DrunHandler {
             session
                 .rollback(checkpoint_id)
                 .map_err(|e| DrunError::from_exec(e).into_tool_err())?;
+            session.record_step(None, "session_rollback", &t.description);
             Ok(ResponseBuilder::json(&SessionState::compute(
                 session_id,
                 session,
@@ -48,7 +51,7 @@ impl DrunHandler {
         connection_id: &str,
         t: SessionDiff,
     ) -> Result<CallToolResult, CallToolError> {
-        self.with_current_session(connection_id, |_session_id, session| {
+        self.with_current_session_mut(connection_id, |_session_id, session| {
             let from = session
                 .resolve_checkpoint(t.from_checkpoint_id, t.from_checkpoint_label.as_deref())
                 .map_err(|e| DrunError::from_exec(e).into_tool_err())?
@@ -60,6 +63,7 @@ impl DrunHandler {
             let diff = session
                 .diff(from, to, t.paths.as_deref().unwrap_or_default())
                 .map_err(|e| DrunError::from_exec(e).into_tool_err())?;
+            session.record_step(None, "session_diff", &t.description);
             Ok(ResponseBuilder::text(if diff.is_empty() {
                 "no changes".into()
             } else {
@@ -81,6 +85,7 @@ impl DrunHandler {
             session
                 .set_checkpoint_label(checkpoint_id, t.label)
                 .map_err(|e| DrunError::from_exec(e).into_tool_err())?;
+            session.record_step(Some(checkpoint_id), "session_checkpoint_label", &t.description);
             Ok(ResponseBuilder::json(&CheckpointSummary::history(session)))
         })
     }
@@ -91,13 +96,11 @@ impl DrunHandler {
         t: SessionCheckpointSquash,
     ) -> Result<CallToolResult, CallToolError> {
         self.with_current_session_mut(connection_id, |_session_id, session| {
+            let from_id = t.from_checkpoint_id as usize;
             session
-                .squash_checkpoints(
-                    t.from_checkpoint_id as usize,
-                    t.to_checkpoint_id as usize,
-                    t.label,
-                )
+                .squash_checkpoints(from_id, t.to_checkpoint_id as usize, t.label)
                 .map_err(|e| DrunError::from_exec(e).into_tool_err())?;
+            session.record_step(Some(from_id), "session_checkpoint_squash", &t.description);
             Ok(ResponseBuilder::json(&CheckpointSummary::history(session)))
         })
     }
@@ -111,6 +114,7 @@ impl DrunHandler {
             session
                 .drop_checkpoints(t.from_checkpoint_id as usize, t.to_checkpoint_id as usize)
                 .map_err(|e| DrunError::from_exec(e).into_tool_err())?;
+            session.record_step(None, "session_checkpoint_drop", &t.description);
             Ok(ResponseBuilder::json(&CheckpointSummary::history(session)))
         })
     }
@@ -120,7 +124,7 @@ impl DrunHandler {
         connection_id: &str,
         t: CheckpointReadStdstreams,
     ) -> Result<CallToolResult, CallToolError> {
-        self.with_current_session(connection_id, |_session_id, session| {
+        self.with_current_session_mut(connection_id, |_session_id, session| {
             let checkpoint_id = t
                 .checkpoint_id
                 .map(|id| id as usize)
@@ -150,11 +154,11 @@ impl DrunHandler {
                 .map(|l| start.saturating_add(l as usize).min(total))
                 .unwrap_or(total);
 
-            if let Some(pattern) = &t.pattern {
+            let response = if let Some(pattern) = &t.pattern {
                 let slice = &content.as_bytes()[start..end];
                 let grep = TextParserUtilities::grep(slice, pattern)
                     .map_err(|e| DrunError::from_exec(e.into()).into_tool_err())?;
-                return Ok(ResponseBuilder::text(
+                ResponseBuilder::text(
                     serde_json::json!({
                         "stream": stream,
                         "checkpoint_id": checkpoint_id,
@@ -162,22 +166,24 @@ impl DrunHandler {
                         "matches": grep.matches,
                     })
                     .to_string(),
-                ));
-            }
-
-            Ok(ResponseBuilder::text(
-                serde_json::json!({
-                    "stream": stream,
-                    "checkpoint_id": checkpoint_id,
-                    "exit_code": checkpoint.exit_code,
-                    "offset": start,
-                    "length": end - start,
-                    "total_bytes": total,
-                    "has_more": end < total,
-                    "content": &content[start..end],
-                })
-                .to_string(),
-            ))
+                )
+            } else {
+                ResponseBuilder::text(
+                    serde_json::json!({
+                        "stream": stream,
+                        "checkpoint_id": checkpoint_id,
+                        "exit_code": checkpoint.exit_code,
+                        "offset": start,
+                        "length": end - start,
+                        "total_bytes": total,
+                        "has_more": end < total,
+                        "content": &content[start..end],
+                    })
+                    .to_string(),
+                )
+            };
+            session.record_step(None, "checkpoint_read_stdstreams", &t.description);
+            Ok(response)
         })
     }
 }
@@ -192,7 +198,14 @@ mod tests {
     fn session_history_returns_the_checkpoint_list_for_a_session() {
         let handler = DrunHandler::new(Config::default());
         insert_current_session(&handler, "s1");
-        let result = handler.handle_session_history(CLIENT).unwrap();
+        let result = handler
+            .handle_session_history(
+                CLIENT,
+                SessionHistory {
+                    description: "test".to_string(),
+                },
+            )
+            .unwrap();
         assert!(result_text(&result).contains("checkpoint_id"));
     }
 
@@ -206,6 +219,7 @@ mod tests {
                 SessionRollback {
                     checkpoint_id: None,
                     checkpoint_label: None,
+                    description: "test".to_string(),
                 },
             )
             .unwrap_err();
@@ -240,6 +254,7 @@ mod tests {
                 SessionRollback {
                     checkpoint_id: Some(0),
                     checkpoint_label: None,
+                    description: "test".to_string(),
                 },
             )
             .unwrap();
@@ -257,6 +272,7 @@ mod tests {
                 SessionRollback {
                     checkpoint_id: Some(99),
                     checkpoint_label: None,
+                    description: "test".to_string(),
                 },
             )
             .unwrap_err();
@@ -291,6 +307,7 @@ mod tests {
                     to_checkpoint_id: None,
                     to_checkpoint_label: None,
                     paths: None,
+                    description: "test".to_string(),
                 },
             )
             .unwrap();
@@ -311,6 +328,7 @@ mod tests {
                     to_checkpoint_id: Some(0),
                     to_checkpoint_label: None,
                     paths: None,
+                    description: "test".to_string(),
                 },
             )
             .unwrap();
@@ -349,6 +367,7 @@ mod tests {
                     to_checkpoint_id: None,
                     to_checkpoint_label: None,
                     paths: Some(vec!["a.txt".to_string()]),
+                    description: "test".to_string(),
                 },
             )
             .unwrap();
@@ -382,6 +401,7 @@ mod tests {
                 SessionCheckpointLabel {
                     checkpoint_id: None,
                     label: "milestone".to_string(),
+                    description: "test".to_string(),
                 },
             )
             .unwrap();
@@ -425,6 +445,7 @@ mod tests {
                     from_checkpoint_id: 1,
                     to_checkpoint_id: 2,
                     label: Some("squashed".to_string()),
+                    description: "test".to_string(),
                 },
             )
             .unwrap();
@@ -460,6 +481,7 @@ mod tests {
                 SessionCheckpointDrop {
                     from_checkpoint_id: 1,
                     to_checkpoint_id: 1,
+                    description: "test".to_string(),
                 },
             )
             .unwrap();
@@ -482,6 +504,7 @@ mod tests {
                     offset: None,
                     limit: None,
                     pattern: None,
+                    description: "test".to_string(),
                 },
             )
             .unwrap_err();
@@ -501,6 +524,7 @@ mod tests {
                     offset: None,
                     limit: None,
                     pattern: None,
+                    description: "test".to_string(),
                 },
             )
             .unwrap();
@@ -523,6 +547,7 @@ mod tests {
                     offset: None,
                     limit: None,
                     pattern: None,
+                    description: "test".to_string(),
                 },
             )
             .unwrap_err();
@@ -543,6 +568,7 @@ mod tests {
                     offset: Some(0),
                     limit: Some(u64::MAX),
                     pattern: None,
+                    description: "test".to_string(),
                 },
             )
             .unwrap();
@@ -564,6 +590,7 @@ mod tests {
                     offset: None,
                     limit: None,
                     pattern: Some("ERROR".to_string()),
+                    description: "test".to_string(),
                 },
             )
             .unwrap();
@@ -585,6 +612,7 @@ mod tests {
                     offset: None,
                     limit: None,
                     pattern: Some("(unclosed".to_string()),
+                    description: "test".to_string(),
                 },
             )
             .unwrap_err();

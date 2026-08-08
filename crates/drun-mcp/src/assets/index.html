@@ -587,6 +587,53 @@
       gap: 10px;
     }
 
+    .steps-list {
+      display: flex;
+      flex-direction: column;
+      margin-top: 12px;
+      max-height: 450px;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+    }
+
+    .step-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px 12px;
+      align-items: baseline;
+      padding: 8px 0;
+      border-top: 1px solid var(--border);
+    }
+
+    .step-row:first-child {
+      border-top: none;
+      padding-top: 0;
+    }
+
+    .step-index {
+      flex: 0 0 auto;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--text-dim);
+      white-space: nowrap;
+    }
+
+    .step-tool {
+      flex: 0 0 auto;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--accent);
+      white-space: nowrap;
+    }
+
+    .step-description {
+      flex-basis: 100%;
+      color: var(--text-dim);
+      font-size: 12px;
+      line-height: 1.5;
+      overflow-wrap: break-word;
+    }
+
     /* ── Columns ───────────────────────────────────────────────────────── */
     .files-columns {
       display: grid;
@@ -1045,13 +1092,13 @@
         </div>
 
         <div class="tabs-head">
-          <button class="tab-btn" data-tab="info" onclick="onTabClick('info')">Info</button>
+          <button class="tab-btn" data-tab="steps" onclick="onTabClick('steps')">Steps</button>
           <button class="tab-btn" data-tab="output" onclick="onTabClick('output')">Output</button>
           <button class="tab-btn" data-tab="files" onclick="onTabClick('files')">Filesystem</button>
         </div>
 
-        <div class="tab-body" data-tab="info">
-          <div id="checkpoint-info-body"></div>
+        <div class="tab-body" data-tab="steps">
+          <div id="checkpoint-steps-body"></div>
         </div>
 
         <div class="tab-body" data-tab="output">
@@ -1090,8 +1137,8 @@
       selectedSessionId: null,
       checkpointHistory: [],
       selectedCpId: null,
-      // 'info' | 'output' | 'files' — which workspace tab is showing.
-      activeTab: 'info',
+      // 'steps' | 'output' | 'files' — which workspace tab is showing.
+      activeTab: 'steps',
       selectedFilePath: null,
       // 'content' | 'diff' — which view the selected file is showing.
       filePreviewMode: 'content',
@@ -1568,7 +1615,13 @@
 
     function renderCheckpointButton() {
       const cpId = viewState.selectedCpId;
-      document.getElementById('checkpoint-picker-btn').textContent = cpId != null ? `Checkpoint ${cpId}` : 'Checkpoint';
+      let text = 'Checkpoint';
+      if (cpId != null) {
+        const session = findSession(viewState.selectedSessionId);
+        const total = session?.checkpoints.length - 1;
+        text = `Checkpoint ${cpId} / ${total}`;
+      }
+      document.getElementById('checkpoint-picker-btn').textContent = text;
     }
 
     function renderCheckpointModalList() {
@@ -1600,39 +1653,25 @@
       onCheckpointClick(cpId);
     }
 
-    // ── Rendering: checkpoint info tab ──────────────────────────────────────────
+    // ── Rendering: checkpoint steps tab ─────────────────────────────────────────
 
-    function renderCheckpointInfo() {
+    function renderCheckpointSteps() {
       const cpId = viewState.selectedCpId;
       const sessionId = viewState.selectedSessionId;
-      const body = document.getElementById('checkpoint-info-body');
+      const body = document.getElementById('checkpoint-steps-body');
       if (cpId == null || !sessionId) { body.innerHTML = ''; return; }
 
-      const session = findSession(sessionId);
-      const treeCp = session?.checkpoints.find(c => c.checkpoint_id === cpId);
       const hist = viewState.checkpointHistory.find(h => h.checkpoint_id === cpId);
-      const labelSuffix = treeCp?.label ? ` "${escHtml(treeCp.label)}"` : '';
-      const toolSuffix = hist?.tool ? ` ${escHtml(hist.tool)}` : '';
+      const steps = hist?.steps || [];
 
-      const descriptionHtml = hist?.description
-        ? `<div class="context-description" title="${escHtml(hist.description)}">${escHtml(hist.description)}</div>` : '';
-
-      const delta = hist ? [
-        hist.files_added_count > 0 ? `<span class="sigil-a">+${hist.files_added_count} added</span>` : '',
-        hist.files_modified_count > 0 ? `<span class="sigil-m">~${hist.files_modified_count} modified</span>` : '',
-        hist.files_removed_count > 0 ? `<span class="sigil-r">-${hist.files_removed_count} removed</span>` : '',
-      ].filter(Boolean) : [];
-
-      const statsHtml = hist ? `
-        <div class="cp-info-stats">
-          <span>${hist.file_count} files total</span>
-          ${delta.length ? `<span class="cp-info-delta">${delta.join('')}</span>` : ''}
-        </div>` : '';
-
-      body.innerHTML = `
-        <div class="mono-id">${labelSuffix}${toolSuffix}</div>
-        ${descriptionHtml}
-        ${statsHtml}`;
+      body.innerHTML = steps.length
+        ? `<div class="steps-list">${steps.map((s, i) => `
+            <div class="step-row">
+              <span class="step-index">${i + 1}</span>
+              <span class="step-tool">${escHtml(s.tool)}</span>
+              <span class="step-description">${escHtml(s.description)}</span>
+            </div>`).reverse().join('')}</div>`
+        : '<div class="context-description">No steps recorded on this checkpoint yet</div>';
     }
 
     // Fork/rollback actions, rendered into the tabs-head bar (right of the tabs).
@@ -1947,7 +1986,7 @@
       const cached = viewState.outputCache.get(cacheKey);
       const hist = viewState.checkpointHistory.find(h => h.checkpoint_id === cpId);
 
-      renderCheckpointInfo();
+      renderCheckpointSteps();
       renderCheckpointActions();
       applyActiveTab();
 

@@ -2,7 +2,7 @@ use crate::ResponseBuilder;
 use crate::errors::DrunError;
 use crate::handler::{self, DrunHandler};
 use crate::state::{SessionState, SessionSummary, SessionTreeNode};
-use crate::tools::{SessionFork, SessionLabel, SessionMerge, SessionSwitch};
+use crate::tools::{GetSessionState, SessionFork, SessionLabel, SessionMerge, SessionSwitch};
 use drun_core::Session;
 use rust_mcp_sdk::schema::{CallToolResult, schema_utils::CallToolError};
 
@@ -90,8 +90,10 @@ impl DrunHandler {
     pub(super) fn handle_get_session_state(
         &self,
         connection_id: &str,
+        t: GetSessionState,
     ) -> Result<CallToolResult, CallToolError> {
-        self.with_current_session(connection_id, |session_id, session| {
+        self.with_current_session_mut(connection_id, |session_id, session| {
+            session.record_step(None, "get_session_state", &t.description);
             Ok(ResponseBuilder::json(&SessionState::compute(
                 session_id, session, None,
             )))
@@ -413,7 +415,14 @@ mod tests {
     #[test]
     fn get_session_state_returns_no_active_session_without_a_current_session() {
         let handler = DrunHandler::new(Config::default());
-        let err = handler.handle_get_session_state(CLIENT).unwrap_err();
+        let err = handler
+            .handle_get_session_state(
+                CLIENT,
+                GetSessionState {
+                    description: "test".to_string(),
+                },
+            )
+            .unwrap_err();
         assert!(err.to_string().contains("no_active_session"));
     }
 
@@ -421,7 +430,14 @@ mod tests {
     fn get_session_state_reports_the_current_checkpoint() {
         let handler = DrunHandler::new(Config::default());
         insert_current_session(&handler, "s1");
-        let result = handler.handle_get_session_state(CLIENT).unwrap();
+        let result = handler
+            .handle_get_session_state(
+                CLIENT,
+                GetSessionState {
+                    description: "test".to_string(),
+                },
+            )
+            .unwrap();
         assert_eq!(result_json(&result)["checkpoint_id"], 0);
     }
 

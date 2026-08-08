@@ -68,11 +68,12 @@ impl DrunHandler {
             std::fs::create_dir_all(parent_dir)
                 .map_err(|e| DrunError::internal(e).into_tool_err())?;
         }
-        self.with_session(&session_id, |session| {
+        self.with_session_mut(&session_id, |session| {
             session
                 .snapshot()
                 .write(&output_path)
                 .map_err(|e| DrunError::internal(e).into_tool_err())?;
+            session.record_step(None, "session_snapshot", &t.description);
             Ok(ResponseBuilder::text(
                 serde_json::json!({
                     "snapshot_path": output_path.to_string_lossy(),
@@ -231,6 +232,7 @@ mod tests {
                 CLIENT,
                 SessionSnapshotTool {
                     path: Some("../escape.drun".to_string()),
+                    description: "test".to_string(),
                 },
             )
             .unwrap_err();
@@ -250,6 +252,7 @@ mod tests {
                 CLIENT,
                 SessionSnapshotTool {
                     path: Some("/tmp/somewhere-else.drun".to_string()),
+                    description: "test".to_string(),
                 },
             )
             .unwrap_err();
@@ -267,7 +270,13 @@ mod tests {
         insert_current_session(&handler, "s1");
 
         handler
-            .handle_session_snapshot(CLIENT, SessionSnapshotTool { path: None })
+            .handle_session_snapshot(
+                CLIENT,
+                SessionSnapshotTool {
+                    path: None,
+                    description: "test".to_string(),
+                },
+            )
             .unwrap();
 
         assert!(dir.path().join("s1.drun").exists());
@@ -293,6 +302,7 @@ mod tests {
                             .to_string_lossy()
                             .into_owned(),
                     ),
+                    description: "test".to_string(),
                 },
             )
             .unwrap();

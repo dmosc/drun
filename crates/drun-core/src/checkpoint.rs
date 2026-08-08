@@ -6,6 +6,13 @@ use std::sync::Arc;
 
 pub type FileMap = HashMap<String, Arc<Vec<u8>>>;
 
+/// Tool call steps within a checkpoint.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Step {
+    pub tool: String,
+    pub description: String,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Checkpoint {
     pub id: usize,
@@ -22,6 +29,8 @@ pub struct Checkpoint {
     pub tool: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    #[serde(default)]
+    pub steps: Vec<Step>,
 }
 
 impl Checkpoint {
@@ -36,6 +45,7 @@ impl Checkpoint {
             exit_code: None,
             tool: None,
             description: None,
+            steps: Vec::new(),
         }
     }
 }

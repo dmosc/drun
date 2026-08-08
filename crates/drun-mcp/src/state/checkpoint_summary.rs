@@ -1,5 +1,5 @@
 use crate::state::file_delta::FileDelta;
-use drun_core::Session;
+use drun_core::{Session, Step};
 use serde::Serialize;
 
 #[derive(Debug, PartialEq, Serialize)]
@@ -15,6 +15,8 @@ pub(crate) struct CheckpointSummary {
     tool: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     description: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    steps: Vec<Step>,
     stdout_bytes: usize,
     stderr_bytes: usize,
     file_count: usize,
@@ -43,6 +45,7 @@ impl CheckpointSummary {
                     exit_code: checkpoint.exit_code,
                     tool: checkpoint.tool.clone(),
                     description: checkpoint.description.clone(),
+                    steps: checkpoint.steps.clone(),
                     stdout_bytes: checkpoint.stdout.len(),
                     stderr_bytes: checkpoint.stderr.len(),
                     file_count: checkpoint.files.len(),
@@ -82,6 +85,7 @@ mod tests {
                     exit_code: None,
                     tool: None,
                     description: None,
+                    steps: Vec::new(),
                     files: HashMap::new(),
                 },
                 CheckpointRecord {
@@ -93,6 +97,7 @@ mod tests {
                     exit_code: None,
                     tool: None,
                     description: None,
+                    steps: Vec::new(),
                     files: HashMap::new(),
                 },
             ],

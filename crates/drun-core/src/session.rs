@@ -7,7 +7,7 @@ use crate::sandbox::Sandbox;
 use crate::snapshot::SessionSnapshot;
 use crate::text_parser_utilities::TextParserUtilities;
 use crate::workspace::Workspace;
-use crate::{Checkpoint, CheckpointRef, FileMap};
+use crate::{Checkpoint, CheckpointRef, FileMap, Step};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -471,6 +471,10 @@ impl Session {
             .join(" && ");
         let terminal_files = self.checkpoints[to_id].files.clone();
         let terminal_exit_code = self.checkpoints[to_id].exit_code;
+        let all_checkpoint_steps: Vec<Step> = self.checkpoints[from_id..=to_id]
+            .iter()
+            .flat_map(|c| c.steps.iter().cloned())
+            .collect();
         let squashed = Checkpoint {
             id: from_id,
             stdout: combined_stdout,
@@ -481,6 +485,7 @@ impl Session {
             exit_code: terminal_exit_code,
             tool: Some("session_checkpoint_squash".to_string()),
             description: None,
+            steps: all_checkpoint_steps,
         };
         let removed_count = to_id - from_id;
         self.checkpoints
@@ -671,12 +676,30 @@ impl Session {
             exit_code: outcome.exit_code,
             tool: Some(tool.to_string()),
             description: description.map(str::to_string),
+            steps: vec![Step {
+                tool: tool.to_string(),
+                description: description.unwrap_or_default().to_string(),
+            }],
         });
         self.checkpoint_idx = id;
         if discarding_forward_history {
             self.interner.retain(&self.checkpoints);
         }
         Ok(self.checkpoints.last().unwrap())
+    }
+
+    /// Appends a step to `checkpoint_id`, or the current checkpoint if
+    /// omitted. Pass an explicit id for tool calls whose target is
+    /// independent of the session head (e.g. session_checkpoint_label);
+    /// omit it for everything else. No-ops if the checkpoint doesn't exist.
+    pub fn record_step(&mut self, checkpoint_id: Option<usize>, tool: &str, description: &str) {
+        let idx = checkpoint_id.unwrap_or(self.checkpoint_idx);
+        if let Some(checkpoint) = self.checkpoints.get_mut(idx) {
+            checkpoint.steps.push(Step {
+                tool: tool.to_string(),
+                description: description.to_string(),
+            });
+        }
     }
 
     fn check_checkpoint_limit(&self) -> anyhow::Result<()> {
@@ -1544,6 +1567,7 @@ mod tests {
                 exit_code: None,
                 tool: None,
                 description: None,
+                steps: Vec::new(),
             }
         );
     }
