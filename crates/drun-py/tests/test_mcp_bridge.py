@@ -141,6 +141,7 @@ async def test_call_before_entering_the_bridge_raises():
 async def test_bootstrap_creates_a_session_and_mounts_paths_when_no_session_id_is_given():
     session = FakeSession(results={
         "create_session": ok_result(json.dumps({"session_id": "s1"})),
+        "session_history": ok_result("[]"),
         "session_mount": ok_result(),
     })
     bridge = bridge_with(session, mounts=["/tmp/data"])
@@ -150,6 +151,8 @@ async def test_bootstrap_creates_a_session_and_mounts_paths_when_no_session_id_i
     assert bridge.session_id == "s1"
     assert session.calls == [
         ("create_session", {}),
+        ("session_history", {
+            "description": "loading prior session context for agent bootstrap"}),
         ("session_mount", {"path": "/tmp/data"}),
     ]
 
@@ -157,6 +160,7 @@ async def test_bootstrap_creates_a_session_and_mounts_paths_when_no_session_id_i
 async def test_bootstrap_attaches_to_an_existing_session_id_without_creating_one():
     session = FakeSession(results={
         "session_switch": ok_result("{}"),
+        "session_history": ok_result("[]"),
         "session_mount": ok_result(),
     })
     bridge = bridge_with(session, session_id="existing", mounts=["/tmp/data"])
@@ -166,6 +170,8 @@ async def test_bootstrap_attaches_to_an_existing_session_id_without_creating_one
     assert bridge.session_id == "existing"
     assert session.calls == [
         ("session_switch", {"session_id": "existing"}),
+        ("session_history", {
+            "description": "loading prior session context for agent bootstrap"}),
         ("session_mount", {"path": "/tmp/data"}),
     ]
 
@@ -183,12 +189,42 @@ async def test_bootstrap_raises_when_the_given_session_id_does_not_exist():
 
 
 async def test_default_system_prompt_embeds_the_resolved_session_id():
-    session = FakeSession(
-        results={"create_session": ok_result(json.dumps({"session_id": "s1"}))})
+    session = FakeSession(results={
+        "create_session": ok_result(json.dumps({"session_id": "s1"})),
+        "session_history": ok_result("[]"),
+    })
     bridge = bridge_with(session)
     await bridge._bootstrap()
 
     assert 'Session "s1"' in bridge.default_system_prompt
+
+
+async def test_default_system_prompt_omits_history_context_for_a_fresh_session():
+    session = FakeSession(results={
+        "create_session": ok_result(json.dumps({"session_id": "s1"})),
+        "session_history": ok_result("[]"),
+    })
+    bridge = bridge_with(session)
+    await bridge._bootstrap()
+
+    assert "Prior actions" not in bridge.default_system_prompt
+
+
+async def test_default_system_prompt_includes_prior_checkpoint_steps():
+    history = [
+        {"checkpoint_id": 1, "steps": [
+            {"tool": "session_bash", "description": "ran the test suite"}]},
+    ]
+    session = FakeSession(results={
+        "session_switch": ok_result("{}"),
+        "session_history": ok_result(json.dumps(history)),
+    })
+    bridge = bridge_with(session, session_id="existing")
+    await bridge._bootstrap()
+
+    prompt = bridge.default_system_prompt
+    assert "Prior actions already taken in this session:" in prompt
+    assert "session_bash: ran the test suite" in prompt
 
 
 async def test_session_id_before_bootstrap_raises():

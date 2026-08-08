@@ -6,6 +6,8 @@ import json
 from contextlib import AsyncExitStack
 from typing import TYPE_CHECKING, Any
 
+from .session_history import SessionHistoryContext
+
 if TYPE_CHECKING:
     from mcp import ClientSession
 
@@ -55,6 +57,7 @@ check exit_code instead; many commands write warnings or progress to stderr on s
         self._exit_stack = AsyncExitStack()
         self._session: ClientSession | None = None
         self._session_id: str | None = None
+        self._history_context = ""
 
     async def __aenter__(self) -> DrunMcpBridge:
         try:
@@ -95,7 +98,11 @@ check exit_code instead; many commands write warnings or progress to stderr on s
 
     @property
     def default_system_prompt(self) -> str:
-        return self._SYSTEM_PROMPT_TEMPLATE.format(session_id=self.session_id)
+        prompt = self._SYSTEM_PROMPT_TEMPLATE.format(
+            session_id=self.session_id)
+        if self._history_context:
+            prompt += f"\n{self._history_context}\n"
+        return prompt
 
     async def tools(self) -> list[dict[str, Any]]:
         """The daemon's tools, translated to OpenAI function-calling format."""
@@ -123,10 +130,19 @@ check exit_code instead; many commands write warnings or progress to stderr on s
 
     async def _bootstrap(self) -> None:
         """Attach to `session_id` if one was requested, else create a fresh
-        session, then mount every requested host path into it."""
+        session, load its prior checkpoint history for the system prompt,
+        then mount every requested host path into it."""
         self._session_id = await self._resolve_session_id()
+        self._history_context = await self._load_history_context()
         for path in self._mounts:
             await self.call("session_mount", {"path": path})
+
+    async def _load_history_context(self) -> str:
+        raw = await self.call(
+            "session_history",
+            {"description": "loading prior session context for agent bootstrap"},
+        )
+        return SessionHistoryContext.from_json(raw).as_prompt_block()
 
     async def _resolve_session_id(self) -> str:
         if self._requested_session_id is not None:
