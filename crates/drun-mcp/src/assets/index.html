@@ -297,7 +297,7 @@
     }
 
     .session-card-main {
-      padding: 14px 16px;
+      padding: 12px;
       cursor: pointer;
       user-select: none;
       flex: 1;
@@ -309,13 +309,6 @@
 
     .session-card.active .session-card-main {
       background: var(--accent-bg);
-    }
-
-    .card-session-id {
-      font-family: var(--mono);
-      font-size: 10.5px;
-      color: var(--text-muted);
-      margin-bottom: 10px;
     }
 
     .card-label-row {
@@ -345,6 +338,8 @@
 
     .card-badges {
       display: flex;
+      flex-direction: column;
+      align-items: flex-start;
       gap: 6px;
     }
 
@@ -357,8 +352,7 @@
       font-family: var(--mono);
       padding: 3px 6px;
       border-radius: 4px;
-      flex: 1 1 0;
-      min-width: 0;
+      max-width: 100%;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -1485,8 +1479,8 @@
                 <div class="card-session-label ${s.label ? '' : 'unlabeled'}">${s.label ? escHtml(s.label) : 'Unlabeled'}</div>
                 ${isForked ? `<button class="btn" onclick="event.stopPropagation(); onSessionClick('${escHtml(s.parent_session_id)}')" title="Forked at checkpoint ${s.parent_checkpoint_id} — click to open">${escHtml(s.parent_session_id)}</button>` : ''}
               </div>
-              <div class="card-session-id">${escHtml(s.session_id)}</div>
               <div class="card-badges">
+                <span class="badge badge-neutral">ID: ${escHtml(s.session_id)}</span>
                 <span class="badge badge-neutral ${justCreated ? 'cp-blink' : ''}">Checkpoints: ${headCpId ?? '—'}</span>
                 ${sessionStatusBadge(s)}
               </div>
