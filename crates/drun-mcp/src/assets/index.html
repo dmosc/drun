@@ -661,13 +661,6 @@
       padding-top: 0;
     }
 
-    .chat-turn-role {
-      font-family: var(--mono);
-      font-size: 11px;
-      color: var(--accent);
-      margin-right: 6px;
-    }
-
     .chat-turn-prompt,
     .chat-turn-response {
       font-size: 12px;
@@ -676,7 +669,7 @@
     }
 
     .chat-turn-prompt {
-      color: var(--text);
+      color: var(--accent);
       margin-bottom: 4px;
     }
 
@@ -1192,6 +1185,9 @@
       selectedSessionId: null,
       checkpointHistory: [],
       chatLog: [],
+      // Turn count last rendered by renderChatLog, so the 2s poll doesn't
+      // rebuild the tab and reset its scroll position.
+      lastRenderedChatLog: null,
       selectedCpId: null,
       // 'steps' | 'output' | 'files' — which workspace tab is showing.
       activeTab: 'steps',
@@ -1739,11 +1735,17 @@
       const body = document.getElementById('chat-log-body');
       const turns = viewState.chatLog;
 
+      // Chat turns are append-only, so the count alone tells us whether
+      // anything new arrived — skip the rewrite otherwise so the 2s poll
+      // doesn't reset the tab's scroll position.
+      if (viewState.lastRenderedChatLog === turns.length) return;
+      viewState.lastRenderedChatLog = turns.length;
+
       body.innerHTML = turns.length
         ? `<div class="chat-turns-list">${turns.map(t => `
             <div class="chat-turn">
-              <div class="chat-turn-prompt"><span class="chat-turn-role">You</span>${escHtml(t.prompt)}</div>
-              <div class="chat-turn-response"><span class="chat-turn-role">Agent</span>${escHtml(t.response)}</div>
+              <div class="chat-turn-prompt">${escHtml(t.prompt)}</div>
+              <div class="chat-turn-response">${escHtml(t.response)}</div>
             </div>`).reverse().join('')}</div>`
         : '<div class="context-description">No chat turns recorded on this session yet</div>';
     }
@@ -2094,6 +2096,7 @@
       viewState.filePreviewMode = 'content';
       viewState.checkpointHistory = [];
       viewState.chatLog = [];
+      viewState.lastRenderedChatLog = null;
 
       renderSessionGrid();
       scrollSelectedCardIntoView();
