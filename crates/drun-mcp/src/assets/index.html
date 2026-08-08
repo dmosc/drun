@@ -452,6 +452,7 @@
 
     .controls-row {
       display: flex;
+      flex-wrap: wrap;
       align-items: center;
       gap: 8px;
       padding: 10px 14px;
@@ -477,13 +478,14 @@
 
     .tabs-actions {
       display: flex;
+      flex-wrap: wrap;
       align-items: center;
       gap: 6px;
-      flex-shrink: 0;
     }
 
     .tabs-head {
       display: flex;
+      overflow-x: auto;
       border-bottom: 1px solid var(--border);
     }
 
@@ -1502,8 +1504,8 @@
 
       container.innerHTML = `
         ${forkButtons}
-        <button class="btn" onclick="onForkFromHereClick()">Fork from here</button>
-        <button class="btn" id="rollback-here-btn" ${rollbackHidden} onclick="onRollbackHereClick()">Roll back to here</button>`;
+        <button class="btn" onclick="onForkFromHereClick()">Fork</button>
+        <button class="btn" id="rollback-here-btn" ${rollbackHidden} onclick="onRollbackHereClick()">Rollback</button>`;
     }
 
     // ── Rendering: tabs ──────────────────────────────────────────────────────
