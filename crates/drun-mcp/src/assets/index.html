@@ -159,6 +159,10 @@
       flex-direction: column;
     }
 
+    .modal-box-narrow {
+      width: min(380px, 90vw);
+    }
+
     .modal-head {
       display: flex;
       align-items: center;
@@ -204,7 +208,6 @@
     }
 
     .modal-input {
-      max-width: 320px;
       margin: 12px 14px;
       padding: 10px;
       background: var(--s2);
@@ -1095,7 +1098,7 @@
   </div>
 
   <div id="label-modal-overlay" class="modal-overlay hidden" onclick="if (event.target === this) closeLabelModal()">
-    <div class="modal-box">
+    <div class="modal-box modal-box-narrow">
       <div class="modal-head">
         <span>Label</span>
       </div>
