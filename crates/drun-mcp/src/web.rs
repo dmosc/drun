@@ -104,7 +104,7 @@ impl WebServer {
             )
             .route(
                 "/api/sessions/{session_id}/chat",
-                post(Self::handle_session_chat),
+                get(Self::handle_session_chat_log).post(Self::handle_session_chat),
             )
             .with_state(AppState {
                 handler,
@@ -210,6 +210,15 @@ impl WebServer {
     ) -> Response {
         app.with_session(&session_id, |session| {
             Self::json_response(&state::CheckpointSummary::history(session))
+        })
+    }
+
+    async fn handle_session_chat_log(
+        State(app): State<AppState>,
+        Path(session_id): Path<String>,
+    ) -> Response {
+        app.with_session(&session_id, |session| {
+            Self::json_response(&session.chat_log())
         })
     }
 
@@ -866,6 +875,32 @@ mod tests {
         )
         .await;
         assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn handle_session_chat_log_returns_404_for_an_unknown_session() {
+        let sessions = session_map(vec![]);
+        let response = WebServer::handle_session_chat_log(
+            State(app_state(sessions)),
+            Path("missing".to_string()),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn handle_session_chat_log_returns_the_recorded_turns() {
+        let mut session = Session::new(Config::default().into()).unwrap();
+        session.record_chat_turn("list the files".to_string(), "a.txt is present".to_string());
+        let sessions = session_map(vec![("s1", session)]);
+
+        let response =
+            WebServer::handle_session_chat_log(State(app_state(sessions)), Path("s1".to_string()))
+                .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = body_string(response).await;
+        assert!(body.contains("list the files"));
+        assert!(body.contains("a.txt is present"));
     }
 
     #[tokio::test]

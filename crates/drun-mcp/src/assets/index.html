@@ -642,6 +642,48 @@
       overflow-wrap: break-word;
     }
 
+    .chat-turns-list {
+      display: flex;
+      flex-direction: column;
+      margin-top: 12px;
+      max-height: 450px;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+    }
+
+    .chat-turn {
+      padding: 10px 0;
+      border-top: 1px solid var(--border);
+    }
+
+    .chat-turn:first-child {
+      border-top: none;
+      padding-top: 0;
+    }
+
+    .chat-turn-role {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--accent);
+      margin-right: 6px;
+    }
+
+    .chat-turn-prompt,
+    .chat-turn-response {
+      font-size: 12px;
+      line-height: 1.5;
+      overflow-wrap: break-word;
+    }
+
+    .chat-turn-prompt {
+      color: var(--text);
+      margin-bottom: 4px;
+    }
+
+    .chat-turn-response {
+      color: var(--text-dim);
+    }
+
     /* ── Columns ───────────────────────────────────────────────────────── */
     .files-columns {
       display: grid;
@@ -1103,6 +1145,7 @@
           <button class="tab-btn" data-tab="steps" onclick="onTabClick('steps')">Steps</button>
           <button class="tab-btn" data-tab="output" onclick="onTabClick('output')">Output</button>
           <button class="tab-btn" data-tab="files" onclick="onTabClick('files')">Filesystem</button>
+          <button class="tab-btn" data-tab="thoughts" onclick="onTabClick('thoughts')">Thoughts</button>
         </div>
 
         <div class="tab-body" data-tab="steps">
@@ -1132,6 +1175,10 @@
             </div>
           </div>
         </div>
+
+        <div class="tab-body" data-tab="thoughts">
+          <div id="chat-log-body"></div>
+        </div>
       </div>
     </section>
   </div>
@@ -1144,6 +1191,7 @@
       flatSessions: [],
       selectedSessionId: null,
       checkpointHistory: [],
+      chatLog: [],
       selectedCpId: null,
       // 'steps' | 'output' | 'files' — which workspace tab is showing.
       activeTab: 'steps',
@@ -1314,6 +1362,7 @@
       status: () => fetchJson('/api/status'),
       sessionsTree: () => fetchJson('/api/sessions/tree'),
       checkpointHistory: sessionId => fetchJson(`/api/sessions/${sessionId}/history`),
+      chatLog: sessionId => fetchJson(`/api/sessions/${sessionId}/chat`),
       checkpointFiles: (sessionId, cpId) => fetchJson(`/api/sessions/${sessionId}/checkpoints/${cpId}/files`),
       stdout: (sessionId, cpId) => fetchText(`/api/sessions/${sessionId}/checkpoints/${cpId}/stdout`),
       stderr: (sessionId, cpId) => fetchText(`/api/sessions/${sessionId}/checkpoints/${cpId}/stderr`),
@@ -1684,6 +1733,21 @@
         : '<div class="context-description">No steps recorded on this checkpoint yet</div>';
     }
 
+    // ── Rendering: chat log tab ──────────────────────────────────────────────
+
+    function renderChatLog() {
+      const body = document.getElementById('chat-log-body');
+      const turns = viewState.chatLog;
+
+      body.innerHTML = turns.length
+        ? `<div class="chat-turns-list">${turns.map(t => `
+            <div class="chat-turn">
+              <div class="chat-turn-prompt"><span class="chat-turn-role">You</span>${escHtml(t.prompt)}</div>
+              <div class="chat-turn-response"><span class="chat-turn-role">Agent</span>${escHtml(t.response)}</div>
+            </div>`).reverse().join('')}</div>`
+        : '<div class="context-description">No chat turns recorded on this session yet</div>';
+    }
+
     // Fork/rollback actions, rendered into the tabs-head bar (right of the tabs).
     function renderCheckpointActions() {
       const cpId = viewState.selectedCpId;
@@ -1998,6 +2062,7 @@
 
       renderCheckpointSteps();
       renderCheckpointActions();
+      renderChatLog();
       applyActiveTab();
 
       if (viewState.failedCheckpointKey === cacheKey) {
@@ -2028,13 +2093,19 @@
       viewState.selectedFilePath = null;
       viewState.filePreviewMode = 'content';
       viewState.checkpointHistory = [];
+      viewState.chatLog = [];
 
       renderSessionGrid();
       scrollSelectedCardIntoView();
       document.getElementById('workspace-section').classList.add('hidden');
 
       try {
-        viewState.checkpointHistory = await Api.checkpointHistory(sessionId);
+        const [history, chatLog] = await Promise.all([
+          Api.checkpointHistory(sessionId),
+          Api.chatLog(sessionId),
+        ]);
+        viewState.checkpointHistory = history;
+        viewState.chatLog = chatLog;
       } catch (e) {
         console.error('Failed to load history:', e);
       }
@@ -2249,7 +2320,12 @@
 
         if (viewState.selectedSessionId && findSession(viewState.selectedSessionId)) {
           try {
-            viewState.checkpointHistory = await Api.checkpointHistory(viewState.selectedSessionId);
+            const [history, chatLog] = await Promise.all([
+              Api.checkpointHistory(viewState.selectedSessionId),
+              Api.chatLog(viewState.selectedSessionId),
+            ]);
+            viewState.checkpointHistory = history;
+            viewState.chatLog = chatLog;
           } catch (_) { }
           renderCheckpointButton();
           renderCheckpointModalList();
