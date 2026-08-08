@@ -121,9 +121,8 @@ impl DrunHandler {
         self.with_current_session_mut(connection_id, |session_id, session| {
             let previous_files = session.current().files.clone();
             session
-                .mount(std::path::Path::new(&t.path))
+                .mount(std::path::Path::new(&t.path), Some(&t.description))
                 .map_err(|e| DrunError::from_exec(e).into_tool_err())?;
-            session.record_step(None, "session_mount", &t.description);
             Ok(ResponseBuilder::json(&SessionState::compute(
                 session_id,
                 session,

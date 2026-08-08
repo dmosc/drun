@@ -23,7 +23,7 @@ impl DrunSession {
         self.inner
             .lock()
             .unwrap()
-            .mount(std::path::Path::new(&path))
+            .mount(std::path::Path::new(&path), None)
             .map_err(|e| PyRuntimeError::new_err(e.to_string()))
     }
 

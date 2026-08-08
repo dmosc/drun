@@ -52,14 +52,14 @@ impl DrunHandler {
         t: SessionDiff,
     ) -> Result<CallToolResult, CallToolError> {
         self.with_current_session_mut(connection_id, |_session_id, session| {
-            let from = session
-                .resolve_checkpoint(t.from_checkpoint_id, t.from_checkpoint_label.as_deref())
-                .map_err(|e| DrunError::from_exec(e).into_tool_err())?
-                .unwrap_or(0);
             let to = session
                 .resolve_checkpoint(t.to_checkpoint_id, t.to_checkpoint_label.as_deref())
                 .map_err(|e| DrunError::from_exec(e).into_tool_err())?
                 .unwrap_or_else(|| session.current().id);
+            let from = session
+                .resolve_checkpoint(t.from_checkpoint_id, t.from_checkpoint_label.as_deref())
+                .map_err(|e| DrunError::from_exec(e).into_tool_err())?
+                .unwrap_or_else(|| session.last_mount_checkpoint(to));
             let diff = session
                 .diff(from, to, t.paths.as_deref().unwrap_or_default())
                 .map_err(|e| DrunError::from_exec(e).into_tool_err())?;
@@ -85,7 +85,11 @@ impl DrunHandler {
             session
                 .set_checkpoint_label(checkpoint_id, t.label)
                 .map_err(|e| DrunError::from_exec(e).into_tool_err())?;
-            session.record_step(Some(checkpoint_id), "session_checkpoint_label", &t.description);
+            session.record_step(
+                Some(checkpoint_id),
+                "session_checkpoint_label",
+                &t.description,
+            );
             Ok(ResponseBuilder::json(&CheckpointSummary::history(session)))
         })
     }
@@ -312,6 +316,44 @@ mod tests {
             )
             .unwrap();
         assert!(result_text(&result).contains("a.txt"));
+    }
+
+    #[test]
+    fn session_diff_default_from_skips_a_mounted_baseline_and_shows_only_later_edits() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("mounted.txt"), b"from host").unwrap();
+
+        let handler = DrunHandler::new(Config::default());
+        insert_current_session(&handler, "s1");
+        {
+            let sessions = handler.sessions.lock().unwrap();
+            let mut session = sessions.get("s1").unwrap().lock().unwrap();
+            session.mount(dir.path(), None).unwrap();
+            session
+                .write_files(
+                    vec![("a.txt".to_string(), b"hi".to_vec())],
+                    "session_write_file",
+                    None,
+                )
+                .unwrap();
+        }
+
+        let result = handler
+            .handle_session_diff(
+                CLIENT,
+                SessionDiff {
+                    from_checkpoint_id: None,
+                    from_checkpoint_label: None,
+                    to_checkpoint_id: None,
+                    to_checkpoint_label: None,
+                    paths: None,
+                    description: "test".to_string(),
+                },
+            )
+            .unwrap();
+        let text = result_text(&result);
+        assert!(text.contains("a.txt"));
+        assert!(!text.contains("mounted.txt"));
     }
 
     #[test]

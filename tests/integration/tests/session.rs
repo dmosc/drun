@@ -16,7 +16,7 @@ fn using_drun_api_mount_modify_export_updates_host_file_test() {
     std::fs::write(&host_file, b"original").unwrap();
 
     let mut s = Session::new(cfg().into()).unwrap();
-    s.mount(dir.path()).unwrap();
+    s.mount(dir.path(), None).unwrap();
     s.write_files(
         vec![("data.txt".to_string(), b"modified".to_vec())],
         "session_write_file",

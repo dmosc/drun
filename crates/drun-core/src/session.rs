@@ -112,7 +112,7 @@ impl Session {
         Ok(session)
     }
 
-    pub fn mount(&mut self, path: &Path) -> anyhow::Result<Vec<String>> {
+    pub fn mount(&mut self, path: &Path, description: Option<&str>) -> anyhow::Result<Vec<String>> {
         let abs = path.canonicalize().map_err(|_| {
             RunnerError::invalid_workspace_path(format!("path does not exist: {}", path.display()))
         })?;
@@ -141,22 +141,25 @@ impl Session {
             .map(|(key, bytes)| (key, self.interner.intern_bytes(bytes)))
             .collect();
 
-        let mut prospective_files = self.checkpoints[self.checkpoint_idx].files.clone();
-        for (key, arc) in &interned_file_entries {
-            prospective_files.insert(key.clone(), Arc::clone(arc));
-        }
-        self.check_workspace_size(&prospective_files)?;
-
+        let mut files = self.checkpoints[self.checkpoint_idx].files.clone();
         let mut mounted_keys: Vec<String> = Vec::new();
-        let checkpoint = &mut self.checkpoints[self.checkpoint_idx];
-        for (key, arc) in interned_file_entries {
-            checkpoint.files.insert(key.clone(), arc);
-            mounted_keys.push(key);
+        for (key, arc) in &interned_file_entries {
+            files.insert(key.clone(), Arc::clone(arc));
+            mounted_keys.push(key.clone());
         }
+        self.check_workspace_size(&files)?;
+
         for (key, host_path) in overlay_entries {
             self.overlays.insert(key.clone(), host_path);
             mounted_keys.push(key);
         }
+
+        self.push_checkpoint(
+            files,
+            CommandOutcome::default(),
+            "session_mount",
+            description,
+        )?;
         Ok(mounted_keys)
     }
 
@@ -433,6 +436,16 @@ impl Session {
         }
     }
 
+    pub fn last_mount_checkpoint(&self, at: usize) -> usize {
+        let at = at.min(self.checkpoints.len().saturating_sub(1));
+        self.checkpoints[..=at]
+            .iter()
+            .rev()
+            .find(|c| c.tool.as_deref() == Some("session_mount"))
+            .map(|c| c.id)
+            .unwrap_or(0)
+    }
+
     pub fn squash_checkpoints(
         &mut self,
         from_id: usize,
@@ -441,7 +454,7 @@ impl Session {
     ) -> anyhow::Result<&Checkpoint> {
         anyhow::ensure!(
             from_id >= 1,
-            "checkpoint 0 is the mounted baseline and cannot be squashed; start the range at checkpoint 1 or later"
+            "checkpoint 0 is the session's empty starting point and cannot be squashed; start the range at checkpoint 1 or later"
         );
         anyhow::ensure!(
             from_id <= to_id,
@@ -505,7 +518,7 @@ impl Session {
     pub fn drop_checkpoints(&mut self, from_id: usize, to_id: usize) -> anyhow::Result<()> {
         anyhow::ensure!(
             from_id >= 1,
-            "checkpoint 0 is the mounted baseline and cannot be dropped; start the range at checkpoint 1 or later"
+            "checkpoint 0 is the session's empty starting point and cannot be dropped; start the range at checkpoint 1 or later"
         );
         anyhow::ensure!(
             from_id <= to_id,
@@ -1217,7 +1230,7 @@ mod tests {
         ))
         .unwrap();
 
-        assert!(session.mount(&file_path).is_err());
+        assert!(session.mount(&file_path, None).is_err());
 
         // Editing the file on disk — no restart, no signal, no shared lock —
         // must be visible on the very next call against the same session.
@@ -1231,7 +1244,7 @@ mod tests {
         )
         .unwrap();
 
-        assert!(session.mount(&file_path).is_ok());
+        assert!(session.mount(&file_path, None).is_ok());
     }
 
     #[test]
@@ -1244,7 +1257,7 @@ mod tests {
             ..Config::default()
         };
         let mut session = Session::new(config.into()).unwrap();
-        let err = session.mount(dir.path()).unwrap_err();
+        let err = session.mount(dir.path(), None).unwrap_err();
         assert!(err.to_string().contains("exceeds limit"));
         assert!(
             session.current().files.is_empty(),
@@ -1259,10 +1272,65 @@ mod tests {
         std::os::unix::fs::symlink(dir.path(), dir.path().join("loop")).unwrap();
 
         let mut session = new_session();
-        let mounted_keys = session.mount(dir.path()).unwrap();
+        let mounted_keys = session.mount(dir.path(), None).unwrap();
 
         assert_eq!(mounted_keys, vec!["a.txt".to_string()]);
         assert!(!session.current().files.contains_key("loop"));
+    }
+
+    #[test]
+    fn mount_pushes_its_own_checkpoint_instead_of_populating_checkpoint_zero() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.txt"), b"hi").unwrap();
+
+        let mut session = new_session();
+        session.mount(dir.path(), None).unwrap();
+
+        assert_eq!(session.current().id, 1);
+        assert!(session.history()[0].files.is_empty());
+        assert_eq!(session.history()[1].tool.as_deref(), Some("session_mount"));
+    }
+
+    #[test]
+    fn last_mount_checkpoint_defaults_to_zero_when_nothing_was_ever_mounted() {
+        let mut session = new_session();
+        session
+            .write_files(
+                vec![("a.txt".to_string(), b"hi".to_vec())],
+                "session_write_file",
+                None,
+            )
+            .unwrap();
+
+        assert_eq!(session.last_mount_checkpoint(session.current().id), 0);
+    }
+
+    #[test]
+    fn last_mount_checkpoint_finds_the_most_recent_mount_at_or_before_the_given_checkpoint() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.txt"), b"hi").unwrap();
+
+        let mut session = new_session();
+        session.mount(dir.path(), None).unwrap(); // checkpoint 1
+        session
+            .write_files(
+                vec![("b.txt".to_string(), b"hi".to_vec())],
+                "session_write_file",
+                None,
+            )
+            .unwrap(); // checkpoint 2
+        session.mount(dir.path(), None).unwrap(); // checkpoint 3
+        session
+            .write_files(
+                vec![("c.txt".to_string(), b"hi".to_vec())],
+                "session_write_file",
+                None,
+            )
+            .unwrap(); // checkpoint 4
+
+        assert_eq!(session.last_mount_checkpoint(4), 3);
+        assert_eq!(session.last_mount_checkpoint(2), 1);
+        assert_eq!(session.last_mount_checkpoint(0), 0);
     }
 
     #[test]
@@ -1453,8 +1521,8 @@ mod tests {
             .unwrap();
         let err = session.squash_checkpoints(0, 1, None).unwrap_err();
         assert!(err.to_string().contains("checkpoint 0"));
-        // The mounted baseline must still be squashable-range-adjacent but
-        // untouched: a range starting at 1 is fine.
+        // Checkpoint 0 (the empty starting point) must stay untouched, but a
+        // range starting right after it, at 1, is fine.
         assert!(session.squash_checkpoints(1, 2, None).is_ok());
     }
 
@@ -1486,7 +1554,7 @@ mod tests {
         let out = tempfile::tempdir().unwrap();
 
         let mut session = new_session();
-        session.mount(dir.path()).unwrap();
+        session.mount(dir.path(), None).unwrap();
         session
             .write_files(
                 vec![("new.txt".to_string(), b"fresh".to_vec())],
