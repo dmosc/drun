@@ -357,6 +357,24 @@
       border: 1px solid var(--border);
     }
 
+    @keyframes cp-blink {
+      0% {
+        background: var(--green-bg);
+        color: var(--green);
+        border-color: rgba(79, 217, 138, 0.5);
+      }
+
+      100% {
+        background: var(--s3);
+        color: var(--text-dim);
+        border-color: var(--border);
+      }
+    }
+
+    .cp-blink {
+      animation: cp-blink 1s ease-out;
+    }
+
     .badge-fork {
       background: var(--s3);
       color: var(--text-muted);
@@ -1050,6 +1068,9 @@
       deletingSessions: new Set(),
       // session_ids with a chat request in flight.
       chattingSessions: new Set(),
+      // session_id → head checkpoint_id last seen, so renderSessionGrid can
+      // detect a freshly created checkpoint and blink its badge.
+      lastKnownHeadCp: new Map(),
     };
 
     // ── Helpers ──────────────────────────────────────────────────────────────
@@ -1391,7 +1412,7 @@
 
     function sessionIdleBadge(session) {
       const idleTimeout = viewState.daemonStatus?.session_idle_timeout_secs;
-      const idleAgo = `Idle ${fmtDuration(session.idle_secs)}`;
+      const idleAgo = `Idle: ${fmtDuration(session.idle_secs)}`;
       if (idleTimeout == null) {
         return `<span class="badge badge-neutral">${idleAgo}</span>`;
       }
@@ -1434,13 +1455,17 @@
         const headCpId = currentCpIdForSession(s);
         const isForked = !!s.parent_session_id;
 
+        const prevHeadCpId = viewState.lastKnownHeadCp.get(s.session_id);
+        const justCreated = prevHeadCpId != null && headCpId != null && headCpId > prevHeadCpId;
+        viewState.lastKnownHeadCp.set(s.session_id, headCpId);
+
         return `
           <div class="session-card ${isActive ? 'active' : ''}">
             <div class="session-card-main" onclick="onSessionClick('${escHtml(s.session_id)}')" title="Created ${fmtDuration(s.age_secs)} ago">
               <div class="card-session-id" title="${escHtml(s.session_id)}">${escHtml(shortId(s.session_id))}</div>
               <div class="card-session-label ${s.label ? '' : 'unlabeled'}">${s.label ? escHtml(s.label) : 'Unlabeled'}</div>
               <div class="card-badges">
-                <span class="badge badge-neutral">Checkpoint ${headCpId ?? '—'}</span>
+                <span class="badge badge-neutral ${justCreated ? 'cp-blink' : ''}">Checkpoints: ${headCpId ?? '—'}</span>
                 ${sessionStatusBadge(s)}
                 ${isForked ? `<span class="badge badge-fork" title="Forked from ${escHtml(s.parent_session_id)} at checkpoint ${s.parent_checkpoint_id}">⑂ ${escHtml(shortId(s.parent_session_id))}</span>` : ''}
               </div>
