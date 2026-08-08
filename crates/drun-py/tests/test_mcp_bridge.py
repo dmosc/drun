@@ -154,7 +154,7 @@ async def test_bootstrap_creates_a_session_and_mounts_paths_when_no_session_id_i
         ("create_session", {}),
         ("get_system_instructions", {}),
         ("session_history", {
-            "description": "loading prior session context for agent bootstrap"}),
+            "description": "Loading session context."}),
         ("session_mount", {"path": "/tmp/data"}),
     ]
 
@@ -175,7 +175,7 @@ async def test_bootstrap_attaches_to_an_existing_session_id_without_creating_one
         ("session_switch", {"session_id": "existing"}),
         ("get_system_instructions", {}),
         ("session_history", {
-            "description": "loading prior session context for agent bootstrap"}),
+            "description": "Loading session context."}),
         ("session_mount", {"path": "/tmp/data"}),
     ]
 

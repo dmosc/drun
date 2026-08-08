@@ -436,16 +436,6 @@ impl Session {
         }
     }
 
-    pub fn last_mount_checkpoint(&self, at: usize) -> usize {
-        let at = at.min(self.checkpoints.len().saturating_sub(1));
-        self.checkpoints[..=at]
-            .iter()
-            .rev()
-            .find(|c| c.tool.as_deref() == Some("session_mount"))
-            .map(|c| c.id)
-            .unwrap_or(0)
-    }
-
     pub fn squash_checkpoints(
         &mut self,
         from_id: usize,
@@ -1289,48 +1279,6 @@ mod tests {
         assert_eq!(session.current().id, 1);
         assert!(session.history()[0].files.is_empty());
         assert_eq!(session.history()[1].tool.as_deref(), Some("session_mount"));
-    }
-
-    #[test]
-    fn last_mount_checkpoint_defaults_to_zero_when_nothing_was_ever_mounted() {
-        let mut session = new_session();
-        session
-            .write_files(
-                vec![("a.txt".to_string(), b"hi".to_vec())],
-                "session_write_file",
-                None,
-            )
-            .unwrap();
-
-        assert_eq!(session.last_mount_checkpoint(session.current().id), 0);
-    }
-
-    #[test]
-    fn last_mount_checkpoint_finds_the_most_recent_mount_at_or_before_the_given_checkpoint() {
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("a.txt"), b"hi").unwrap();
-
-        let mut session = new_session();
-        session.mount(dir.path(), None).unwrap(); // checkpoint 1
-        session
-            .write_files(
-                vec![("b.txt".to_string(), b"hi".to_vec())],
-                "session_write_file",
-                None,
-            )
-            .unwrap(); // checkpoint 2
-        session.mount(dir.path(), None).unwrap(); // checkpoint 3
-        session
-            .write_files(
-                vec![("c.txt".to_string(), b"hi".to_vec())],
-                "session_write_file",
-                None,
-            )
-            .unwrap(); // checkpoint 4
-
-        assert_eq!(session.last_mount_checkpoint(4), 3);
-        assert_eq!(session.last_mount_checkpoint(2), 1);
-        assert_eq!(session.last_mount_checkpoint(0), 0);
     }
 
     #[test]

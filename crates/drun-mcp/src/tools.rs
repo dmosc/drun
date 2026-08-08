@@ -140,15 +140,14 @@ pub struct SessionReadFile {
 
 #[mcp_tool(
     name = "session_diff",
-    description = "Compute a unified diff between two checkpoints of the active session. Defaults to comparing your most recent session_mount (or checkpoint 0, the session's empty starting point, if nothing has been mounted) against the current checkpoint — so an unqualified call shows your own edits, not the whole mounted workspace as one addition. Returns standard unified diff output across all changed files. Each endpoint accepts an ID or a label; label takes precedence. Pass paths to restrict the diff to specific files instead of every changed file.",
+    description = "Compute a unified diff between two checkpoints of the active session. Defaults to comparing the current checkpoint against the one right before it. Pass an explicit from_checkpoint_id (e.g. 0) to diff against something further back. Returns standard unified diff output across all changed files. Each endpoint accepts an ID or a label; label takes precedence. Pass paths to restrict the diff to specific files instead of every changed file.",
     idempotent_hint = true,
     destructive_hint = false,
     read_only_hint = true
 )]
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct SessionDiff {
-    /// Checkpoint to diff from. Defaults to the most recent session_mount,
-    /// or 0 if nothing has been mounted.
+    /// Checkpoint to diff from. Defaults to the previous one.
     pub from_checkpoint_id: Option<u64>,
     /// Label of the checkpoint to diff from. Takes precedence over
     /// from_checkpoint_id.

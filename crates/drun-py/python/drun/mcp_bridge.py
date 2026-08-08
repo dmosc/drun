@@ -124,7 +124,7 @@ re-pass session_id yourself.
     async def _load_history_context(self) -> str:
         raw = await self.call(
             "session_history",
-            {"description": "loading prior session context for agent bootstrap"},
+            {"description": "Loading session context."},
         )
         return SessionHistoryContext.from_json(raw).as_prompt_block()
 

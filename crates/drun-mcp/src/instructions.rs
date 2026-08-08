@@ -107,11 +107,9 @@ Grouped by purpose — each tool's schema documents its exact parameters.
   instead of hardcoding them.
 
 **History & branching**
-- `session_diff` — unified diff between two checkpoints. `session_mount`
-  gets its own checkpoint like any other mutation, so the default `from` is
-  your most recent mount, falling back to checkpoint 0 (the empty starting
-  point) if you haven't mounted anything — an unqualified call shows your
-  own edits, not the whole mounted workspace as one addition.
+- `session_diff` — unified diff between two checkpoints. Defaults to just
+  the previous checkpoint. Pass an explicit from_checkpoint_id (e.g. 0) to diff
+  against something further back.
 - `session_rollback` — move the active session's head back to a prior
   checkpoint. Destructive past that point once you continue the session — call
   `session_fork` first if you need to keep what you're rolling back past.
@@ -218,9 +216,12 @@ mod tests {
     }
 
     #[test]
-    fn documents_session_diffs_mount_aware_default_baseline() {
-        assert!(SYSTEM_INSTRUCTIONS.contains("your most recent mount"));
-        assert!(SYSTEM_INSTRUCTIONS.contains("checkpoint 0 (the empty starting"));
+    fn documents_session_diffs_default_to_the_previous_checkpoint() {
+        assert!(SYSTEM_INSTRUCTIONS.contains("Defaults to just"));
+        assert!(
+            SYSTEM_INSTRUCTIONS
+                .contains("the previous checkpoint. Pass an explicit from_checkpoint_id")
+        );
     }
 
     #[test]

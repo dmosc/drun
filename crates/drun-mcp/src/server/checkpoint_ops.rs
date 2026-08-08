@@ -59,7 +59,7 @@ impl DrunHandler {
             let from = session
                 .resolve_checkpoint(t.from_checkpoint_id, t.from_checkpoint_label.as_deref())
                 .map_err(|e| DrunError::from_exec(e).into_tool_err())?
-                .unwrap_or_else(|| session.last_mount_checkpoint(to));
+                .unwrap_or_else(|| to.saturating_sub(1));
             let diff = session
                 .diff(from, to, t.paths.as_deref().unwrap_or_default())
                 .map_err(|e| DrunError::from_exec(e).into_tool_err())?;
@@ -284,7 +284,7 @@ mod tests {
     }
 
     #[test]
-    fn session_diff_defaults_from_checkpoint_zero_to_the_current_checkpoint() {
+    fn session_diff_defaults_from_the_previous_checkpoint_to_the_current_one() {
         let handler = DrunHandler::new(Config::default());
         insert_current_session(&handler, "s1");
         {
@@ -319,7 +319,48 @@ mod tests {
     }
 
     #[test]
-    fn session_diff_default_from_skips_a_mounted_baseline_and_shows_only_later_edits() {
+    fn session_diff_default_from_ignores_history_older_than_the_previous_checkpoint() {
+        let handler = DrunHandler::new(Config::default());
+        insert_current_session(&handler, "s1");
+        {
+            let sessions = handler.sessions.lock().unwrap();
+            let mut session = sessions.get("s1").unwrap().lock().unwrap();
+            session
+                .write_files(
+                    vec![("old.txt".to_string(), b"from an earlier step".to_vec())],
+                    "session_write_file",
+                    None,
+                )
+                .unwrap();
+            session
+                .write_files(
+                    vec![("a.txt".to_string(), b"hi".to_vec())],
+                    "session_write_file",
+                    None,
+                )
+                .unwrap();
+        }
+
+        let result = handler
+            .handle_session_diff(
+                CLIENT,
+                SessionDiff {
+                    from_checkpoint_id: None,
+                    from_checkpoint_label: None,
+                    to_checkpoint_id: None,
+                    to_checkpoint_label: None,
+                    paths: None,
+                    description: "test".to_string(),
+                },
+            )
+            .unwrap();
+        let text = result_text(&result);
+        assert!(text.contains("a.txt"));
+        assert!(!text.contains("old.txt"));
+    }
+
+    #[test]
+    fn session_diff_default_from_excludes_a_mount_that_landed_on_the_previous_checkpoint() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("mounted.txt"), b"from host").unwrap();
 
@@ -404,7 +445,7 @@ mod tests {
             .handle_session_diff(
                 CLIENT,
                 SessionDiff {
-                    from_checkpoint_id: None,
+                    from_checkpoint_id: Some(0),
                     from_checkpoint_label: None,
                     to_checkpoint_id: None,
                     to_checkpoint_label: None,
