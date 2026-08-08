@@ -1452,6 +1452,14 @@
       return sessionIdleBadge(session);
     }
 
+    // Anchors the horizontally-scrolling sessions row to the start of the
+    // active card, so switching sessions never leaves the selected one
+    // scrolled out of view or half-cut-off at the viewport edge.
+    function scrollSelectedCardIntoView() {
+      const active = document.querySelector('.session-card.active');
+      if (active) active.scrollIntoView({ inline: 'start', block: 'nearest', behavior: 'smooth' });
+    }
+
     function renderSessionGrid() {
       const grid = document.getElementById('sessions-grid');
       // Newest first (smallest age) so a freshly created session is inserted
@@ -1893,6 +1901,7 @@
       viewState.checkpointHistory = [];
 
       renderSessionGrid();
+      scrollSelectedCardIntoView();
       document.getElementById('workspace-section').classList.add('hidden');
 
       try {
