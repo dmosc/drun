@@ -29,12 +29,13 @@ created, reconstruct what happened before acting on assumptions:
 
 - **`session_tree`** — the full session/fork graph in one call, across every
   session on the server, not just the active one. Each checkpoint carries the
-  tool, command, description, and file-delta counts recorded when it was
-  made, plus `is_current` for the active head of every session. Call this
-  first when the session predates you.
+  tool, command, description, file-delta counts, and a `steps` list of every
+  tool call made against it (not just the one that created it) with its own
+  description, plus `is_current` for the active head of every session. Call
+  this first when the session predates you.
 - **`session_history`** — the same per-checkpoint detail (tool, command,
-  description, file deltas), scoped to just the active session. Use this once
-  you already know which session you're in.
+  description, steps, file deltas), scoped to just the active session. Use
+  this once you already know which session you're in.
 - **`get_session_state`** — a cheaper single-checkpoint snapshot: current file
   list and deltas since the previous checkpoint, no history walk.
 - **`checkpoint_read_stdstreams`** — once you've found the checkpoint you care
@@ -206,6 +207,11 @@ mod tests {
         assert!(SYSTEM_INSTRUCTIONS.contains("session_tree"));
         assert!(SYSTEM_INSTRUCTIONS.contains("session_history"));
         assert!(SYSTEM_INSTRUCTIONS.contains("get_session_state"));
+    }
+
+    #[test]
+    fn documents_per_checkpoint_steps() {
+        assert!(SYSTEM_INSTRUCTIONS.contains("`steps` list"));
     }
 
     #[test]

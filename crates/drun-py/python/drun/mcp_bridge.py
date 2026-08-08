@@ -18,30 +18,11 @@ class DrunMcpBridge:
     suite.
     """
 
-    _SYSTEM_PROMPT_TEMPLATE = """\
+    _SESSION_PREAMBLE = """\
 You are a coding assistant with access to a sandboxed execution environment through \
 drun's tools. Session "{session_id}" is already created and active, with any requested \
-paths mounted — session_* tool calls apply to it automatically, no need to remember the \
-current {session_id}.
-
-Call get_config first to see what domains, host paths, and env vars are already
-allowed — check it before your first session_fetch or session_mount instead of
-discovering the allowlist through denied calls.
-
-Use session_bash for shell commands, session_read_file/session_write_file/
-session_delete_file for file access, session_mount to load more host paths, and
-session_fetch for network requests (subject to the server's domain allowlist). Call
-create_session only if you need a second, independent sandbox — its result is JSON
-containing a session_id field. To work in a different session, call session_switch
-with that exact session_id value; never invent or guess one. If you don't already have
-a session_id from a tool result, call session_list first to see the real ones.
-
-session_bash does not return command output inline — its JSON result is state
-(checkpoint id, exit_code, byte counts, file deltas), not the text a command printed.
-Call checkpoint_read_stdstreams (no arguments needed for the common case) to read the
-actual stdout; pass {{"stream": "stderr"}} for stderr. Never treat session_bash's
-own JSON as the command's output, and never treat non-empty stderr as failure —
-check exit_code instead; many commands write warnings or progress to stderr on success.
+paths mounted; session_* tool calls apply to it automatically, no need to remember or \
+re-pass session_id yourself.
 """
 
     def __init__(
@@ -57,6 +38,7 @@ check exit_code instead; many commands write warnings or progress to stderr on s
         self._exit_stack = AsyncExitStack()
         self._session: ClientSession | None = None
         self._session_id: str | None = None
+        self._tool_instructions = ""
         self._history_context = ""
 
     async def __aenter__(self) -> DrunMcpBridge:
@@ -98,8 +80,8 @@ check exit_code instead; many commands write warnings or progress to stderr on s
 
     @property
     def default_system_prompt(self) -> str:
-        prompt = self._SYSTEM_PROMPT_TEMPLATE.format(
-            session_id=self.session_id)
+        prompt = self._SESSION_PREAMBLE.format(session_id=self.session_id)
+        prompt += f"\n{self._tool_instructions}\n"
         if self._history_context:
             prompt += f"\n{self._history_context}\n"
         return prompt
@@ -130,9 +112,11 @@ check exit_code instead; many commands write warnings or progress to stderr on s
 
     async def _bootstrap(self) -> None:
         """Attach to `session_id` if one was requested, else create a fresh
-        session, load its prior checkpoint history for the system prompt,
-        then mount every requested host path into it."""
+        session, fetch the always-current tool guide and prior checkpoint
+        history for the system prompt, then mount every requested host path
+        into it."""
         self._session_id = await self._resolve_session_id()
+        self._tool_instructions = await self.call("get_system_instructions")
         self._history_context = await self._load_history_context()
         for path in self._mounts:
             await self.call("session_mount", {"path": path})
