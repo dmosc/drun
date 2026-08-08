@@ -481,30 +481,37 @@
       border-bottom: 1px solid var(--border);
     }
 
-    #checkpoint-select {
-      flex: 0 1 auto;
-      width: auto;
-      max-width: 150px;
-      appearance: none;
-      -webkit-appearance: none;
-      background: var(--s2);
-      border: 1px solid var(--border-hi);
+    #checkpoint-picker-btn {
+      flex: 0 0 auto;
+      min-width: 12ch;
+      font-family: var(--mono);
+      text-align: center;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .checkpoint-modal-list {
+      overflow-y: auto;
+      max-height: 50vh;
+      margin: 12px 14px;
+    }
+
+    .checkpoint-modal-item {
+      padding: 8px 10px;
       border-radius: 4px;
-      color: var(--text);
+      cursor: pointer;
       font-family: var(--mono);
       font-size: 12px;
-      font-weight: 600;
-      padding: 7px 12px;
-      color-scheme: dark;
-    }
-
-    #checkpoint-select:hover {
-      border-color: var(--accent);
-    }
-
-    #checkpoint-select option {
-      background: var(--s2);
       color: var(--text);
+    }
+
+    .checkpoint-modal-item:hover {
+      background: var(--s2);
+    }
+
+    .checkpoint-modal-item.current {
+      background: var(--green-bg);
+      color: var(--green);
     }
 
     .tabs-spacer {
@@ -945,7 +952,6 @@
     <div class="modal-box">
       <div class="modal-head">
         <span>Server status</span>
-        <button class="btn" onclick="closeStatusModal()">✕</button>
       </div>
       <div id="status-modal-body"></div>
       <div class="modal-actions">
@@ -958,7 +964,6 @@
     <div class="modal-box">
       <div class="modal-head">
         <span>Edit configuration</span>
-        <button class="btn" onclick="closeConfigModal()">✕</button>
       </div>
       <textarea id="config-modal-textarea" class="modal-textarea" spellcheck="false"></textarea>
       <div id="config-modal-error" class="modal-error"></div>
@@ -973,7 +978,6 @@
     <div class="modal-box">
       <div class="modal-head">
         <span id="chat-modal-title">Chat</span>
-        <button class="btn" onclick="closeChatModal()">✕</button>
       </div>
       <textarea id="chat-modal-prompt" class="modal-textarea" placeholder="Tell the agent what to do…" spellcheck="false"></textarea>
       <div id="chat-modal-error" class="modal-error"></div>
@@ -988,13 +992,24 @@
     <div class="modal-box">
       <div class="modal-head">
         <span>Label</span>
-        <button class="btn" onclick="closeLabelModal()">✕</button>
       </div>
       <input id="label-modal-input" class="modal-input" type="text" placeholder="Label for this session (empty to clear)">
       <div id="label-modal-error" class="modal-error"></div>
       <div class="modal-actions">
         <button class="btn" onclick="closeLabelModal()">Cancel</button>
         <button class="btn" onclick="onSaveLabelClick()">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="checkpoint-modal-overlay" class="modal-overlay hidden" onclick="if (event.target === this) closeCheckpointModal()">
+    <div class="modal-box">
+      <div class="modal-head">
+        <span>Select checkpoint</span>
+      </div>
+      <div id="checkpoint-modal-list" class="checkpoint-modal-list"></div>
+      <div class="modal-actions">
+        <button class="btn" onclick="closeCheckpointModal()">Cancel</button>
       </div>
     </div>
   </div>
@@ -1008,7 +1023,7 @@
     <section id="workspace-section" class="hidden">
       <div class="tabs-panel">
         <div class="controls-row">
-          <select id="checkpoint-select" onchange="onCheckpointClick(Number(this.value))"></select>
+          <button class="btn" id="checkpoint-picker-btn" onclick="openCheckpointModal()">Checkpoint</button>
           <div class="tabs-spacer"></div>
           <div class="tabs-actions" id="tabs-actions"></div>
         </div>
@@ -1083,9 +1098,9 @@
       // { cached, path, mode } last rendered by renderFilesTree, so the 2s poll
       // doesn't rebuild the tree and collapse open <details> folders.
       lastRenderedFilesTree: null,
-      // signature string last rendered by renderCheckpointSelect, so the 2s
-      // poll doesn't rebuild the <option> list and flicker the dropdown.
-      lastRenderedCheckpointSelect: null,
+      // whether the checkpoint picker modal is open, so the 2s poll knows
+      // whether to keep its list live.
+      checkpointModalOpen: false,
       // session_ids with a delete request in flight.
       deletingSessions: new Set(),
       // session_ids with a chat request in flight.
@@ -1529,23 +1544,38 @@
 
     // ── Rendering: checkpoint picker ────────────────────────────────────────────
 
-    function renderCheckpointSelect() {
+    function renderCheckpointButton() {
+      const cpId = viewState.selectedCpId;
+      document.getElementById('checkpoint-picker-btn').textContent = cpId != null ? `Checkpoint ${cpId}` : 'Checkpoint';
+    }
+
+    function renderCheckpointModalList() {
+      if (!viewState.checkpointModalOpen) return;
       const session = findSession(viewState.selectedSessionId);
       if (!session) return;
 
-      const checkpoints = [...session.checkpoints].reverse();
-      const signature = checkpoints.map(c => `${c.checkpoint_id}:${c.label || ''}:${c.is_current}`).join(',');
+      const list = document.getElementById('checkpoint-modal-list');
+      list.innerHTML = [...session.checkpoints].reverse().map(checkpoint => {
+        const label = checkpoint.label ? ` ${escHtml(checkpoint.label)}` : '';
+        const current = checkpoint.is_current ? ' current' : '';
+        return `<div class="checkpoint-modal-item${current}" onclick="onCheckpointModalItemClick(${checkpoint.checkpoint_id})">Checkpoint ${checkpoint.checkpoint_id}${label}</div>`;
+      }).join('');
+    }
 
-      const select = document.getElementById('checkpoint-select');
-      if (viewState.lastRenderedCheckpointSelect !== signature) {
-        select.innerHTML = checkpoints.map(checkpoint => {
-          const label = checkpoint.label ? ` ${escHtml(checkpoint.label)}` : '';
-          const current = checkpoint.is_current ? ' (current)' : '';
-          return `<option value="${checkpoint.checkpoint_id}">${checkpoint.checkpoint_id}${label}${current}</option>`;
-        }).join('');
-        viewState.lastRenderedCheckpointSelect = signature;
-      }
-      select.value = viewState.selectedCpId;
+    function openCheckpointModal() {
+      viewState.checkpointModalOpen = true;
+      renderCheckpointModalList();
+      document.getElementById('checkpoint-modal-overlay').classList.remove('hidden');
+    }
+
+    function closeCheckpointModal() {
+      viewState.checkpointModalOpen = false;
+      document.getElementById('checkpoint-modal-overlay').classList.add('hidden');
+    }
+
+    function onCheckpointModalItemClick(cpId) {
+      closeCheckpointModal();
+      onCheckpointClick(cpId);
     }
 
     // ── Rendering: checkpoint info tab ──────────────────────────────────────────
@@ -1947,7 +1977,7 @@
       viewState.selectedFilePath = null;
       viewState.filePreviewMode = 'content';
 
-      renderCheckpointSelect();
+      renderCheckpointButton();
       renderWorkspacePanel();
 
       const sessionId = viewState.selectedSessionId;
@@ -2145,7 +2175,8 @@
           try {
             viewState.checkpointHistory = await Api.checkpointHistory(viewState.selectedSessionId);
           } catch (_) { }
-          renderCheckpointSelect();
+          renderCheckpointButton();
+          renderCheckpointModalList();
           if (viewState.selectedCpId != null) renderWorkspacePanel();
         } else if (viewState.selectedSessionId) {
           // Selected session no longer exists (destroyed or reaped) — clear the stale detail view.
