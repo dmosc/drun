@@ -74,7 +74,7 @@ impl Default for Config {
                 "__pycache__".to_string(),
                 ".git".to_string(),
             ],
-            snapshots_dir: PathBuf::from("drun-snapshots"),
+            snapshots_dir: Self::default_snapshots_dir(),
             snapshot_on_close: false,
             env_allowlist: vec![],
             bash_timeout_ms: 30_000,
@@ -88,6 +88,15 @@ impl Default for Config {
 }
 
 impl Config {
+    /// `~/.drun/snapshots`, falling back to a relative `drun-snapshots` if
+    /// HOME isn't set (e.g. some CI sandboxes).
+    fn default_snapshots_dir() -> PathBuf {
+        match std::env::var("HOME") {
+            Ok(home) => PathBuf::from(home).join(".drun").join("snapshots"),
+            Err(_) => PathBuf::from("drun-snapshots"),
+        }
+    }
+
     pub fn domain_allowed(&self, host: &str) -> bool {
         self.domain_allowlist
             .iter()
@@ -218,7 +227,7 @@ mod tests {
                 ".git"
             ]
         );
-        assert_eq!(config.snapshots_dir, PathBuf::from("drun-snapshots"));
+        assert_eq!(config.snapshots_dir, Config::default_snapshots_dir());
         assert!(!config.snapshot_on_close);
         assert_eq!(config.env_allowlist, Vec::<String>::new());
         assert_eq!(config.bash_timeout_ms, 30_000);
@@ -227,6 +236,15 @@ mod tests {
         assert_eq!(config.web_port, Some(7274));
         assert!(!config.package_install_enabled);
         assert_eq!(config.package_install_timeout_ms, 180_000);
+    }
+
+    #[test]
+    fn default_snapshots_dir_lives_under_the_drun_home_directory() {
+        let home = std::env::var("HOME").expect("HOME not set");
+        assert_eq!(
+            Config::default_snapshots_dir(),
+            PathBuf::from(home).join(".drun").join("snapshots")
+        );
     }
 
     #[test]
@@ -351,7 +369,7 @@ mod tests {
         assert!(config.bash_command_denylist.is_empty());
         assert!(config.bash_command_allowlist.is_empty());
         assert!(!config.snapshot_on_close);
-        assert_eq!(config.snapshots_dir, PathBuf::from("drun-snapshots"));
+        assert_eq!(config.snapshots_dir, Config::default_snapshots_dir());
         assert_eq!(
             config.mount_overlay_paths,
             vec![

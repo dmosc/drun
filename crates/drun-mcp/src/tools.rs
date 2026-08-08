@@ -481,7 +481,8 @@ pub struct ListSnapshots {}
 )]
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct SessionSnapshotTool {
-    /// Absolute path for the output .drun file. Defaults to ./drun-snapshots/<session_id>.drun.
+    /// Absolute path for the output .drun file. Defaults to
+    /// ~/.drun/snapshots/<session_id>.drun.
     pub path: Option<String>,
     /// Description documenting the operation.
     pub description: String,
