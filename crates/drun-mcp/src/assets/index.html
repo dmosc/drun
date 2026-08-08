@@ -432,6 +432,22 @@
       background: var(--red-bg);
     }
 
+    .card-action:disabled,
+    .btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    .card-action:disabled:hover {
+      color: var(--text-dim);
+      background: none;
+    }
+
+    .btn:disabled:hover {
+      color: var(--text-dim);
+      border-color: var(--border-hi);
+    }
+
     /* ── Checkpoint info ───────────────────────────────────────────────── */
     .context-description {
       flex-basis: 100%;
@@ -1517,6 +1533,12 @@
         const prevHeadCpId = viewState.lastKnownHeadCp.get(s.session_id);
         const justCreated = prevHeadCpId != null && headCpId != null && headCpId > prevHeadCpId;
         viewState.lastKnownHeadCp.set(s.session_id, headCpId);
+        // Generate a disabled attribute for buttons whose operations can't
+        // execute when a session is in running state due to the mutex lock
+        // that gets enforced. Any operation that mutates a session gets
+        // temporarily disabled during this period.
+        const isBusy = s.running || viewState.chattingSessions.has(s.session_id);
+        const busyAttr = isBusy ? 'disabled' : '';
 
         return `
           <div class="session-card ${isActive ? 'active' : ''}">
@@ -1533,9 +1555,9 @@
             </div>
             <div class="card-actions-row">
               <button class="card-action" onclick="copyToClipboard('${escHtml(s.session_id)}', this)">Copy</button>
-              <button class="card-action" onclick="onEditLabelClick('${escHtml(s.session_id)}')">Label</button>
-              <button class="card-action" onclick="onSnapshotClick('${escHtml(s.session_id)}', this)">Snapshot</button>
-              <button class="card-action" onclick="onChatClick('${escHtml(s.session_id)}')">Chat</button>
+              <button class="card-action" ${busyAttr} onclick="onEditLabelClick('${escHtml(s.session_id)}')">Label</button>
+              <button class="card-action" ${busyAttr} onclick="onSnapshotClick('${escHtml(s.session_id)}', this)">Snapshot</button>
+              <button class="card-action" ${busyAttr} onclick="onChatClick('${escHtml(s.session_id)}')">Chat</button>
               <button class="card-action card-action-danger" onclick="onDestroySessionClick('${escHtml(s.session_id)}')">Delete</button>
             </div>
           </div>`;
@@ -1624,9 +1646,14 @@
       const treeCp = session?.checkpoints.find(c => c.checkpoint_id === cpId);
       const rollbackHidden = treeCp?.is_current ? 'style="display:none"' : '';
 
+      // Fork/Rollback need the session mutex, which a running command holds
+      // for its whole duration — disable rather than let the request 503.
+      const isBusy = session?.running || viewState.chattingSessions.has(sessionId);
+      const busyAttr = isBusy ? 'disabled' : '';
+
       container.innerHTML = `
-        <button class="btn" onclick="onForkFromHereClick()">Fork</button>
-        <button class="btn" id="rollback-here-btn" ${rollbackHidden} onclick="onRollbackHereClick()">Rollback</button>`;
+        <button class="btn" ${busyAttr} onclick="onForkFromHereClick()">Fork</button>
+        <button class="btn" id="rollback-here-btn" ${busyAttr} ${rollbackHidden} onclick="onRollbackHereClick()">Rollback</button>`;
     }
 
     // ── Rendering: tabs ──────────────────────────────────────────────────────
