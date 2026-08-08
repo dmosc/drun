@@ -119,16 +119,19 @@ impl SessionTreeNode {
             }
         }
 
+        let locked_ids: std::collections::HashSet<&str> =
+            locked_sessions.iter().map(|(id, _)| id.as_str()).collect();
+
         let mut children: HashMap<(String, usize), Vec<(String, &Session)>> = HashMap::new();
         let mut roots: Vec<(&str, &Session)> = Vec::new();
 
         for (id, session) in &locked_sessions {
             let session: &Session = session;
-            let parent_exists = session
+            let parent_locked = session
                 .parent
                 .as_ref()
-                .is_some_and(|r| sessions.contains_key(&r.session_id));
-            if parent_exists {
+                .is_some_and(|r| locked_ids.contains(r.session_id.as_str()));
+            if parent_locked {
                 let r = session.parent.as_ref().unwrap();
                 children
                     .entry((r.session_id.clone(), r.checkpoint_id))
@@ -313,5 +316,38 @@ mod tests {
         assert_eq!(forest.len(), 1, "the busy session must still appear");
         assert_eq!(forest[0].session_id, "s1");
         assert!(forest[0].running);
+    }
+
+    #[test]
+    fn session_tree_node_forest_still_surfaces_a_fork_whose_parent_is_busy() {
+        // A busy parent can't be walked to reach its children through the
+        // usual checkpoint-forks nesting, so a busy parent must not make its
+        // children vanish from the tree entirely.
+        let parent_arc = Arc::new(Mutex::new(new_session()));
+        let mut child = new_session();
+        child.parent = Some(CheckpointRef {
+            session_id: "parent".to_string(),
+            checkpoint_id: 0,
+        });
+        let mut sessions = HashMap::new();
+        sessions.insert("parent".to_string(), parent_arc.clone());
+        sessions.insert("child".to_string(), Arc::new(Mutex::new(child)));
+
+        let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+        let hold_thread = std::thread::spawn(move || {
+            let _guard = parent_arc.lock().unwrap();
+            let _ = release_rx.recv();
+        });
+        std::thread::sleep(Duration::from_millis(50));
+
+        let forest = SessionTreeNode::forest(&sessions, &LiveOutputRegistry::default());
+
+        release_tx.send(()).unwrap();
+        hold_thread.join().unwrap();
+
+        assert!(
+            forest.iter().any(|node| node.session_id == "child"),
+            "child must still appear even though its parent is busy"
+        );
     }
 }

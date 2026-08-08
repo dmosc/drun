@@ -202,6 +202,17 @@
       min-height: 320px;
     }
 
+    .modal-input {
+      margin: 12px 14px;
+      padding: 10px;
+      background: var(--s2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 12px;
+    }
+
     .modal-error {
       margin: 0 14px 10px;
       color: var(--red);
@@ -251,6 +262,7 @@
     /* ── Session cards ─────────────────────────────────────────────────── */
     #sessions-grid {
       display: flex;
+      align-items: flex-start;
       gap: 8px;
       overflow-x: auto;
       overflow-y: hidden;
@@ -305,11 +317,24 @@
       margin-bottom: 10px;
     }
 
+    .card-label-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      min-height: 26px;
+      margin-bottom: 6px;
+    }
+
     .card-session-label {
       font-size: 12.5px;
       font-weight: 600;
       color: var(--text);
-      margin-bottom: 6px;
+      flex: 1 1 auto;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     .card-session-label.unlabeled {
@@ -360,19 +385,6 @@
 
     .cp-blink {
       animation: cp-blink 1s ease-out;
-    }
-
-    .badge-fork {
-      background: var(--s3);
-      color: var(--text-muted);
-      border: 1px solid var(--border);
-      font-size: 10px;
-      cursor: pointer;
-    }
-
-    .badge-fork:hover {
-      color: var(--accent);
-      border-color: var(--accent);
     }
 
     .badge-warn {
@@ -567,7 +579,8 @@
         grid-template-columns: 1fr;
       }
 
-      .modal-textarea {
+      .modal-textarea,
+      .modal-input {
         font-size: 16px;
       }
     }
@@ -967,6 +980,21 @@
       <div class="modal-actions">
         <button class="btn" onclick="closeChatModal()">Close</button>
         <button class="btn" onclick="onSendChatClick()">Send</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="label-modal-overlay" class="modal-overlay hidden" onclick="if (event.target === this) closeLabelModal()">
+    <div class="modal-box">
+      <div class="modal-head">
+        <span>Label</span>
+        <button class="btn" onclick="closeLabelModal()">✕</button>
+      </div>
+      <input id="label-modal-input" class="modal-input" type="text" placeholder="Label for this session (empty to clear)">
+      <div id="label-modal-error" class="modal-error"></div>
+      <div class="modal-actions">
+        <button class="btn" onclick="closeLabelModal()">Cancel</button>
+        <button class="btn" onclick="onSaveLabelClick()">Save</button>
       </div>
     </div>
   </div>
@@ -1452,12 +1480,14 @@
         return `
           <div class="session-card ${isActive ? 'active' : ''}">
             <div class="session-card-main" onclick="onSessionClick('${escHtml(s.session_id)}')" title="Created ${fmtDuration(s.age_secs)} ago">
-              <div class="card-session-label ${s.label ? '' : 'unlabeled'}">${s.label ? escHtml(s.label) : 'Unlabeled'}</div>
+              <div class="card-label-row">
+                <div class="card-session-label ${s.label ? '' : 'unlabeled'}">${s.label ? escHtml(s.label) : 'Unlabeled'}</div>
+                ${isForked ? `<button class="btn" onclick="event.stopPropagation(); onSessionClick('${escHtml(s.parent_session_id)}')" title="Forked at checkpoint ${s.parent_checkpoint_id} — click to open">${escHtml(s.parent_session_id)}</button>` : ''}
+              </div>
               <div class="card-session-id">${escHtml(s.session_id)}</div>
               <div class="card-badges">
                 <span class="badge badge-neutral ${justCreated ? 'cp-blink' : ''}">Checkpoints: ${headCpId ?? '—'}</span>
                 ${sessionStatusBadge(s)}
-                ${isForked ? `<span class="badge badge-fork" onclick="event.stopPropagation(); onSessionClick('${escHtml(s.parent_session_id)}')" title="Forked at checkpoint ${s.parent_checkpoint_id} — click to open">${escHtml(s.parent_session_id)}</span>` : ''}
               </div>
             </div>
             <div class="card-actions-row">
@@ -1981,9 +2011,26 @@
       await refresh();
     }
 
-    async function onEditLabelClick(sessionId) {
-      const next = prompt('Label for this session (empty to clear):', findSession(sessionId)?.label || '');
-      if (next === null) return;
+    let labelModalSessionId = null;
+
+    function onEditLabelClick(sessionId) {
+      labelModalSessionId = sessionId;
+      document.getElementById('label-modal-input').value = findSession(sessionId)?.label || '';
+      document.getElementById('label-modal-error').textContent = '';
+      document.getElementById('label-modal-overlay').classList.remove('hidden');
+    }
+
+    function closeLabelModal() {
+      labelModalSessionId = null;
+      document.getElementById('label-modal-overlay').classList.add('hidden');
+    }
+
+    async function onSaveLabelClick() {
+      const sessionId = labelModalSessionId;
+      const next = document.getElementById('label-modal-input').value;
+      if (!sessionId) return;
+
+      closeLabelModal();
       try {
         await Api.setLabel(sessionId, next);
       } catch (e) {
