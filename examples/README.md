@@ -121,10 +121,10 @@ Install Ollama from [ollama.com](https://ollama.com), pull a model, then pass
 `MODEL` and `BASE_URL`:
 
 ```bash
-ollama pull qwen2.5:14b
+ollama pull qwen3.6:latest
 
 DRUN_CONFIG=examples/financial_analysis.toml \
-    MODEL=openai/qwen2.5:14b \
+    MODEL=openai/qwen3.6:latest \
     BASE_URL=http://localhost:11434/v1 \
     python examples/financial_analysis.py
 ```
@@ -132,9 +132,9 @@ DRUN_CONFIG=examples/financial_analysis.toml \
 Use the `openai/<model>` prefix with Ollama's `/v1` endpoint — it threads tool
 call IDs more reliably than the `ollama/<model>` prefix.
 
-Recommended local models: `qwen2.5:14b`, `qwen2.5:7b`. Avoid reasoning variants
-(`deepseek-r1`, `qwen3.*`) — they emit tool calls as plain text rather than
-structured JSON.
+Recommended local models: `qwen3.6:latest`, `qwen2.5:7b`. Avoid reasoning
+variants (`deepseek-r1`, `qwen3.*`) — they emit tool calls as plain text rather
+than structured JSON.
 
 ### Available Python examples
 
@@ -284,7 +284,7 @@ curl -fsSL https://raw.githubusercontent.com/dmosc/drun/main/install.sh | bash
 
 ```bash
 # Install from https://ollama.com, then:
-ollama pull qwen2.5:14b
+ollama pull qwen3.6:latest
 ```
 
 ### Step 3: install the drun Python package and chat
@@ -308,15 +308,15 @@ subject to the daemon's `domain_allowlist`.
 
 **`drun chat` flags:**
 
-| Flag                 | Default                     | Description                                                 |
-| -------------------- | --------------------------- | ----------------------------------------------------------- |
-| `--mcp-url URL`      | `http://127.0.0.1:7273/mcp` | drun-mcp daemon endpoint                                    |
-| `--model MODEL`      | `ollama_chat/qwen2.5:14b`   | litellm model identifier                                    |
-| `--base-url URL`     | —                           | LLM API base URL override                                   |
-| `--session-id ID`    | —                           | Attach to an existing session instead of creating a new one |
-| `--mount PATH`       | —                           | Mount a host path into the session (repeatable)             |
-| `--system PROMPT`    | built-in                    | Override the system prompt                                  |
-| `--max-iterations N` | `30`                        | Maximum agent loop iterations                               |
+| Flag                 | Default                      | Description                                                 |
+| -------------------- | ---------------------------- | ----------------------------------------------------------- |
+| `--mcp-url URL`      | `http://127.0.0.1:7273/mcp`  | drun-mcp daemon endpoint                                    |
+| `--model MODEL`      | `ollama_chat/qwen3.6:latest` | litellm model identifier                                    |
+| `--base-url URL`     | —                            | LLM API base URL override                                   |
+| `--session-id ID`    | —                            | Attach to an existing session instead of creating a new one |
+| `--mount PATH`       | —                            | Mount a host path into the session (repeatable)             |
+| `--system PROMPT`    | built-in                     | Override the system prompt                                  |
+| `--max-iterations N` | `30`                         | Maximum agent loop iterations                               |
 
 ---
 

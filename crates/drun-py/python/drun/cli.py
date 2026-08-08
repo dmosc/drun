@@ -19,7 +19,7 @@ class ChatCommand:
     """
 
     DEFAULT_MCP_URL = "http://127.0.0.1:7273/mcp"
-    DEFAULT_MODEL = "ollama_chat/qwen2.5:14b"
+    DEFAULT_MODEL = "ollama_chat/qwen3.6:latest"
 
     @classmethod
     def main(cls) -> None:
@@ -46,7 +46,7 @@ class ChatCommand:
             help=(
                 "litellm model id. Use the ollama_chat/ prefix (not ollama/) for "
                 "local Ollama models — it forwards tool calls to Ollama's native "
-                "/api/chat endpoint. Examples: ollama_chat/qwen2.5:14b, "
+                "/api/chat endpoint. Examples: ollama_chat/qwen3.6:latest, "
                 "claude-sonnet-4-6, gpt-4o, gemini/gemini-2.0-flash. "
                 "Default: %(default)s"
             ),
@@ -79,6 +79,16 @@ class ChatCommand:
                 "of retried. Default: %(default)s"
             ),
         )
+        chat.add_argument(
+            "--reasoning-effort", default=None, choices=["low", "medium", "high"],
+            help=(
+                "Enable thinking mode on models that support it. For "
+                "ollama_chat/ models this maps to Ollama's native `think` field "
+                "(qwen3, deepseek-r1, gpt-oss, ...); ignored by models that "
+                "don't support reasoning. Omit to leave thinking off/at the "
+                "model's own default."
+            ),
+        )
         return parser
 
     async def _run_chat(self, args: argparse.Namespace) -> None:
@@ -94,6 +104,7 @@ class ChatCommand:
                         system=args.system,
                         max_iterations=args.max_iterations,
                         llm_retries=args.llm_retries,
+                        reasoning_effort=args.reasoning_effort,
                     )
                     await agent.run(args.prompt)
                 except Exception as exc:

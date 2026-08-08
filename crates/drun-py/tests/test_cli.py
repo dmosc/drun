@@ -44,6 +44,7 @@ def make_args(**overrides: object) -> argparse.Namespace:
         system=None,
         max_iterations=5,
         llm_retries=3,
+        reasoning_effort=None,
     )
     defaults.update(overrides)
     return argparse.Namespace(**defaults)

@@ -109,8 +109,8 @@ curl -fsSL https://raw.githubusercontent.com/dmosc/drun/main/update.sh | bash
 curl -fsSL https://raw.githubusercontent.com/dmosc/drun/main/update.sh | bash -s -- v0.3.16
 ```
 
-`update.sh` also upgrades `drun-sandbox[chat]` to its latest version, best-effort,
-if it's already installed — skipped quietly otherwise.
+`update.sh` also upgrades `drun-sandbox[chat]` to its latest version,
+best-effort, if it's already installed — skipped quietly otherwise.
 
 #### Uninstalling
 
@@ -361,7 +361,7 @@ pip install 'drun-sandbox[chat]'
 For a local model, install Ollama and pull a tool-calling-capable model:
 
 ```bash
-ollama pull qwen2.5:14b
+ollama pull qwen3.6:latest
 ```
 
 Then run:
@@ -370,8 +370,8 @@ Then run:
 drun chat "your prompt" --mount ./my-project
 ```
 
-`--model` defaults to `ollama_chat/qwen2.5:14b`. To use a cloud model instead,
-pass `--model` and set the provider's API key:
+`--model` defaults to `ollama_chat/qwen3.6:latest`. To use a cloud model
+instead, pass `--model` and set the provider's API key:
 
 ```bash
 ANTHROPIC_API_KEY=... drun chat "your prompt" --model claude-sonnet-4-6

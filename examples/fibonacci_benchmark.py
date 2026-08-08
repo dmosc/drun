@@ -21,7 +21,7 @@ Usage:
 
     # Local model via Ollama (no API key needed):
     DRUN_CONFIG=examples/fibonacci_benchmark.toml \\
-        MODEL=openai/qwen2.5:14b BASE_URL=http://localhost:11434/v1 \\
+        MODEL=openai/qwen3.6:latest BASE_URL=http://localhost:11434/v1 \\
         python examples/fibonacci_benchmark.py
 
 Note on networking:

@@ -55,12 +55,13 @@ class ChatAgent:
         self,
         bridge: Bridge,
         *,
-        model: str = "ollama_chat/qwen2.5:14b",
+        model: str = "ollama_chat/qwen3.6:latest",
         base_url: str | None = None,
         system: str | None = None,
         max_iterations: int = 30,
         llm_retries: int = 3,
         llm_retry_base_delay: float = 0.5,
+        reasoning_effort: str | None = None,
     ) -> None:
         self._bridge = bridge
         self._model = model
@@ -69,6 +70,7 @@ class ChatAgent:
         self._max_iterations = max_iterations
         self._completion_retry = RetryPolicy(
             attempts=llm_retries, base_delay=llm_retry_base_delay)
+        self._reasoning_effort = reasoning_effort
 
     async def run(self, prompt: str) -> str:
         litellm = self._import_litellm()
@@ -129,12 +131,18 @@ class ChatAgent:
     async def _complete(
         self, litellm: Any, messages: list[dict[str, Any]], tools: list[dict[str, Any]]
     ) -> tuple[Any, str]:
+        reasoning_kwargs = (
+            {"reasoning_effort": self._reasoning_effort}
+            if self._reasoning_effort is not None
+            else {}
+        )
         response = await litellm.acompletion(
             model=self._model,
             messages=messages,
             tools=tools,
             base_url=self._base_url,
             _skip_mcp_handler=True,
+            **reasoning_kwargs,
         )
         choice = response.choices[0]
         return choice.message, choice.finish_reason
@@ -166,7 +174,7 @@ class ChatAgent:
         if not answer:
             print(
                 f"[drun] model returned empty content (finish_reason={finish_reason!r}). "
-                "Try a non-thinking model such as ollama_chat/qwen2.5:14b.",
+                "Try a non-thinking model such as ollama_chat/qwen3.6:latest.",
                 file=sys.stderr,
             )
         print(answer)

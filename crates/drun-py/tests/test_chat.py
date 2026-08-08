@@ -85,6 +85,38 @@ async def test_run_uses_the_bridges_default_system_prompt(monkeypatch):
         "role": "system", "content": "fake system prompt"}
 
 
+async def test_run_omits_reasoning_effort_by_default(monkeypatch):
+    bridge = FakeBridge()
+    captured_kwargs: dict[str, Any] = {}
+
+    async def _acompletion(**kwargs: object) -> FakeResponse:
+        captured_kwargs.update(kwargs)
+        return FakeResponse(FakeChoice(FakeMessage("done")))
+
+    monkeypatch.setattr(litellm, "acompletion", _acompletion)
+
+    agent = ChatAgent(bridge)
+    await agent.run("do the thing")
+
+    assert "reasoning_effort" not in captured_kwargs
+
+
+async def test_run_passes_reasoning_effort_when_given(monkeypatch):
+    bridge = FakeBridge()
+    captured_kwargs: dict[str, Any] = {}
+
+    async def _acompletion(**kwargs: object) -> FakeResponse:
+        captured_kwargs.update(kwargs)
+        return FakeResponse(FakeChoice(FakeMessage("done")))
+
+    monkeypatch.setattr(litellm, "acompletion", _acompletion)
+
+    agent = ChatAgent(bridge, reasoning_effort="high")
+    await agent.run("do the thing")
+
+    assert captured_kwargs["reasoning_effort"] == "high"
+
+
 async def test_run_prefers_an_explicit_system_prompt_override(monkeypatch):
     bridge = FakeBridge()
     captured_messages: list[dict[str, Any]] = []

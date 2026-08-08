@@ -26,7 +26,7 @@ Usage:
 
     # Local Ollama (no API key)
     DRUN_CONFIG=examples/data_science.toml \\
-        MODEL=openai/qwen2.5:14b BASE_URL=http://localhost:11434/v1 \\
+        MODEL=openai/qwen3.6:latest BASE_URL=http://localhost:11434/v1 \\
         python examples/data_science.py
 
 Expected behavior:

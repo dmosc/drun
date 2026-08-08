@@ -477,6 +477,8 @@ impl WebServer {
                 &session_id,
                 "--mcp-url",
                 &mcp_url,
+                "--reasoning-effort",
+                "high",
             ])
             .output()
             .await

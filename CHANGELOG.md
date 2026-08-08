@@ -10,42 +10,42 @@ All notable changes to drun are documented here.
 
 - **`session_commit` is gone.** It tried to make a mounted host directory an
   exact two-way mirror of the sandbox — including deleting host files the
-  sandbox no longer had — which meant tracking where every file was mounted
-  from well enough to still get that right after a rename, a squash, or a
-  fork, and every attempt at that tracking (root-based resolution, a
-  fork-inherited baseline, a fresh-rescan-every-time mirror) either went stale
-  or quietly deleted something outside the sandbox's own history. The sandbox
-  was never meant to be a synced mirror of the host — it's a scratchpad
-  seeded from it via `session_mount`. `session_export` already covers writing
-  workspace files back out to a host path; it just creates/overwrites,
-  never deletes, and doesn't need to be the directory a mount came from (or a
-  mount at all). If a sandbox reorganization needs to delete or move files on
-  the actual host, that's now explicitly the caller's job, not drun's.
+  sandbox no longer had — which meant tracking where every file was mounted from
+  well enough to still get that right after a rename, a squash, or a fork, and
+  every attempt at that tracking (root-based resolution, a fork-inherited
+  baseline, a fresh-rescan-every-time mirror) either went stale or quietly
+  deleted something outside the sandbox's own history. The sandbox was never
+  meant to be a synced mirror of the host — it's a scratchpad seeded from it via
+  `session_mount`. `session_export` already covers writing workspace files back
+  out to a host path; it just creates/overwrites, never deletes, and doesn't
+  need to be the directory a mount came from (or a mount at all). If a sandbox
+  reorganization needs to delete or move files on the actual host, that's now
+  explicitly the caller's job, not drun's.
 - `MountTable` no longer tracks mounted directory/file roots for write-back
-  purposes — it only tracks read-only `overlays` (`node_modules`, `.venv`,
-  etc.) for `session_bash`. `session_mount` is now a one-time copy into the
-  workspace with no memory of where it came from.
+  purposes — it only tracks read-only `overlays` (`node_modules`, `.venv`, etc.)
+  for `session_bash`. `session_mount` is now a one-time copy into the workspace
+  with no memory of where it came from.
 - `SessionState`'s `committed_files` field is gone along with it — it existed
   solely to report `session_commit`'s output.
 
 ### `drun chat` agent hardening
 
-- **A failing tool call no longer kills the agent run.** `ChatAgent` now
-  catches bad tool arguments, bridge errors, and daemon-reported tool
-  failures and reports them back to the model as that call's result instead
-  of raising, so the model can retry differently, try another tool, or give
-  up on its own terms — one failure no longer ends the trajectory. Tool
-  calls are deliberately *not* retried automatically: repeating an unchanged
-  call can't fix a semantic failure and could re-run a non-idempotent tool's
-  side effect (e.g. a write) a second time.
+- **A failing tool call no longer kills the agent run.** `ChatAgent` now catches
+  bad tool arguments, bridge errors, and daemon-reported tool failures and
+  reports them back to the model as that call's result instead of raising, so
+  the model can retry differently, try another tool, or give up on its own terms
+  — one failure no longer ends the trajectory. Tool calls are deliberately _not_
+  retried automatically: repeating an unchanged call can't fix a semantic
+  failure and could re-run a non-idempotent tool's side effect (e.g. a write) a
+  second time.
 - **LLM requests are retried**, since unlike tool calls they're the same
   idempotent request and transient infra blips (timeouts, rate limits) are
   common — bounded attempts with exponential backoff via a new `RetryPolicy`
   (`crates/drun-py/python/drun/retry.py`), configurable via the new
   `--llm-retries` flag.
-- `Bridge` implementations (`DrunMcpBridge`, `LocalSessionBridge`) now share
-  one contract — `call` raises on failure, `ChatAgent` decides how to
-  recover — removing `LocalSessionBridge`'s separate error-swallowing.
+- `Bridge` implementations (`DrunMcpBridge`, `LocalSessionBridge`) now share one
+  contract — `call` raises on failure, `ChatAgent` decides how to recover —
+  removing `LocalSessionBridge`'s separate error-swallowing.
 - `drun/cli.py` is now a `ChatCommand` class instead of free functions.
 
 ### Hermes bridge + `drun-mcp` provider subcommands
@@ -182,12 +182,12 @@ All notable changes to drun are documented here.
   (tool-calling loop) classes back the CLI. New `--mcp-url` flag (default
   `http://127.0.0.1:7273/mcp`); a running daemon is now required for
   `drun chat`.
-- Default `--model` changed from `ollama/qwen2.5:14b` to
-  `ollama_chat/qwen2.5:14b`. litellm's `ollama/` prefix routes through Ollama's
-  legacy `/api/generate` endpoint, which emulates tool calling via a JSON-mode
-  hack that silently produces empty responses on models like `gpt-oss`/`qwen3`;
-  `ollama_chat/` routes through Ollama's native `/api/chat` endpoint, which
-  forwards `tools` as real function-calling.
+- Default `--model` changed from `ollama/qwen3.6:latest` to
+  `ollama_chat/qwen3.6:latest`. litellm's `ollama/` prefix routes through
+  Ollama's legacy `/api/generate` endpoint, which emulates tool calling via a
+  JSON-mode hack that silently produces empty responses on models like
+  `gpt-oss`/`qwen3`; `ollama_chat/` routes through Ollama's native `/api/chat`
+  endpoint, which forwards `tools` as real function-calling.
 - Fixed `DrunMcpBridge.call()` swallowing tool-level errors: it now raises with
   the daemon's actual error text instead of silently returning it as if it were
   successful output, which previously surfaced as a confusing
