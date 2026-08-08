@@ -344,6 +344,14 @@
       gap: 6px;
     }
 
+    .card-badges-row {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 6px;
+      max-width: 100%;
+    }
+
     .badge {
       display: inline-flex;
       align-items: center;
@@ -1595,8 +1603,10 @@
                 ${isForked ? `<button class="btn" onclick="event.stopPropagation(); onSessionClick('${escHtml(s.parent_session_id)}')" title="Forked at checkpoint ${s.parent_checkpoint_id} — click to open">${escHtml(s.parent_session_id)}</button>` : ''}
               </div>
               <div class="card-badges">
-                <span class="badge badge-neutral">ID: ${escHtml(s.session_id)}</span>
-                <span class="badge badge-neutral ${justCreated ? 'cp-blink' : ''}">Checkpoints: ${headCpId ?? '—'}</span>
+                <div class="card-badges-row">
+                  <span class="badge badge-neutral">ID: ${escHtml(s.session_id)}</span>
+                  <span class="badge badge-neutral ${justCreated ? 'cp-blink' : ''}">Checkpoints: ${headCpId ?? '—'}</span>
+                </div>
                 ${sessionStatusBadge(s)}
               </div>
             </div>
