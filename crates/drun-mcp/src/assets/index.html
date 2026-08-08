@@ -39,6 +39,7 @@
     html,
     body {
       height: 100%;
+      overscroll-behavior: none;
       background: var(--bg);
       color: var(--text);
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
@@ -189,6 +190,7 @@
     #status-modal-body {
       padding: 4px 14px 12px;
       overflow-y: auto;
+      overscroll-behavior: contain;
     }
 
     .modal-textarea {
@@ -264,6 +266,7 @@
       overflow-y: hidden;
       padding-bottom: 6px;
       -webkit-overflow-scrolling: touch;
+      overscroll-behavior: contain;
     }
 
     .empty-state {
@@ -486,6 +489,7 @@
     .tabs-head {
       display: flex;
       overflow-x: auto;
+      overscroll-behavior: contain;
       border-bottom: 1px solid var(--border);
     }
 
@@ -583,6 +587,7 @@
 
     .column-body {
       overflow-y: auto;
+      overscroll-behavior: contain;
     }
 
     #output-body {
@@ -649,6 +654,7 @@
     .output-pre-scroll {
       max-height: 450px;
       overflow-y: auto;
+      overscroll-behavior: contain;
     }
 
     .output-command {
@@ -849,6 +855,7 @@
 
     .diff-block {
       overflow-x: auto;
+      overscroll-behavior: contain;
     }
 
     .diff-line {
