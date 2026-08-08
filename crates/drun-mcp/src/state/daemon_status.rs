@@ -51,7 +51,56 @@ impl DaemonStatus {
         }
     }
 
+    /// Bytes currently resident.
     fn memory_rss_bytes() -> Option<u64> {
+        #[cfg(target_os = "macos")]
+        {
+            Self::current_rss_bytes_macos()
+        }
+        #[cfg(target_os = "linux")]
+        {
+            Self::current_rss_bytes_linux()
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+        {
+            Self::peak_rss_bytes_via_getrusage()
+        }
+    }
+
+    /// Current RSS via the same mach task_info call Activity Monitor uses.
+    #[cfg(target_os = "macos")]
+    fn current_rss_bytes_macos() -> Option<u64> {
+        let mut info: libc::mach_task_basic_info = unsafe { std::mem::zeroed() };
+        let mut count = libc::MACH_TASK_BASIC_INFO_COUNT;
+        let result = unsafe {
+            libc::task_info(
+                libc::mach_task_self_,
+                libc::MACH_TASK_BASIC_INFO,
+                &mut info as *mut _ as libc::task_info_t,
+                &mut count,
+            )
+        };
+        (result == libc::KERN_SUCCESS).then_some(info.resident_size)
+    }
+
+    /// Current RSS from the VmRSS line of /proc/self/status.
+    #[cfg(target_os = "linux")]
+    fn current_rss_bytes_linux() -> Option<u64> {
+        let status = std::fs::read_to_string("/proc/self/status").ok()?;
+        let kb: u64 = status
+            .lines()
+            .find_map(|line| line.strip_prefix("VmRSS:"))?
+            .split_whitespace()
+            .next()?
+            .parse()
+            .ok()?;
+        Some(kb * 1024)
+    }
+
+    /// Fallback for other unix targets without a live-RSS syscall wired up
+    /// here: the lifetime peak, which is still better than nothing.
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    fn peak_rss_bytes_via_getrusage() -> Option<u64> {
         let usage: libc::rusage = unsafe {
             let mut usage = std::mem::zeroed();
             if libc::getrusage(libc::RUSAGE_SELF, &mut usage) != 0 {
@@ -59,13 +108,7 @@ impl DaemonStatus {
             }
             usage
         };
-        // ru_maxrss is bytes on macOS, kilobytes on Linux.
-        let maxrss = usage.ru_maxrss as u64;
-        Some(if cfg!(target_os = "macos") {
-            maxrss
-        } else {
-            maxrss * 1024
-        })
+        Some(usage.ru_maxrss as u64 * 1024)
     }
 }
 
