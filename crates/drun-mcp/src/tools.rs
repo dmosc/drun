@@ -625,6 +625,24 @@ pub struct SessionCheckpointDrop {
     pub description: String,
 }
 
+#[mcp_tool(
+    name = "session_chat_record",
+    description = "Record a prompt/response exchange in the active session's chat log, so it \
+                   round-trips through session_snapshot and session_restore alongside the \
+                   checkpoint history. The drun chat CLI calls this automatically after every \
+                   response; never call it directly.",
+    idempotent_hint = false,
+    destructive_hint = false,
+    read_only_hint = false
+)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct SessionChatRecord {
+    /// The user's prompt for this exchange.
+    pub prompt: String,
+    /// The agent's final response to the prompt.
+    pub response: String,
+}
+
 tool_box!(
     DrunTools,
     [
@@ -660,5 +678,6 @@ tool_box!(
         SessionCheckpointDrop,
         SessionMerge,
         CheckpointReadStdstreams,
+        SessionChatRecord,
     ]
 );

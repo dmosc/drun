@@ -7,7 +7,7 @@ use crate::sandbox::Sandbox;
 use crate::snapshot::SessionSnapshot;
 use crate::text_parser_utilities::TextParserUtilities;
 use crate::workspace::Workspace;
-use crate::{Checkpoint, CheckpointRef, FileMap, Step};
+use crate::{ChatTurn, Checkpoint, CheckpointRef, FileMap, Step};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -31,6 +31,7 @@ pub struct Session {
     overlays: HashMap<String, PathBuf>,
     interner: Interner,
     workspace: Option<Workspace>,
+    chat_log: Vec<ChatTurn>,
     pub label: Option<String>,
     pub parent: Option<CheckpointRef>,
     pub created_at: Instant,
@@ -46,6 +47,7 @@ impl Session {
             overlays: HashMap::new(),
             interner: Interner::default(),
             workspace: None,
+            chat_log: Vec::new(),
             label: None,
             parent: None,
             created_at: Instant::now(),
@@ -56,12 +58,14 @@ impl Session {
     /// Crate-private assembly constructor for a fully-formed `Session` — used
     /// by [`SessionSnapshot::restore`], the only place that needs to build one
     /// from already-decoded parts rather than starting empty.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn from_parts(
         config: ConfigHandle,
         checkpoints: Vec<Checkpoint>,
         checkpoint_idx: usize,
         overlays: HashMap<String, PathBuf>,
         interner: Interner,
+        chat_log: Vec<ChatTurn>,
         label: Option<String>,
         parent: Option<CheckpointRef>,
     ) -> Self {
@@ -72,6 +76,7 @@ impl Session {
             overlays,
             interner,
             workspace: None,
+            chat_log,
             label,
             parent,
             created_at: Instant::now(),
@@ -85,6 +90,14 @@ impl Session {
 
     pub(crate) fn overlays(&self) -> &HashMap<String, PathBuf> {
         &self.overlays
+    }
+
+    pub fn chat_log(&self) -> &[ChatTurn] {
+        &self.chat_log
+    }
+
+    pub fn record_chat_turn(&mut self, prompt: String, response: String) {
+        self.chat_log.push(ChatTurn { prompt, response });
     }
 
     pub fn from_session(

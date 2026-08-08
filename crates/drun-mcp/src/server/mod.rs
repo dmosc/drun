@@ -96,6 +96,7 @@ impl ServerHandler for DrunHandler {
             DrunTools::CheckpointReadStdstreams(t) => {
                 self.handle_checkpoint_read_stdstreams(&connection_id, t)
             }
+            DrunTools::SessionChatRecord(t) => self.handle_session_chat_record(&connection_id, t),
         };
         self.tool_metrics
             .record(&tool_name, duration.elapsed(), result.is_ok());

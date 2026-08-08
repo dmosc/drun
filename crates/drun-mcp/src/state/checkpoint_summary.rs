@@ -101,6 +101,7 @@ mod tests {
                     files: HashMap::new(),
                 },
             ],
+            chat_log: Vec::new(),
         };
         Session::from_snapshot(Config::default().into(), snapshot).unwrap()
     }

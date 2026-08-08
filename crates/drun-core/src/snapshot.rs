@@ -3,7 +3,7 @@
 
 use crate::interner::Interner;
 use crate::session::Session;
-use crate::{Checkpoint, CheckpointRef, ConfigHandle, FileMap, Step};
+use crate::{ChatTurn, Checkpoint, CheckpointRef, ConfigHandle, FileMap, Step};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -60,6 +60,7 @@ pub struct SessionSnapshot {
     pub overlays: HashMap<String, PathBuf>,
     pub blobs: Vec<Vec<u8>>,
     pub checkpoints: Vec<CheckpointRecord>,
+    pub chat_log: Vec<ChatTurn>,
 }
 
 impl SessionSnapshot {
@@ -136,6 +137,7 @@ impl SessionSnapshot {
             overlays: session.overlays().clone(),
             blobs,
             checkpoints,
+            chat_log: session.chat_log().to_vec(),
         }
     }
 
@@ -187,6 +189,7 @@ impl SessionSnapshot {
             self.checkpoint_idx,
             overlays,
             interner,
+            self.chat_log,
             self.label,
             self.parent,
         ))
@@ -234,6 +237,10 @@ mod tests {
                     files: [("a.txt".to_string(), 0)].into_iter().collect(),
                 },
             ],
+            chat_log: vec![ChatTurn {
+                prompt: "list the files".to_string(),
+                response: "a.txt is present".to_string(),
+            }],
         }
     }
 

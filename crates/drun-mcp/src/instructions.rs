@@ -130,13 +130,16 @@ Grouped by purpose — each tool's schema documents its exact parameters.
   is active.
 - `session_label` — attach a human-readable label to the active session, shown
   in `session_list`, `get_session_state`, and `session_tree`.
+- `session_chat_record` — record a prompt/response exchange in the active
+  session's chat log. The `drun chat` CLI calls this automatically after every
+  response; never call it yourself directly.
 - `session_close` — terminate the active session and free its resources
   (including the sandbox subprocess). Switch to a different session first if
   you meant to close one other than the active one.
 
 **Persisting across restarts**
-- `session_snapshot` — serialize the active session's full checkpoint history
-  and files to a `.drun` file on the host.
+- `session_snapshot` — serialize the active session's full checkpoint history,
+  files, and chat log to a `.drun` file on the host.
 - `list_snapshots` — see what's already been saved.
 - `session_restore` — reload a `.drun` file as a new active session.
 
@@ -235,6 +238,11 @@ mod tests {
         assert!(SYSTEM_INSTRUCTIONS.contains("session_snapshot"));
         assert!(SYSTEM_INSTRUCTIONS.contains("session_restore"));
         assert!(SYSTEM_INSTRUCTIONS.contains("list_snapshots"));
+    }
+
+    #[test]
+    fn documents_session_chat_record() {
+        assert!(SYSTEM_INSTRUCTIONS.contains("session_chat_record"));
     }
 
     #[test]

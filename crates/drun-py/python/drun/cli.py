@@ -106,7 +106,8 @@ class ChatCommand:
                         llm_retries=args.llm_retries,
                         reasoning_effort=args.reasoning_effort,
                     )
-                    await agent.run(args.prompt)
+                    response = await agent.run(args.prompt)
+                    await self._record_chat_turn(bridge, args.prompt, response)
                 except Exception as exc:
                     print(f"error: {exc}", file=sys.stderr)
                     sys.exit(1)
@@ -119,6 +120,17 @@ class ChatCommand:
                 file=sys.stderr,
             )
             sys.exit(1)
+
+    @staticmethod
+    async def _record_chat_turn(bridge: DrunMcpBridge, prompt: str, response: str) -> None:
+        """Persists this exchange into the session's chat log via session_chat_record.
+        Best-effort: the chat response already succeeded and printed, so a
+        bookkeeping failure here is a warning, not a reason to exit non-zero.
+        """
+        try:
+            await bridge.call("session_chat_record", {"prompt": prompt, "response": response})
+        except Exception as exc:
+            print(f"warning: failed to record chat turn: {exc}", file=sys.stderr)
 
 
 def main() -> None:

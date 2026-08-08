@@ -13,6 +13,13 @@ pub struct Step {
     pub description: String,
 }
 
+/// One prompt/response exchange from a `drun chat` conversation.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ChatTurn {
+    pub prompt: String,
+    pub response: String,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Checkpoint {
     pub id: usize,

@@ -2,7 +2,9 @@ use crate::ResponseBuilder;
 use crate::errors::DrunError;
 use crate::handler::{self, DrunHandler};
 use crate::state::{SessionState, SessionSummary, SessionTreeNode};
-use crate::tools::{GetSessionState, SessionFork, SessionLabel, SessionMerge, SessionSwitch};
+use crate::tools::{
+    GetSessionState, SessionChatRecord, SessionFork, SessionLabel, SessionMerge, SessionSwitch,
+};
 use drun_core::Session;
 use rust_mcp_sdk::schema::{CallToolResult, schema_utils::CallToolError};
 
@@ -94,6 +96,20 @@ impl DrunHandler {
     ) -> Result<CallToolResult, CallToolError> {
         self.with_current_session_mut(connection_id, |session_id, session| {
             session.record_step(None, "get_session_state", &t.description);
+            Ok(ResponseBuilder::json(&SessionState::compute(
+                session_id, session, None,
+            )))
+        })
+    }
+
+    pub(super) fn handle_session_chat_record(
+        &self,
+        connection_id: &str,
+        t: SessionChatRecord,
+    ) -> Result<CallToolResult, CallToolError> {
+        self.with_current_session_mut(connection_id, |session_id, session| {
+            session.record_chat_turn(t.prompt.clone(), t.response);
+            session.record_step(None, "session_chat_record", &t.prompt);
             Ok(ResponseBuilder::json(&SessionState::compute(
                 session_id, session, None,
             )))
@@ -439,6 +455,71 @@ mod tests {
             )
             .unwrap();
         assert_eq!(result_json(&result)["checkpoint_id"], 0);
+    }
+
+    #[test]
+    fn session_chat_record_returns_no_active_session_without_a_current_session() {
+        let handler = DrunHandler::new(Config::default());
+        let err = handler
+            .handle_session_chat_record(
+                CLIENT,
+                SessionChatRecord {
+                    prompt: "hi".to_string(),
+                    response: "hello".to_string(),
+                },
+            )
+            .unwrap_err();
+        assert!(err.to_string().contains("no_active_session"));
+    }
+
+    #[test]
+    fn session_chat_record_appends_to_the_session_chat_log() {
+        let handler = DrunHandler::new(Config::default());
+        insert_current_session(&handler, "s1");
+
+        handler
+            .handle_session_chat_record(
+                CLIENT,
+                SessionChatRecord {
+                    prompt: "list the files".to_string(),
+                    response: "a.txt is present".to_string(),
+                },
+            )
+            .unwrap();
+
+        let sessions = handler.sessions.lock().unwrap();
+        let session = sessions.get("s1").unwrap().lock().unwrap();
+        let chat_log = session.chat_log();
+        assert_eq!(chat_log.len(), 1);
+        assert_eq!(chat_log[0].prompt, "list the files");
+        assert_eq!(chat_log[0].response, "a.txt is present");
+    }
+
+    #[test]
+    fn session_chat_record_survives_a_snapshot_round_trip() {
+        let dir = tempfile::tempdir().unwrap();
+        let handler = DrunHandler::new(Config::default());
+        insert_current_session(&handler, "s1");
+        handler
+            .handle_session_chat_record(
+                CLIENT,
+                SessionChatRecord {
+                    prompt: "list the files".to_string(),
+                    response: "a.txt is present".to_string(),
+                },
+            )
+            .unwrap();
+        let snapshot_path = dir.path().join("s1.drun");
+        {
+            let sessions = handler.sessions.lock().unwrap();
+            let session = sessions.get("s1").unwrap().lock().unwrap();
+            session.snapshot().write(&snapshot_path).unwrap();
+        }
+
+        let bytes = std::fs::read(&snapshot_path).unwrap();
+        let snapshot = drun_core::SessionSnapshot::decode(&bytes).unwrap();
+        assert_eq!(snapshot.chat_log.len(), 1);
+        assert_eq!(snapshot.chat_log[0].prompt, "list the files");
     }
 
     #[test]

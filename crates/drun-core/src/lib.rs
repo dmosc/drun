@@ -10,7 +10,7 @@ mod snapshot;
 mod text_parser_utilities;
 mod workspace;
 
-pub use checkpoint::{Checkpoint, CheckpointRef, FileMap, Step};
+pub use checkpoint::{ChatTurn, Checkpoint, CheckpointRef, FileMap, Step};
 pub use config::{Config, ConfigHandle};
 pub use error::RunnerError;
 pub use executor::BashExecutor;
