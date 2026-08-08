@@ -53,6 +53,7 @@ impl WebServer {
                 get(Self::handle_get_config).put(Self::handle_put_config),
             )
             .route("/api/sessions/tree", get(Self::handle_session_tree))
+            .route("/api/sessions", post(Self::handle_session_create))
             .route(
                 "/api/sessions/{session_id}/live",
                 get(Self::handle_live_output),
@@ -309,6 +310,27 @@ impl WebServer {
             Err(CloseSessionError::Io(error)) => {
                 (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()).into_response()
             }
+        }
+    }
+
+    async fn handle_session_create(State(app): State<AppState>) -> Response {
+        let session = match drun_core::Session::new(app.handler.config.clone()) {
+            Ok(session) => session,
+            Err(error) => {
+                return (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()).into_response();
+            }
+        };
+        match app.handler.insert_session(session) {
+            Ok((session_id, arc)) => {
+                let session = DrunHandler::lock_recovering(&session_id, &arc);
+                let state = state::SessionState::compute(&session_id, &session, None);
+                Self::json_response(&state)
+            }
+            Err(max) => (
+                StatusCode::TOO_MANY_REQUESTS,
+                format!("session limit reached (max {max})"),
+            )
+                .into_response(),
         }
     }
 
@@ -1061,6 +1083,39 @@ mod tests {
         )
         .await;
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn handle_session_create_adds_a_new_empty_session() {
+        let sessions = session_map(vec![]);
+        let state = app_state(sessions.clone());
+
+        let response = WebServer::handle_session_create(State(state)).await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(sessions.lock().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn handle_session_create_returns_429_once_max_sessions_is_reached() {
+        let sessions = session_map(vec![(
+            "s1",
+            Session::new(Config::default().into()).unwrap(),
+        )]);
+        let config = Config {
+            max_sessions: Some(1),
+            ..Config::default()
+        };
+        let state = AppState {
+            handler: test_handler(sessions, config),
+            mcp_port: crate::Env::DEFAULT_MCP_PORT,
+            web_port: 7274,
+            started_at: Instant::now(),
+        };
+
+        let response = WebServer::handle_session_create(State(state)).await;
+
+        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
     }
 
     #[tokio::test]

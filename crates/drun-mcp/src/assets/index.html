@@ -97,6 +97,7 @@
     /* ── Status strip ──────────────────────────────────────────────────── */
     #status-strip {
       display: flex;
+      flex-wrap: wrap;
       align-items: center;
       gap: 8px;
       padding: 8px 16px;
@@ -934,6 +935,8 @@
   <div id="status-strip">
     <button class="btn" onclick="openStatusModal()">Server status</button>
     <button class="btn" onclick="onEditConfigClick()">Edit config</button>
+    <button class="btn" onclick="onReloadClick()">Reload</button>
+    <button class="btn" onclick="onNewSessionClick()">New session</button>
   </div>
 
   <div id="status-modal-overlay" class="modal-overlay hidden" onclick="if (event.target === this) closeStatusModal()">
@@ -1231,6 +1234,7 @@
       rollback: (sessionId, checkpointId) => postJson(`/api/sessions/${sessionId}/rollback`, { checkpoint_id: checkpointId }),
       setLabel: (sessionId, label) => postJson(`/api/sessions/${sessionId}/label`, { label }),
       snapshot: sessionId => postJson(`/api/sessions/${sessionId}/snapshot`, undefined),
+      createSession: () => postJson('/api/sessions', undefined),
 
       async fileContent(sessionId, cpId, path) {
         const url = `/api/sessions/${sessionId}/checkpoints/${cpId}/files/${path.split('/').map(encodeURIComponent).join('/')}`;
@@ -1278,6 +1282,23 @@
 
     function closeConfigModal() {
       document.getElementById('config-modal-overlay').classList.add('hidden');
+    }
+
+    function onReloadClick() {
+      location.reload();
+    }
+
+    async function onNewSessionClick() {
+      let created;
+      try {
+        created = await Api.createSession();
+      } catch (e) {
+        console.error('Failed to create session:', e);
+        alert(`Failed to create session: ${e.message}`);
+        return;
+      }
+      await refresh();
+      await onSessionClick(created.session_id);
     }
 
     async function onSaveConfigClick() {
