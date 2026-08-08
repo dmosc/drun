@@ -10,6 +10,7 @@ use std::{
     sync::{Arc, Mutex},
     time::Duration,
 };
+use uuid::Uuid;
 
 pub(crate) type SessionMap = Arc<Mutex<HashMap<String, Arc<Mutex<Session>>>>>;
 
@@ -154,15 +155,31 @@ impl DrunHandler {
         let _ = tokio::signal::ctrl_c().await;
     }
 
-    pub(crate) fn insert_session(&self, session_id: String, session: Session) -> Result<(), usize> {
+    const SESSION_ID_LEN: usize = 5;
+
+    fn generate_session_id() -> String {
+        Uuid::new_v4().simple().to_string()[..Self::SESSION_ID_LEN].to_string()
+    }
+
+    pub(crate) fn insert_session(
+        &self,
+        session: Session,
+    ) -> Result<(String, Arc<Mutex<Session>>), usize> {
         let mut guard = self.sessions.lock().unwrap();
         if let Some(max) = self.config.get().max_sessions
             && guard.len() >= max
         {
             return Err(max);
         }
-        guard.insert(session_id, Arc::new(Mutex::new(session)));
-        Ok(())
+        let session_id = loop {
+            let candidate = Self::generate_session_id();
+            if !guard.contains_key(&candidate) {
+                break candidate;
+            }
+        };
+        let arc = Arc::new(Mutex::new(session));
+        guard.insert(session_id.clone(), Arc::clone(&arc));
+        Ok((session_id, arc))
     }
 
     pub(crate) fn close_session(&self, session_id: &str) -> Result<(), CloseSessionError> {

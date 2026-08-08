@@ -11,7 +11,6 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
-use uuid::Uuid;
 
 pub(crate) struct WebServer {
     handler: DrunHandler,
@@ -340,10 +339,12 @@ impl WebServer {
                     return (StatusCode::BAD_REQUEST, error.to_string()).into_response();
                 }
             };
-            let fork_id = Uuid::new_v4().to_string();
-            let state = state::SessionState::compute(&fork_id, &forked, None);
-            match app.handler.insert_session(fork_id, forked) {
-                Ok(()) => Self::json_response(&state),
+            match app.handler.insert_session(forked) {
+                Ok((fork_id, arc)) => {
+                    let session = DrunHandler::lock_recovering(&fork_id, &arc);
+                    let state = state::SessionState::compute(&fork_id, &session, None);
+                    Self::json_response(&state)
+                }
                 Err(max) => (
                     StatusCode::TOO_MANY_REQUESTS,
                     format!("session limit reached (max {max})"),

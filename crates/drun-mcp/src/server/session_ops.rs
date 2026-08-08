@@ -5,19 +5,19 @@ use crate::state::{SessionState, SessionSummary, SessionTreeNode};
 use crate::tools::{SessionFork, SessionLabel, SessionMerge, SessionSwitch};
 use drun_core::Session;
 use rust_mcp_sdk::schema::{CallToolResult, schema_utils::CallToolError};
-use uuid::Uuid;
 
 impl DrunHandler {
     pub(super) fn handle_create_session(
         &self,
         connection_id: &str,
     ) -> Result<CallToolResult, CallToolError> {
-        let session_id = Uuid::new_v4().to_string();
         let session = Session::new(self.config.clone())
             .map_err(|e| DrunError::internal(e).into_tool_err())?;
-        let state = SessionState::compute(&session_id, &session, None);
-        self.insert_session(session_id.clone(), session)
+        let (session_id, arc) = self
+            .insert_session(session)
             .map_err(|max| DrunError::session_limit_reached(max).into_tool_err())?;
+        let state =
+            SessionState::compute(&session_id, &Self::lock_recovering(&session_id, &arc), None);
         self.current_sessions.set(connection_id, session_id);
         Ok(ResponseBuilder::json(&state))
     }
@@ -53,10 +53,10 @@ impl DrunHandler {
             Session::from_session(self.config.clone(), &source_id, &source, checkpoint_id)
                 .map_err(|e| DrunError::from_exec(e).into_tool_err())?
         };
-        let fork_id = Uuid::new_v4().to_string();
-        let state = SessionState::compute(&fork_id, &forked_session, None);
-        self.insert_session(fork_id.clone(), forked_session)
+        let (fork_id, arc) = self
+            .insert_session(forked_session)
             .map_err(|max| DrunError::session_limit_reached(max).into_tool_err())?;
+        let state = SessionState::compute(&fork_id, &Self::lock_recovering(&fork_id, &arc), None);
         self.current_sessions.set(connection_id, fork_id);
         Ok(ResponseBuilder::json(&state))
     }

@@ -6,7 +6,6 @@ use crate::tools::{SessionGetEnv, SessionRestore, SessionSnapshotTool};
 use drun_core::{Session, SessionSnapshot};
 use rust_mcp_sdk::schema::{CallToolResult, schema_utils::CallToolError};
 use std::path::{Path, PathBuf};
-use uuid::Uuid;
 
 impl DrunHandler {
     pub(super) fn handle_list_snapshots(&self) -> Result<CallToolResult, CallToolError> {
@@ -109,10 +108,11 @@ impl DrunHandler {
             SessionSnapshot::decode(&bytes).map_err(|e| DrunError::internal(e).into_tool_err())?;
         let restored = Session::from_snapshot(self.config.clone(), snapshot)
             .map_err(|e| DrunError::internal(e).into_tool_err())?;
-        let session_id = Uuid::new_v4().to_string();
-        let state = SessionState::compute(&session_id, &restored, None);
-        self.insert_session(session_id.clone(), restored)
+        let (session_id, arc) = self
+            .insert_session(restored)
             .map_err(|max| DrunError::session_limit_reached(max).into_tool_err())?;
+        let state =
+            SessionState::compute(&session_id, &Self::lock_recovering(&session_id, &arc), None);
         self.current_sessions.set(connection_id, session_id);
         Ok(ResponseBuilder::json(&state))
     }
