@@ -149,6 +149,8 @@ install_launchd_agent() {
     <dict>
         <key>DRUN_CONFIG</key>
         <string>$DRUN_CONFIG</string>
+        <key>PATH</key>
+        <string>$PATH</string>
     </dict>
     <key>RunAtLoad</key>
     <true/>
@@ -177,6 +179,7 @@ After=network.target
 [Service]
 ExecStart=$BIN
 Environment=DRUN_CONFIG=$DRUN_CONFIG
+Environment=PATH=$PATH
 Restart=always
 RestartSec=5
 
