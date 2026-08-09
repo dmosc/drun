@@ -132,6 +132,24 @@
       margin-bottom: 4px;
     }
 
+    .cmd-row-undo {
+      margin-top: 16px;
+      padding-top: 12px;
+      border-top: 1px dashed var(--border);
+    }
+
+    .cmd-row-undo .cmd-label {
+      color: var(--text-muted);
+    }
+
+    .cmd-row-undo .command-line {
+      opacity: 0.6;
+    }
+
+    .cmd-row-undo .command-line code {
+      white-space: pre;
+    }
+
     .btn {
       background: none;
       border: 1px solid var(--border-hi);
@@ -207,14 +225,15 @@
     };
 
     // Each card's `ready` predicate is true once every one of its `steps` is
-    // done. Every step is shown as a forward command plus, right under it,
-    // the command that undoes it — both always visible, nothing to execute
-    // or poll, just text to copy.
+    // done. Steps show only their forward command; anything with a `reverse`
+    // gets folded into one dimmed "Undo everything above" block at the
+    // bottom, in reverse step order — nothing to execute or poll here, just
+    // text to copy.
     const CARDS = [
       {
         id: 'daemon',
         title: 'drun daemon',
-        desc: 'The background service that runs sandboxed sessions and serves the web UI — set up automatically by install.sh.',
+        desc: 'The main drun MCP process.',
         ready: (s) => s.daemon.running,
         links: (s) => (s.daemon.running && s.daemon.web_port)
           ? [{ label: 'Open web UI', href: `http://127.0.0.1:${s.daemon.web_port}` }]
@@ -236,31 +255,30 @@
         desc: 'Runs local models for the standalone drun chat CLI.',
         ready: (s) => s.ollama.installed && s.ollama.running && s.ollama.model_pulled,
         steps: [
-          { forwardLabel: 'Install Ollama', forward: 'install_ollama', reverseLabel: 'Uninstall Ollama', reverse: 'uninstall_ollama' },
-          { forwardLabel: 'Start the Ollama server', forward: 'start_ollama', reverseLabel: 'Stop the Ollama server', reverse: 'stop_ollama' },
-          { forwardLabel: 'Pull qwen3.6:latest', forward: 'pull_model', reverseLabel: 'Remove qwen3.6:latest', reverse: 'remove_model' },
+          { forwardLabel: 'Install Ollama', forward: 'install_ollama', reverse: 'uninstall_ollama' },
+          { forwardLabel: 'Start the Ollama server', forward: 'start_ollama', reverse: 'stop_ollama' },
+          { forwardLabel: 'Pull qwen3.6:latest', forward: 'pull_model', reverse: 'remove_model' },
         ],
       },
       {
         id: 'chat_cli',
         title: 'drun chat CLI',
-        desc: "Python package (drun-sandbox[chat]) that powers `drun chat` and the web UI's per-session Chat button.",
+        desc: "The drun CLI that forwards requests between the MCP and the model servers.",
         ready: (s) => s.chat_cli.installed,
         steps: [
-          { forwardLabel: 'Install drun-sandbox[chat]', forward: 'install_chat_cli', reverseLabel: 'Uninstall drun-sandbox[chat]', reverse: 'uninstall_chat_cli' },
+          { forwardLabel: 'Install drun-sandbox[chat]', forward: 'install_chat_cli', reverse: 'uninstall_chat_cli' },
         ],
       },
       {
         id: 'tailscale',
         title: 'Tailscale (optional)',
-        desc: 'Lets you reach the web UI — and drive sessions from your phone via Chat — from your other devices. ' +
-          'Starting the daemon needs sudo, which you\'ll be prompted for in your own terminal.',
+        desc: 'Lets you manage drun session remotely.',
         ready: (s) => s.tailscale.installed && s.tailscale.daemon_running && s.tailscale.authenticated && s.tailscale.sharing,
         steps: [
-          { forwardLabel: 'Install Tailscale', forward: 'install_tailscale', reverseLabel: 'Uninstall Tailscale', reverse: 'uninstall_tailscale' },
-          { forwardLabel: 'Start the Tailscale daemon', forward: 'start_tailscale', reverseLabel: 'Stop the Tailscale daemon', reverse: 'stop_tailscale' },
-          { forwardLabel: 'Sign in', forward: 'tailscale_up', reverseLabel: 'Sign out', reverse: 'tailscale_logout' },
-          { forwardLabel: 'Share web UI', forward: 'tailscale_serve', reverseLabel: 'Stop sharing web UI', reverse: 'tailscale_unserve' },
+          { forwardLabel: 'Install Tailscale', forward: 'install_tailscale', reverse: 'uninstall_tailscale' },
+          { forwardLabel: 'Start the Tailscale daemon', forward: 'start_tailscale', reverse: 'stop_tailscale' },
+          { forwardLabel: 'Sign in', forward: 'tailscale_up', reverse: 'tailscale_logout' },
+          { forwardLabel: 'Share web UI', forward: 'tailscale_serve', reverse: 'tailscale_unserve' },
         ],
       },
     ];
@@ -292,22 +310,15 @@
               ${links.map(l => `<a class="btn" href="${escHtml(l.href)}" target="_blank" rel="noopener">${escHtml(l.label)}</a>`).join('')}
             </div>
           ` : ''}
-          ${steps.map(step => renderStep(step, status.commands)).join('')}
+          ${steps.map(step => renderCommandRow(step.forwardLabel, status.commands[step.forward])).join('')}
+          ${renderUndoRow(steps, status.commands)}
         </div>
       `;
     }
 
-    function renderStep(step, commands) {
-      const rows = [renderCommandRow(step.forwardLabel, commands[step.forward])];
-      if (step.reverse) {
-        rows.push(renderCommandRow(step.reverseLabel, commands[step.reverse]));
-      }
-      return rows.join('');
-    }
-
-    function renderCommandRow(label, command) {
+    function renderCommandRow(label, command, dim = false) {
       return `
-        <div class="cmd-row">
+        <div class="cmd-row${dim ? ' cmd-row-undo' : ''}">
           <div class="cmd-label">${escHtml(label)}</div>
           <div class="command-line" data-command="${escHtml(command)}">
             <code>${escHtml(command)}</code>
@@ -315,6 +326,18 @@
           </div>
         </div>
       `;
+    }
+
+    // One combined block per card, undoing every step in reverse order —
+    // newline-separated (not `&&`) so a "not found" fallback comment can't
+    // swallow the commands after it.
+    function renderUndoRow(steps, commands) {
+      const reverseCommands = steps
+        .filter(step => step.reverse)
+        .reverse()
+        .map(step => commands[step.reverse]);
+      if (!reverseCommands.length) return '';
+      return renderCommandRow('Undo everything above', reverseCommands.join('\n'), true);
     }
 
     function copyCommand(button) {
