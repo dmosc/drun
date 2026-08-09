@@ -499,6 +499,33 @@
       overflow: hidden;
     }
 
+    /* ── Outer tabs (Chat / Workspace) ────────────────────────────────── */
+    .outer-tabs-head {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .outer-tab-btn {
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: var(--text-dim);
+      font-size: 13px;
+      font-weight: 700;
+      padding: 12px 18px;
+      cursor: pointer;
+      transition: color 0.12s, border-color 0.12s;
+    }
+
+    .outer-tab-btn:hover {
+      color: var(--text);
+    }
+
+    .outer-tab-btn.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+    }
+
     .controls-row {
       display: flex;
       flex-wrap: wrap;
@@ -670,39 +697,132 @@
       overflow-wrap: break-word;
     }
 
-    .chat-turns-list {
+    /* ── Chat panel ────────────────────────────────────────────────────── */
+    .chat-panel {
       display: flex;
       flex-direction: column;
-      margin-top: 12px;
-      max-height: 450px;
+      height: clamp(350px, 68vh, 600px);
+    }
+
+    .chat-messages {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding: 14px;
       overflow-y: auto;
       overscroll-behavior: contain;
     }
 
-    .chat-turn {
-      padding: 10px 0;
+    .chat-msg {
+      display: flex;
+    }
+
+    .chat-msg-user {
+      justify-content: flex-end;
+    }
+
+    .chat-msg-agent {
+      justify-content: flex-start;
+    }
+
+    .chat-msg-bubble {
+      max-width: 80%;
+      padding: 9px 12px;
+      border-radius: 10px;
+      font-size: 12.5px;
+      line-height: 1.5;
+      overflow-wrap: break-word;
+      white-space: pre-wrap;
+    }
+
+    .chat-msg-user .chat-msg-bubble {
+      background: var(--accent-bg);
+      color: var(--text);
+    }
+
+    .chat-msg-agent .chat-msg-bubble {
+      background: var(--s2);
+      color: var(--text);
+    }
+
+    .chat-msg-pending .chat-msg-bubble {
+      padding: 12px 14px;
+    }
+
+    .chat-typing-dots {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .chat-typing-dots span {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--text-dim);
+      animation: chat-typing-bounce 1.1s infinite ease-in-out;
+    }
+
+    .chat-typing-dots span:nth-child(2) {
+      animation-delay: 0.15s;
+    }
+
+    .chat-typing-dots span:nth-child(3) {
+      animation-delay: 0.3s;
+    }
+
+    @keyframes chat-typing-bounce {
+
+      0%,
+      60%,
+      100% {
+        opacity: 0.3;
+        transform: translateY(0);
+      }
+
+      30% {
+        opacity: 1;
+        transform: translateY(-3px);
+      }
+    }
+
+    .chat-input-row {
+      display: flex;
+      gap: 8px;
+      padding: 10px 14px;
       border-top: 1px solid var(--border);
     }
 
-    .chat-turn:first-child {
-      border-top: none;
-      padding-top: 0;
-    }
-
-    .chat-turn-prompt,
-    .chat-turn-response {
-      font-size: 12px;
+    .chat-input {
+      flex: 1;
+      resize: none;
+      background: var(--s2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text);
+      font-family: inherit;
+      font-size: 12.5px;
       line-height: 1.5;
-      overflow-wrap: break-word;
+      padding: 8px 10px;
+      max-height: 140px;
     }
 
-    .chat-turn-prompt {
+    #chat-send-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 20px;
+      font-size: 12.5px;
+    }
+
+    .btn-accent {
       color: var(--accent);
-      margin-bottom: 4px;
+      border-color: var(--accent);
     }
 
-    .chat-turn-response {
-      color: var(--text-dim);
+    .btn-accent:hover {
+      background: var(--accent-bg);
     }
 
     /* ── Columns ───────────────────────────────────────────────────────── */
@@ -719,7 +839,8 @@
       }
 
       .modal-textarea,
-      .modal-input {
+      .modal-input,
+      .chat-input {
         font-size: 16px;
       }
     }
@@ -1108,20 +1229,6 @@
     </div>
   </div>
 
-  <div id="chat-modal-overlay" class="modal-overlay hidden" onclick="if (event.target === this) closeChatModal()">
-    <div class="modal-box">
-      <div class="modal-head">
-        <span id="chat-modal-title">Chat</span>
-      </div>
-      <textarea id="chat-modal-prompt" class="modal-textarea" placeholder="Tell the agent what to do…" spellcheck="false"></textarea>
-      <div id="chat-modal-error" class="modal-error"></div>
-      <div class="modal-actions">
-        <button class="btn" onclick="closeChatModal()">Close</button>
-        <button class="btn" onclick="onSendChatClick()">Send</button>
-      </div>
-    </div>
-  </div>
-
   <div id="label-modal-overlay" class="modal-overlay hidden" onclick="if (event.target === this) closeLabelModal()">
     <div class="modal-box modal-box-narrow">
       <div class="modal-head">
@@ -1169,49 +1276,62 @@
 
     <section id="workspace-section" class="hidden">
       <div class="tabs-panel">
-        <div class="controls-row">
-          <button class="btn" id="checkpoint-picker-btn" onclick="openCheckpointModal()">Checkpoint</button>
-          <div class="tabs-spacer"></div>
-          <div class="tabs-actions" id="tabs-actions"></div>
+        <div class="outer-tabs-head">
+          <button class="outer-tab-btn" data-outer-tab="chat" onclick="onOuterTabClick('chat')">Chat</button>
+          <button class="outer-tab-btn" data-outer-tab="workspace" onclick="onOuterTabClick('workspace')">Workspace</button>
         </div>
 
-        <div class="tabs-head">
-          <button class="tab-btn" data-tab="steps" onclick="onTabClick('steps')">Steps</button>
-          <button class="tab-btn" data-tab="output" onclick="onTabClick('output')">Output</button>
-          <button class="tab-btn" data-tab="files" onclick="onTabClick('files')">Filesystem</button>
-          <button class="tab-btn" data-tab="thoughts" onclick="onTabClick('thoughts')">Thoughts</button>
-        </div>
-
-        <div class="tab-body" data-tab="steps">
-          <div id="checkpoint-steps-body"></div>
-        </div>
-
-        <div class="tab-body" data-tab="output">
-          <div id="output-body"></div>
-        </div>
-
-        <div class="tab-body" data-tab="files">
-          <div class="files-columns">
-            <div class="column">
-              <div class="column-head">
-                <span>Files</span>
-                <span class="files-head-right">
-                  <span class="column-head-hint" id="files-counts"></span>
-                  <button class="btn btn-link" id="files-toggle-all-btn" onclick="onToggleAllFoldersClick()">Expand
-                    all</button>
-                </span>
-              </div>
-              <div class="column-body" id="files-tree"></div>
-            </div>
-
-            <div class="column">
-              <div class="column-body" id="files-preview"></div>
-            </div>
+        <div class="outer-tab-body" data-outer-tab="chat">
+          <div class="chat-panel">
+            <div class="chat-messages" id="chat-messages"></div>
+            <form class="chat-input-row" id="chat-input-form" onsubmit="event.preventDefault(); sendChatMessage();">
+              <textarea id="chat-input" class="chat-input" placeholder="Message the agent…" rows="1" spellcheck="false" onkeydown="onChatInputKeydown(event)"></textarea>
+              <button type="submit" class="btn btn-accent" id="chat-send-btn">Send</button>
+            </form>
+            <div id="chat-input-error" class="modal-error"></div>
           </div>
         </div>
 
-        <div class="tab-body" data-tab="thoughts">
-          <div id="chat-log-body"></div>
+        <div class="outer-tab-body" data-outer-tab="workspace">
+          <div class="controls-row">
+            <button class="btn" id="checkpoint-picker-btn" onclick="openCheckpointModal()">Checkpoint</button>
+            <div class="tabs-spacer"></div>
+            <div class="tabs-actions" id="tabs-actions"></div>
+          </div>
+
+          <div class="tabs-head">
+            <button class="tab-btn" data-tab="steps" onclick="onTabClick('steps')">Steps</button>
+            <button class="tab-btn" data-tab="output" onclick="onTabClick('output')">Output</button>
+            <button class="tab-btn" data-tab="files" onclick="onTabClick('files')">Filesystem</button>
+          </div>
+
+          <div class="tab-body" data-tab="steps">
+            <div id="checkpoint-steps-body"></div>
+          </div>
+
+          <div class="tab-body" data-tab="output">
+            <div id="output-body"></div>
+          </div>
+
+          <div class="tab-body" data-tab="files">
+            <div class="files-columns">
+              <div class="column">
+                <div class="column-head">
+                  <span>Files</span>
+                  <span class="files-head-right">
+                    <span class="column-head-hint" id="files-counts"></span>
+                    <button class="btn btn-link" id="files-toggle-all-btn" onclick="onToggleAllFoldersClick()">Expand
+                      all</button>
+                  </span>
+                </div>
+                <div class="column-body" id="files-tree"></div>
+              </div>
+
+              <div class="column">
+                <div class="column-body" id="files-preview"></div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </section>
@@ -1226,11 +1346,17 @@
       selectedSessionId: null,
       checkpointHistory: [],
       chatLog: [],
-      // Turn count last rendered by renderChatLog, so the 2s poll doesn't
-      // rebuild the tab and reset its scroll position.
+      // Turn count (plus pending state) last rendered by renderChatLog, so
+      // the 2s poll doesn't rebuild the panel and reset its scroll position.
       lastRenderedChatLog: null,
+      // session_id → prompt text, for a chat message sent but not yet back
+      // from Api.chatLog — renders an optimistic bubble pair immediately
+      // instead of waiting on the round trip.
+      pendingChatTurns: new Map(),
       selectedCpId: null,
-      // 'steps' | 'output' | 'files' — which workspace tab is showing.
+      // 'chat' | 'workspace' — which outer tab is showing.
+      activeOuterTab: 'chat',
+      // 'steps' | 'output' | 'files' — which workspace sub-tab is showing.
       activeTab: 'steps',
       selectedFilePath: null,
       // 'content' | 'diff' — which view the selected file is showing.
@@ -1495,38 +1621,45 @@
       }
     }
 
-    // ── Chat modal ───────────────────────────────────────────────────────────
+    // ── Chat panel ───────────────────────────────────────────────────────────
 
-    let chatModalSessionId = null;
-
-    function onChatClick(sessionId) {
-      chatModalSessionId = sessionId;
-      document.getElementById('chat-modal-title').textContent = `Chat ${sessionId}`;
-      document.getElementById('chat-modal-prompt').value = '';
-      document.getElementById('chat-modal-error').textContent = '';
-      document.getElementById('chat-modal-overlay').classList.remove('hidden');
+    // Enter sends; Shift+Enter inserts a newline, matching typical chat apps.
+    function onChatInputKeydown(event) {
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        sendChatMessage();
+      }
     }
 
-    function closeChatModal() {
-      chatModalSessionId = null;
-      document.getElementById('chat-modal-overlay').classList.add('hidden');
-    }
-
-    async function onSendChatClick() {
-      const sessionId = chatModalSessionId;
-      const prompt = document.getElementById('chat-modal-prompt').value.trim();
+    async function sendChatMessage() {
+      const sessionId = viewState.selectedSessionId;
+      const input = document.getElementById('chat-input');
+      const errorEl = document.getElementById('chat-input-error');
+      const prompt = input.value.trim();
+      errorEl.textContent = '';
       if (!sessionId || !prompt) return;
 
-      closeChatModal();
+      input.value = '';
+      viewState.pendingChatTurns.set(sessionId, prompt);
       viewState.chattingSessions.add(sessionId);
       renderSessionGrid();
+      renderChatLog();
+
       try {
         await Api.chat(sessionId, prompt);
+        if (viewState.selectedSessionId === sessionId) {
+          viewState.chatLog = await Api.chatLog(sessionId);
+        }
       } catch (e) {
-        alert(`Chat request failed: ${e.message}`);
+        if (viewState.selectedSessionId === sessionId) {
+          input.value = prompt;
+          errorEl.textContent = `Failed to send: ${e.message}`;
+        }
       } finally {
         viewState.chattingSessions.delete(sessionId);
+        viewState.pendingChatTurns.delete(sessionId);
         renderSessionGrid();
+        if (viewState.selectedSessionId === sessionId) renderChatLog();
       }
     }
 
@@ -1712,7 +1845,6 @@
               <button class="card-action" onclick="copyToClipboard('${escHtml(s.session_id)}', this)">Copy</button>
               <button class="card-action" ${busyAttr} onclick="onEditLabelClick('${escHtml(s.session_id)}')">Label</button>
               <button class="card-action" ${busyAttr} onclick="onSnapshotClick('${escHtml(s.session_id)}')">${isSnapshotting ? 'Snapshotting' : 'Snapshot'}</button>
-              <button class="card-action" ${busyAttr} onclick="onChatClick('${escHtml(s.session_id)}')">Chat</button>
               <button class="card-action card-action-danger" onclick="onDestroySessionClick('${escHtml(s.session_id)}')">Delete</button>
             </div>
           </div>`;
@@ -1842,25 +1974,47 @@
         : '<div class="context-description">No steps recorded on this checkpoint yet</div>';
     }
 
-    // ── Rendering: chat log tab ──────────────────────────────────────────────
+    // ── Rendering: chat panel ────────────────────────────────────────────────
+
+    function chatBubbleHtml(role, text) {
+      return `
+        <div class="chat-msg chat-msg-${role}">
+          <div class="chat-msg-bubble">${escHtml(text)}</div>
+        </div>`;
+    }
 
     function renderChatLog() {
-      const body = document.getElementById('chat-log-body');
+      const body = document.getElementById('chat-messages');
+      const sessionId = viewState.selectedSessionId;
       const turns = viewState.chatLog;
+      const pendingPrompt = sessionId ? viewState.pendingChatTurns.get(sessionId) : undefined;
 
-      // Chat turns are append-only, so the count alone tells us whether
-      // anything new arrived — skip the rewrite otherwise so the 2s poll
-      // doesn't reset the tab's scroll position.
-      if (viewState.lastRenderedChatLog === turns.length) return;
-      viewState.lastRenderedChatLog = turns.length;
+      // Turns are append-only and pending state only changes on send/settle,
+      // so this pair alone tells us whether anything actually changed — skip
+      // the rewrite otherwise so the 2s poll doesn't reset scroll position.
+      const renderKey = `${sessionId}:${turns.length}:${pendingPrompt ?? ''}`;
+      if (viewState.lastRenderedChatLog === renderKey) return;
+      viewState.lastRenderedChatLog = renderKey;
 
-      body.innerHTML = turns.length
-        ? `<div class="chat-turns-list">${turns.map(t => `
-            <div class="chat-turn">
-              <div class="chat-turn-prompt">${escHtml(t.prompt)}</div>
-              <div class="chat-turn-response">${escHtml(t.response)}</div>
-            </div>`).reverse().join('')}</div>`
-        : '<div class="context-description">No chat turns recorded on this session yet</div>';
+      // Only snap to the new bottom if the user was already there (or this
+      // is the panel's first render) — otherwise leave their scroll position
+      // alone so reading older history doesn't get yanked away.
+      const stickToBottom = body.scrollHeight === 0
+        || body.scrollHeight - body.scrollTop - body.clientHeight < 60;
+
+      const turnsHtml = turns
+        .map(t => chatBubbleHtml('user', t.prompt) + chatBubbleHtml('agent', t.response))
+        .join('');
+      const pendingHtml = pendingPrompt
+        ? chatBubbleHtml('user', pendingPrompt)
+          + '<div class="chat-msg chat-msg-agent chat-msg-pending"><div class="chat-msg-bubble">'
+          + '<div class="chat-typing-dots"><span></span><span></span><span></span></div></div></div>'
+        : '';
+
+      body.innerHTML = (turnsHtml + pendingHtml)
+        || '<div class="context-description">No messages yet — say hello below.</div>';
+
+      if (stickToBottom) body.scrollTop = body.scrollHeight;
     }
 
     // Fork/rollback actions, rendered into the tabs-head bar (right of the tabs).
@@ -1885,6 +2039,20 @@
     }
 
     // ── Rendering: tabs ──────────────────────────────────────────────────────
+
+    function onOuterTabClick(tab) {
+      viewState.activeOuterTab = tab;
+      applyActiveOuterTab();
+    }
+
+    function applyActiveOuterTab() {
+      for (const btn of document.querySelectorAll('.outer-tab-btn')) {
+        btn.classList.toggle('active', btn.dataset.outerTab === viewState.activeOuterTab);
+      }
+      for (const panel of document.querySelectorAll('.outer-tab-body')) {
+        panel.hidden = panel.dataset.outerTab !== viewState.activeOuterTab;
+      }
+    }
 
     function onTabClick(tab) {
       viewState.activeTab = tab;
@@ -2178,6 +2346,7 @@
       renderCheckpointSteps();
       renderCheckpointActions();
       renderChatLog();
+      applyActiveOuterTab();
       applyActiveTab();
 
       if (viewState.failedCheckpointKey === cacheKey) {
@@ -2210,6 +2379,8 @@
       viewState.checkpointHistory = [];
       viewState.chatLog = [];
       viewState.lastRenderedChatLog = null;
+      // Clicking into a session should always land on its conversation first.
+      viewState.activeOuterTab = 'chat';
 
       renderSessionGrid();
       scrollSelectedCardIntoView();
