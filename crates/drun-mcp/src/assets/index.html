@@ -228,6 +228,76 @@
       display: none;
     }
 
+    /* ── Onboarding card ───────────────────────────────────────────────── */
+    .onboarding-card {
+      position: fixed;
+      right: 16px;
+      bottom: 16px;
+      width: min(360px, calc(100vw - 32px));
+      background: var(--s1);
+      border: 1px solid var(--border-hi);
+      border-radius: var(--radius);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+      z-index: 90;
+    }
+
+    .onboarding-card.hidden {
+      display: none;
+    }
+
+    .onboarding-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text);
+      cursor: grab;
+      touch-action: none;
+      user-select: none;
+    }
+
+    .onboarding-head:active {
+      cursor: grabbing;
+    }
+
+    .onboarding-step-count {
+      font-weight: 400;
+      color: var(--text-muted);
+    }
+
+    .onboarding-step-body {
+      padding: 12px 14px;
+      font-size: 12.5px;
+      line-height: 1.55;
+      color: var(--text-dim);
+    }
+
+    .onboarding-step-body code {
+      background: var(--s2);
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-family: var(--mono);
+      font-size: 11.5px;
+      color: var(--text);
+    }
+
+    .onboarding-actions {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 10px 14px;
+      border-top: 1px solid var(--border);
+    }
+
+    .onboarding-actions-right {
+      display: flex;
+      gap: 8px;
+    }
+
     /* ── Page body ─────────────────────────────────────────────────────── */
     #page-body {
       max-width: 1400px;
@@ -1274,6 +1344,21 @@
     </div>
   </div>
 
+  <div id="onboarding-card" class="onboarding-card hidden">
+    <div id="onboarding-head" class="onboarding-head">
+      <span id="onboarding-step-title"></span>
+      <span id="onboarding-step-count" class="onboarding-step-count"></span>
+    </div>
+    <div id="onboarding-step-body" class="onboarding-step-body"></div>
+    <div class="onboarding-actions">
+      <button class="btn" onclick="onOnboardingSkipClick()">Skip</button>
+      <div class="onboarding-actions-right">
+        <button class="btn" id="onboarding-prev-btn" onclick="onOnboardingPrevClick()">Back</button>
+        <button class="btn btn-accent" id="onboarding-next-btn" onclick="onOnboardingNextClick()">Next</button>
+      </div>
+    </div>
+  </div>
+
   <div id="page-body">
     <section id="sessions-section">
       <div class="section-label">Sessions</div>
@@ -1407,6 +1492,8 @@
       // session_id → head checkpoint_id last seen, so renderSessionGrid can
       // detect a freshly created checkpoint and blink its badge.
       lastKnownHeadCp: new Map(),
+      // index into ONBOARDING_STEPS currently shown, once the card is open.
+      onboardingStep: 0,
     };
 
     // ── Helpers ──────────────────────────────────────────────────────────────
@@ -1582,6 +1669,9 @@
       },
 
       chat: (sessionId, prompt) => postJson(`/api/sessions/${sessionId}/chat`, { prompt }),
+
+      onboardingStatus: () => fetchJson('/api/onboarding'),
+      markOnboardingShown: () => postJson('/api/onboarding', undefined),
     };
 
     // ── Config modal ─────────────────────────────────────────────────────────
@@ -2673,8 +2763,113 @@
       }
     }
 
+    // ── Onboarding ───────────────────────────────────────────────────────────
+
+    const ONBOARDING_STEPS = [
+      {
+        title: 'Welcome to drun',
+        body: 'drun gives each agent session its own sandboxed, virtualized workspace; every command it runs is checkpointed, like git commits you can browse, fork, or roll back.',
+      },
+      {
+        title: 'Start a session',
+        body: 'Click <code>New session</code> above to spin one up. Each card in the Sessions row is one sandboxed workspace.',
+      },
+      {
+        title: 'Chat with the agent',
+        body: 'Selecting a session opens here on the Chat tab; send a prompt and the agent drives that session\'s sandboxed tools directly.',
+      },
+      {
+        title: 'Try it',
+        body: 'A good first prompt: <code>load my /Users/oscar/Downloads folder and organize the files into subfolders by type</code>.',
+      },
+      {
+        title: 'Inspect the workspace',
+        body: 'The Workspace tab has Steps, Output, and Filesystem views, plus the checkpoint picker — browse, fork from, or roll back to any point in the session\'s history.',
+      },
+      {
+        title: 'Bring it back',
+        body: 'Happy with the result? Tell the agent to commit the changes back to your host. Go to https://github.com/dmosc/drun to explore the full depth of features offered.',
+      },
+    ];
+
+    function renderOnboardingCard() {
+      const step = ONBOARDING_STEPS[viewState.onboardingStep];
+      document.getElementById('onboarding-step-title').textContent = step.title;
+      document.getElementById('onboarding-step-count').textContent =
+        `${viewState.onboardingStep + 1} / ${ONBOARDING_STEPS.length}`;
+      document.getElementById('onboarding-step-body').innerHTML = step.body;
+      document.getElementById('onboarding-prev-btn').disabled = viewState.onboardingStep === 0;
+      document.getElementById('onboarding-next-btn').textContent =
+        viewState.onboardingStep === ONBOARDING_STEPS.length - 1 ? 'Get started' : 'Next';
+    }
+
+    function onOnboardingPrevClick() {
+      if (viewState.onboardingStep === 0) return;
+      viewState.onboardingStep -= 1;
+      renderOnboardingCard();
+    }
+
+    function onOnboardingNextClick() {
+      if (viewState.onboardingStep === ONBOARDING_STEPS.length - 1) {
+        dismissOnboarding();
+        return;
+      }
+      viewState.onboardingStep += 1;
+      renderOnboardingCard();
+    }
+
+    function onOnboardingSkipClick() {
+      dismissOnboarding();
+    }
+
+    function dismissOnboarding() {
+      document.getElementById('onboarding-card').classList.add('hidden');
+      Api.markOnboardingShown().catch(() => { });
+    }
+
+    async function initOnboarding() {
+      try {
+        const { shown } = await Api.onboardingStatus();
+        if (shown) return;
+        renderOnboardingCard();
+        document.getElementById('onboarding-card').classList.remove('hidden');
+      } catch (_) { }
+    }
+
+    function initOnboardingDrag() {
+      const card = document.getElementById('onboarding-card');
+      const handle = document.getElementById('onboarding-head');
+      let offsetX = 0;
+      let offsetY = 0;
+
+      handle.addEventListener('pointerdown', e => {
+        const rect = card.getBoundingClientRect();
+        offsetX = e.clientX - rect.left;
+        offsetY = e.clientY - rect.top;
+        card.style.left = `${rect.left}px`;
+        card.style.top = `${rect.top}px`;
+        card.style.right = 'auto';
+        card.style.bottom = 'auto';
+        handle.setPointerCapture(e.pointerId);
+      });
+
+      handle.addEventListener('pointermove', e => {
+        if (!handle.hasPointerCapture(e.pointerId)) return;
+        const maxLeft = window.innerWidth - card.offsetWidth;
+        const maxTop = window.innerHeight - card.offsetHeight;
+        card.style.left = `${Math.min(Math.max(0, e.clientX - offsetX), maxLeft)}px`;
+        card.style.top = `${Math.min(Math.max(0, e.clientY - offsetY), maxTop)}px`;
+      });
+
+      handle.addEventListener('pointerup', e => {
+        if (handle.hasPointerCapture(e.pointerId)) handle.releasePointerCapture(e.pointerId);
+      });
+    }
+
     refresh();
     setInterval(refresh, 2000);
+    initOnboarding();
+    initOnboardingDrag();
   </script>
 </body>
 

@@ -10,6 +10,7 @@ use axum::{
     routing::{get, post},
 };
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 use std::time::Instant;
 
 pub(crate) struct WebServer {
@@ -51,6 +52,10 @@ impl WebServer {
             .route(
                 "/api/config",
                 get(Self::handle_get_config).put(Self::handle_put_config),
+            )
+            .route(
+                "/api/onboarding",
+                get(Self::handle_get_onboarding).post(Self::handle_post_onboarding),
             )
             .route("/api/sessions/tree", get(Self::handle_session_tree))
             .route("/api/sessions", post(Self::handle_session_create))
@@ -161,6 +166,31 @@ impl WebServer {
             Ok(()) => StatusCode::OK.into_response(),
             Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
         }
+    }
+
+    async fn handle_get_onboarding(State(app): State<AppState>) -> Response {
+        let shown = Self::onboarding_marker_path(&app)
+            .map(|path| path.exists())
+            .unwrap_or(true);
+        Self::json_response(&serde_json::json!({ "shown": shown }))
+    }
+
+    async fn handle_post_onboarding(State(app): State<AppState>) -> Response {
+        let Some(path) = Self::onboarding_marker_path(&app) else {
+            return Self::json_response(&serde_json::json!({}));
+        };
+        match crate::FileManager::write(&path, "") {
+            Ok(()) => Self::json_response(&serde_json::json!({})),
+            Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+        }
+    }
+
+    fn onboarding_marker_path(app: &AppState) -> Option<PathBuf> {
+        app.handler
+            .config
+            .path()?
+            .parent()
+            .map(|dir| dir.join(".onboarding_shown"))
     }
 
     async fn handle_index() -> Response {
@@ -1537,5 +1567,57 @@ mod tests {
                 .get("content-security-policy")
                 .is_none()
         );
+    }
+
+    fn onboarding_state(config_path: Option<PathBuf>) -> AppState {
+        let handler = DrunHandler {
+            config: drun_core::ConfigHandle::new(Config::default(), config_path),
+            sessions: session_map(vec![]),
+            live_output: LiveOutputRegistry::default(),
+            current_sessions: crate::handler::CurrentSessions::default(),
+            tool_metrics: crate::drunmon::ToolMetrics::default(),
+        };
+        AppState {
+            handler,
+            mcp_port: crate::Env::DEFAULT_MCP_PORT,
+            web_port: 7274,
+            started_at: Instant::now(),
+        }
+    }
+
+    #[tokio::test]
+    async fn handle_get_onboarding_reports_not_shown_when_no_marker_file_exists() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = onboarding_state(Some(dir.path().join("config.toml")));
+
+        let response = WebServer::handle_get_onboarding(State(state)).await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = body_string(response).await;
+        assert!(body.contains("\"shown\":false"));
+    }
+
+    #[tokio::test]
+    async fn handle_post_onboarding_creates_the_marker_file_so_future_visits_report_shown() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = onboarding_state(Some(dir.path().join("config.toml")));
+
+        let post_response = WebServer::handle_post_onboarding(State(state.clone())).await;
+        assert_eq!(post_response.status(), StatusCode::OK);
+        assert!(dir.path().join(".onboarding_shown").exists());
+
+        let get_response = WebServer::handle_get_onboarding(State(state)).await;
+        let body = body_string(get_response).await;
+        assert!(body.contains("\"shown\":true"));
+    }
+
+    #[tokio::test]
+    async fn handle_get_onboarding_reports_shown_when_there_is_no_config_path_to_persist_against() {
+        let state = onboarding_state(None);
+
+        let response = WebServer::handle_get_onboarding(State(state)).await;
+
+        let body = body_string(response).await;
+        assert!(body.contains("\"shown\":true"));
     }
 }
