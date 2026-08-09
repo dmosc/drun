@@ -11,6 +11,8 @@ LAUNCHD_PLIST="$HOME/Library/LaunchAgents/$LAUNCHD_LABEL.plist"
 SYSTEMD_SERVICE="$HOME/.config/systemd/user/drun-mcp.service"
 MCP_PORT=7273
 MCP_URL="http://127.0.0.1:$MCP_PORT/sse"
+SETUP_PORT=7275
+SETUP_URL="http://127.0.0.1:$SETUP_PORT"
 
 # ── platform detection ────────────────────────────────────────────────────────
 
@@ -219,6 +221,14 @@ install_chat_cli() {
   fi
 }
 
+# ── setup wizard ───────────────────────────────────────────────────────────
+
+launch_setup_wizard() {
+  echo "Opening the setup wizard in your browser to finish installing dependencies."
+  nohup "$BIN" setup >"$DRUN_HOME/setup.log" 2>&1 &
+  disown
+}
+
 # ── main ──────────────────────────────────────────────────────────────────────
 
 detect_platform
@@ -226,10 +236,12 @@ install_binary
 create_config
 install_daemon
 install_chat_cli
+launch_setup_wizard
 
 echo ""
 echo "Done! drun is ready."
-echo "  MCP  → $MCP_URL"
-echo "  UI   → http://127.0.0.1:7274"
+echo "  MCP     → $MCP_URL"
+echo "  UI      → http://127.0.0.1:7274"
+echo "  Wizard  → $SETUP_URL"
 echo ""
 echo "Run 'drun-mcp bridges list' to integrate drun with different providers."

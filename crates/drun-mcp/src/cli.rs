@@ -8,6 +8,7 @@ impl Cli {
     pub(crate) fn print_usage() {
         let mut rows: Vec<(String, String)> = vec![
             (String::new(), "start the daemon".into()),
+            ("setup".into(), "open the browser setup wizard".into()),
             ("bridges list".into(), "list available agent bridges".into()),
             (
                 "bridges deregister-all".into(),

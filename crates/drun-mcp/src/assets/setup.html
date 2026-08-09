@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>drun setup</title>
+  <style>
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      --bg: #0b0d13;
+      --s1: #11141d;
+      --s2: #181c28;
+      --border: #222638;
+      --border-hi: #333a5a;
+      --text: #c6cae6;
+      --text-dim: #7a82aa;
+      --text-muted: #444c6e;
+      --accent: #7c6af5;
+      --accent-bg: #1a1740;
+      --green: #4fd98a;
+      --green-bg: #0b2218;
+      --amber: #f0982e;
+      --amber-bg: #261708;
+      --red: #e0556a;
+      --red-bg: #25090f;
+      --mono: 'SF Mono', 'Cascadia Mono', 'Fira Code', Consolas, monospace;
+      --radius: 7px;
+    }
+
+    html,
+    body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    }
+
+    body {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 28px 20px 60px;
+    }
+
+    header {
+      margin-bottom: 24px;
+    }
+
+    header h1 {
+      font-size: 20px;
+      font-weight: 600;
+    }
+
+    header p {
+      color: var(--text-dim);
+      font-size: 13px;
+      margin-top: 6px;
+      line-height: 1.5;
+    }
+
+    .card {
+      background: var(--s1);
+      border: 1px solid var(--border-hi);
+      border-radius: var(--radius);
+      padding: 16px 18px;
+      margin-bottom: 14px;
+    }
+
+    .card-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .card-title {
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .card-desc {
+      color: var(--text-dim);
+      font-size: 12px;
+      margin-top: 4px;
+      line-height: 1.5;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 11px;
+      padding: 3px 9px;
+      border-radius: 100px;
+      white-space: nowrap;
+      background: var(--s2);
+      color: var(--text-dim);
+      border: 1px solid var(--border);
+    }
+
+    .badge-green {
+      background: var(--green-bg);
+      color: var(--green);
+      border-color: transparent;
+    }
+
+    .badge-amber {
+      background: var(--amber-bg);
+      color: var(--amber);
+      border-color: transparent;
+    }
+
+    .badge-red {
+      background: var(--red-bg);
+      color: var(--red);
+      border-color: transparent;
+    }
+
+    .card-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .btn {
+      background: none;
+      border: 1px solid var(--border-hi);
+      border-radius: 4px;
+      color: var(--text-dim);
+      font-size: 12px;
+      padding: 6px 12px;
+      cursor: pointer;
+      transition: color 0.12s, border-color 0.12s, background 0.12s;
+    }
+
+    .btn:hover:not(:disabled) {
+      color: var(--text);
+      border-color: var(--accent);
+    }
+
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: default;
+    }
+
+    .btn-primary {
+      background: var(--accent-bg);
+      border-color: var(--accent);
+      color: var(--text);
+    }
+
+    .btn-link {
+      border: none;
+      color: var(--accent);
+      padding: 6px 0;
+      text-decoration: underline;
+    }
+
+    .command-line {
+      display: none;
+      align-items: center;
+      gap: 8px;
+      margin-top: 10px;
+      background: var(--s2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 8px 10px;
+    }
+
+    .command-line.visible {
+      display: flex;
+    }
+
+    .command-line code {
+      flex: 1;
+      font-family: var(--mono);
+      font-size: 11.5px;
+      color: var(--text-dim);
+      overflow-x: auto;
+      white-space: nowrap;
+    }
+
+    .job-error {
+      color: var(--red);
+      font-size: 12px;
+      margin-top: 10px;
+      line-height: 1.5;
+    }
+
+    .job-error:empty {
+      display: none;
+    }
+
+    .job-output {
+      display: none;
+      font-family: var(--mono);
+      font-size: 11.5px;
+      color: var(--text-dim);
+      background: #000;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 10px;
+      margin-top: 10px;
+      max-height: 220px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .job-output.visible {
+      display: block;
+    }
+
+    .job-output a {
+      color: var(--accent);
+    }
+
+    footer {
+      color: var(--text-muted);
+      font-size: 11.5px;
+      text-align: center;
+      margin-top: 28px;
+      line-height: 1.6;
+    }
+  </style>
+</head>
+
+<body>
+  <header>
+    <h1>drun setup</h1>
+    <p>
+      Gets everything drun needs onto this machine — the local model runtime, the
+      standalone chat CLI, and (optionally) remote access from your other devices.
+      Every step also shows the exact command it runs, so you can copy it into your
+      own terminal instead if you'd rather run it by hand.
+    </p>
+  </header>
+
+  <div id="cards"></div>
+
+  <footer>
+    This wizard keeps running in the background so you can come back to this tab
+    later. Close it anytime — it doesn't affect the drun daemon.
+  </footer>
+
+  <script>
+    const escHtml = (s) => String(s).replace(/[&<>"']/g, c => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+    }[c]));
+
+    const linkify = (text) => escHtml(text).replace(
+      /(https?:\/\/[^\s<]+)/g,
+      '<a href="$1" target="_blank" rel="noopener">$1</a>',
+    );
+
+    const Api = {
+      status: () => fetch('/api/setup/status').then(r => r.json()),
+      runJob: (id) => fetch(`/api/setup/jobs/${id}`, { method: 'POST' }),
+      jobOutput: (id) => fetch(`/api/setup/jobs/${id}`).then(r => r.json()),
+    };
+
+    // Each entry describes one card. `actions` are buttons shown once their
+    // `when(status)` predicate matches the latest /api/setup/status response;
+    // the first matching action in the list wins per click target.
+    const CARDS = [
+      {
+        id: 'daemon',
+        title: 'drun daemon',
+        desc: 'The background service that runs sandboxed sessions and serves the web UI.',
+        badge: (s) => s.daemon.running
+          ? { text: 'Running', cls: 'badge-green' }
+          : { text: 'Not detected', cls: 'badge-red' },
+        detail: (s) => s.daemon.running
+          ? `MCP on port ${s.daemon.mcp_port}${s.daemon.web_port ? `, web UI on port ${s.daemon.web_port}` : ''}.`
+          : 'Not reachable yet. If you just ran the installer, give it a few seconds and refresh.',
+        actions: (s) => {
+          const actions = [{ label: 'Recheck', kind: 'recheck' }];
+          if (s.daemon.running && s.daemon.web_port) {
+            actions.push({ label: 'Open web UI', kind: 'link', href: `http://127.0.0.1:${s.daemon.web_port}` });
+          }
+          return actions;
+        },
+      },
+      {
+        id: 'ollama',
+        title: 'Ollama',
+        desc: 'Runs local models for the standalone drun chat CLI.',
+        badge: (s) => s.ollama.installed
+          ? { text: 'Installed', cls: 'badge-green' }
+          : { text: 'Not installed', cls: 'badge-amber' },
+        actions: (s) => s.ollama.installed
+          ? [{ label: 'Pull qwen3.6:latest', kind: 'job', job: 'pull_model' }]
+          : [{ label: 'Install', kind: 'job', job: 'install_ollama', primary: true }],
+      },
+      {
+        id: 'chat_cli',
+        title: 'drun chat CLI',
+        desc: "Python package (drun-sandbox[chat]) that powers `drun chat` and the web UI's per-session Chat button.",
+        badge: (s) => s.chat_cli.installed
+          ? { text: 'Installed', cls: 'badge-green' }
+          : { text: 'Not installed', cls: 'badge-amber' },
+        actions: (s) => s.chat_cli.installed
+          ? []
+          : [{ label: 'Install', kind: 'job', job: 'install_chat_cli', primary: true }],
+      },
+      {
+        id: 'tailscale',
+        title: 'Tailscale (optional)',
+        desc: 'Lets you reach the web UI — and drive sessions from your phone via Chat — from your other devices.',
+        badge: (s) => {
+          if (!s.tailscale.installed) return { text: 'Not installed', cls: 'badge-amber' };
+          if (!s.tailscale.authenticated) return { text: 'Needs sign-in', cls: 'badge-amber' };
+          return { text: 'Ready', cls: 'badge-green' };
+        },
+        actions: (s) => {
+          if (!s.tailscale.installed) {
+            return [{ label: 'Install', kind: 'job', job: 'install_tailscale', primary: true }];
+          }
+          if (!s.tailscale.authenticated) {
+            return [{ label: 'Sign in', kind: 'job', job: 'tailscale_up', primary: true }];
+          }
+          return [{ label: 'Share web UI', kind: 'job', job: 'tailscale_serve', primary: true }];
+        },
+      },
+    ];
+
+    let latestStatus = null;
+    const jobState = {};      // jobId -> {command, output, running, exit_code}
+    const cardActiveJob = {}; // cardId -> the jobId last triggered from that card
+    const cardError = {};     // cardId -> a rejection message (409/404 body)
+    const pollTimers = {};
+
+    // Rebuilds every card from `latestStatus` plus whatever's in `jobState`/
+    // `cardError` for it. Re-running this on every poll tick (rather than
+    // patching individual DOM nodes) keeps a single source of truth — no risk
+    // of a periodic status refresh wiping an in-progress job's output panel,
+    // since that panel is derived from `jobState`, not left behind in the DOM.
+    function render() {
+      if (!latestStatus) return;
+      document.getElementById('cards').innerHTML =
+        CARDS.map(card => renderCard(card, latestStatus)).join('');
+    }
+
+    function renderCard(card, status) {
+      const badge = card.badge(status);
+      const detail = card.detail ? card.detail(status) : '';
+      const actions = card.actions(status);
+      const activeJobId = cardActiveJob[card.id];
+      const job = activeJobId ? jobState[activeJobId] : null;
+      const busy = !!(job && job.running);
+      const error = cardError[card.id] || (job && job.exit_code != null && job.exit_code !== 0
+        ? `Command exited with status ${job.exit_code} — see output above, or copy the command and run it yourself.`
+        : '');
+
+      return `
+        <div class="card" id="card-${card.id}">
+          <div class="card-head">
+            <div class="card-title">${escHtml(card.title)}</div>
+            <span class="badge ${badge.cls}">${escHtml(badge.text)}</span>
+          </div>
+          <div class="card-desc">${escHtml(card.desc)}${detail ? `<br>${escHtml(detail)}` : ''}</div>
+          <div class="card-actions">
+            ${actions.map(a => renderAction(card.id, a, busy)).join('')}
+          </div>
+          ${job ? `
+            <div class="command-line visible" data-command="${escHtml(job.command)}">
+              <code>${escHtml(job.command)}</code>
+              <button class="btn" onclick="copyCommand('${card.id}')">Copy</button>
+            </div>
+            <div class="job-output visible" id="output-${card.id}">${linkify(job.output || '(no output yet)')}</div>
+          ` : ''}
+          <div class="job-error">${escHtml(error)}</div>
+        </div>
+      `;
+    }
+
+    function renderAction(cardId, action, busy) {
+      if (action.kind === 'link') {
+        return `<a class="btn" href="${escHtml(action.href)}" target="_blank" rel="noopener">${escHtml(action.label)}</a>`;
+      }
+      if (action.kind === 'recheck') {
+        return `<button class="btn" ${busy ? 'disabled' : ''} onclick="refreshStatus()">${escHtml(action.label)}</button>`;
+      }
+      const cls = action.primary ? 'btn btn-primary' : 'btn';
+      return `<button class="${cls}" ${busy ? 'disabled' : ''} onclick="startJob('${cardId}', '${action.job}')">${escHtml(action.label)}</button>`;
+    }
+
+    async function refreshStatus() {
+      try {
+        latestStatus = await Api.status();
+        render();
+      } catch (e) {
+        console.error('Failed to load setup status:', e);
+      }
+    }
+
+    async function startJob(cardId, jobId) {
+      cardError[cardId] = '';
+      cardActiveJob[cardId] = jobId;
+      jobState[jobId] = { command: '', output: '', running: true, exit_code: null };
+      render();
+
+      const response = await Api.runJob(jobId);
+      if (response.status === 409 || response.status === 404) {
+        cardError[cardId] = await response.text();
+        delete cardActiveJob[cardId];
+        delete jobState[jobId];
+        render();
+        return;
+      }
+
+      pollJob(cardId, jobId);
+    }
+
+    function pollJob(cardId, jobId) {
+      clearInterval(pollTimers[jobId]);
+      const tick = async () => {
+        jobState[jobId] = await Api.jobOutput(jobId);
+        render();
+        const outputEl = document.getElementById(`output-${cardId}`);
+        if (outputEl) outputEl.scrollTop = outputEl.scrollHeight;
+
+        if (!jobState[jobId].running) {
+          clearInterval(pollTimers[jobId]);
+          refreshStatus();
+        }
+      };
+      tick();
+      pollTimers[jobId] = setInterval(tick, 800);
+    }
+
+    function copyCommand(cardId) {
+      const commandLine = document.querySelector(`#card-${cardId} .command-line`);
+      navigator.clipboard?.writeText(commandLine?.dataset.command || '');
+    }
+
+    refreshStatus();
+  </script>
+</body>
+
+</html>

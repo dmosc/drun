@@ -63,6 +63,8 @@ This installs and configures a few things (skips if not applicable):
    [standalone CLI](#standalone-cli) and the web UI's per-session Chat button.
    Skipped quietly if `pip` isn't on `PATH`; see
    [Standalone CLI](#standalone-cli) to install it by hand afterward.
+5. The [setup wizard](#setup-wizard) to finish installing additional
+   dependencies.
 
 `install.sh` only handles the binary, the daemon, and (best-effort) the chat CLI
 — it does not wire up any agent. Once it's done, point the binary at whichever
@@ -92,6 +94,24 @@ Once installed, the following endpoints are available:
 | `http://127.0.0.1:7273/sse` | MCP transport (SSE); used by Claude Code         |
 | `http://127.0.0.1:7273/mcp` | MCP transport (streamable HTTP); used by the CLI |
 | `http://127.0.0.1:7274`     | Web interface to manage sessions                 |
+| `http://127.0.0.1:7275`     | Setup wizard                                     |
+
+#### Setup wizard
+
+`install.sh` finishes by launching `drun-mcp setup` in the background and
+opening `http://127.0.0.1:7275` in your browser. It's a small dashboard to help
+you install additional dependencies needed:
+
+- **drun daemon** — confirms the MCP and web UI ports are actually up.
+- **Ollama** — installs it (via Homebrew on macOS, the official script on Linux)
+  and pulls a default tool-calling model, for the
+  [standalone CLI](#standalone-cli).
+- **drun chat CLI** — installs `drun-sandbox[chat]` via `pip`, in case
+  `install.sh`'s best-effort attempt was skipped (e.g. `pip` wasn't on `PATH`
+  yet at install time).
+- **Tailscale** — installs it, walks you through signing in (the wizard surfaces
+  the login link from `tailscale up` as a clickable button), and exposes the web
+  UI over your tailnet — see [Manage drun remotely](#manage-drun-remotely).
 
 #### Upgrading
 
@@ -358,7 +378,8 @@ sandboxed session.
 pip install 'drun-sandbox[chat]'
 ```
 
-For a local model, install Ollama and pull a tool-calling-capable model:
+For a local model, install Ollama and pull a tool-calling-capable model. The
+[setup wizard](#setup-wizard) does both with one click each; by hand:
 
 ```bash
 ollama pull qwen3.6:latest
@@ -488,7 +509,9 @@ stuck being killed and retried by launchd/systemd.
 ### Manage drun remotely
 
 We recommend setting up [Tailscale](https://tailscale.com/) across your devices
-to remotely manage drun. Roughly the steps are as follows:
+to remotely manage drun. The [setup wizard](#setup-wizard) installs Tailscale,
+walks you through signing in, and exposes the web UI in one click each — or by
+hand, roughly the steps are as follows:
 
 1. Install drun and make sure that the web service is up by visiting
    `http://127.0.0.1:7274`.

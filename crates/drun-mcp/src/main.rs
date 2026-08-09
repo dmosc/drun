@@ -10,6 +10,7 @@ mod instructions;
 mod live_output;
 mod response;
 mod server;
+mod setup;
 mod state;
 mod tools;
 mod web;
@@ -43,6 +44,10 @@ async fn main() -> SdkResult<()> {
         Some("config") => {
             let rest: Vec<String> = std::env::args().skip(2).collect();
             ConfigCmd::run(&rest);
+            return Ok(());
+        }
+        Some("setup") => {
+            setup::run().await;
             return Ok(());
         }
         Some("--help" | "-h") => {

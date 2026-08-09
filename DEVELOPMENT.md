@@ -83,6 +83,25 @@ your Claude MCPs list if you registered it.
 claude mcp remove drun-dev
 ```
 
+## Run the setup wizard locally
+
+`drun-mcp setup` (`crates/drun-mcp/src/setup/`) is a separate one-shot process
+from the daemon above — it's safe to run alongside a real daemon since it binds
+its own port (`DRUN_SETUP_PORT`, default 7275) instead of the daemon's.
+
+```bash
+cargo build -p drun-mcp
+DRUN_SETUP_PORT=8275 ./target/debug/drun-mcp setup
+```
+
+It streams every install command's output through `setup::process::JobRegistry`
+and polls it from the browser — none of its detection or job-running logic
+touches the network or another process on its own, so `cargo test -p drun-mcp`
+never shells out to real `brew`/`ollama`/`tailscale`/`pip` commands (see the
+`resolve_command` seam in `setup/mod.rs`). Exercising a real install path (e.g.
+Tailscale sign-in) still means running it against your own machine's real
+`brew`/`tailscale`/`ollama` — there's no scratch-daemon equivalent for that.
+
 ## Test drun init
 
 `drun init` is a subcommand on the binary (not the MCP server). It can be tested
