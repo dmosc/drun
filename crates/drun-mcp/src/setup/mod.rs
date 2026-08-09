@@ -1,10 +1,6 @@
-//! `drun-mcp setup` — a one-shot local web wizard that walks a non-engineer
-//! through the pieces `install.sh` can't safely automate itself: installing
-//! Ollama, the `drun chat` CLI, and Tailscale, then wiring Tailscale up for
-//! remote access. Every action it can run is also shown as a plain shell
-//! command, so a stuck step (e.g. one that wants a sudo password, which this
-//! process never feeds it — see `process::JobRegistry`) always has a
-//! copy-paste fallback into the user's own terminal.
+//! `drun-mcp setup` — a one-shot local web wizard for installing the pieces
+//! `install.sh` can't safely automate: Homebrew, Ollama, the `drun chat`
+//! CLI, and Tailscale.
 
 mod components;
 mod process;
@@ -73,12 +69,10 @@ fn build_router() -> Router {
 #[derive(Clone)]
 struct AppState {
     jobs: JobRegistry,
-    /// Job id + configured web port -> the shell command to run. A function
-    /// pointer (not a hardcoded call to `components::command_for`) so tests
-    /// can substitute a harmless synthetic mapping instead of the real one —
-    /// `command_for`'s real job ids run actual `brew`/`tailscale`/`ollama`
-    /// commands, which must never fire as a side effect of `cargo test` on a
-    /// machine that happens to have them installed.
+    /// A function pointer rather than a hardcoded call to
+    /// `components::command_for`, so tests can substitute a harmless
+    /// synthetic mapping — the real one runs actual `brew`/`ollama`/
+    /// `tailscale` commands.
     resolve_command: fn(&str, u16) -> Result<String, JobLookupError>,
 }
 
@@ -151,10 +145,6 @@ mod tests {
         String::from_utf8(bytes.to_vec()).unwrap()
     }
 
-    /// Never touches `components::command_for` — its real job ids run actual
-    /// `brew`/`tailscale`/`ollama` commands, which handler tests must never
-    /// execute for real. `known_job` maps to a harmless `echo`; every other
-    /// id behaves like the real resolver's unknown-job case.
     fn test_command_for(job_id: &str, _web_port: u16) -> Result<String, JobLookupError> {
         match job_id {
             "known_job" => Ok("echo test output".to_string()),
@@ -186,6 +176,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         let body = body_string(response).await;
         assert!(body.contains("\"daemon\""));
+        assert!(body.contains("\"homebrew\""));
         assert!(body.contains("\"ollama\""));
         assert!(body.contains("\"chat_cli\""));
         assert!(body.contains("\"tailscale\""));

@@ -59,16 +59,11 @@ This installs and configures a few things (skips if not applicable):
 3. `drun-mcp` as a persistent background daemon (`launchd` on macOS, `systemd`
    on Linux) so a single process serves all simultaneous sessions running on the
    host.
-4. `drun-sandbox[chat]` via `pip`, best-effort — powers the
-   [standalone CLI](#standalone-cli) and the web UI's per-session Chat button.
-   Skipped quietly if `pip` isn't on `PATH`; see
-   [Standalone CLI](#standalone-cli) to install it by hand afterward.
-5. The [setup wizard](#setup-wizard) to finish installing additional
-   dependencies.
+4. The [setup wizard](#setup-wizard), to install everything else — the chat
+   CLI, Ollama, Tailscale — one step at a time.
 
-`install.sh` only handles the binary, the daemon, and (best-effort) the chat CLI
-— it does not wire up any agent. Once it's done, point the binary at whichever
-bridge you use:
+`install.sh` only handles the binary and the daemon — it does not wire up any
+agent. Once it's done, point the binary at whichever bridge you use:
 
 ```bash
 # Run from a project root — `claude`/`gemini` init are per-project scoped;
@@ -100,18 +95,23 @@ Once installed, the following endpoints are available:
 
 `install.sh` finishes by launching `drun-mcp setup` in the background and
 opening `http://127.0.0.1:7275` in your browser. It's a small dashboard to help
-you install additional dependencies needed:
+you install additional dependencies needed, one step at a time — each step
+shows the exact command it runs, and once satisfied its button becomes an
+undo (Uninstall/Stop/Sign out/...) instead of hiding, so anything the wizard
+did can be reverted the same way it was applied:
 
 - **drun daemon** — confirms the MCP and web UI ports are actually up.
-- **Ollama** — installs it (via Homebrew on macOS, the official script on Linux)
-  and pulls a default tool-calling model, for the
-  [standalone CLI](#standalone-cli).
-- **drun chat CLI** — installs `drun-sandbox[chat]` via `pip`, in case
-  `install.sh`'s best-effort attempt was skipped (e.g. `pip` wasn't on `PATH`
-  yet at install time).
-- **Tailscale** — installs it, walks you through signing in (the wizard surfaces
-  the login link from `tailscale up` as a clickable button), and exposes the web
-  UI over your tailnet — see [Manage drun remotely](#manage-drun-remotely).
+- **Homebrew** (macOS only) — the package manager the Ollama/Tailscale steps
+  below install through.
+- **Ollama** — install, start the local server, and pull a default
+  tool-calling model, for the [standalone CLI](#standalone-cli).
+- **drun chat CLI** — installs `drun-sandbox[chat]` via `pip`; powers
+  [`drun chat`](#standalone-cli) and the web UI's per-session Chat button.
+- **Tailscale** — install, start its background daemon, sign in, and expose
+  the web UI over your tailnet — see
+  [Manage drun remotely](#manage-drun-remotely). Starting the daemon needs
+  `sudo`, which the wizard can't supply; that one step's button is expected
+  to fail with a password prompt, showing the command to run by hand once.
 
 #### Upgrading
 
@@ -371,7 +371,7 @@ sandboxed session.
 - [Ollama](https://ollama.com) for local models, or an API key for a cloud
   model.
 
-`install.sh` already installs this if `pip` was on `PATH` — check with
+The [setup wizard](#setup-wizard) installs this with one click; check with
 `command -v drun` before running this by hand:
 
 ```bash
@@ -528,7 +528,7 @@ hand, roughly the steps are as follows:
 To drive sessions from your phone via the web UI's
 [Chat button](#chat-from-the-web-ui) — the main point of remote management,
 since it needs no terminal — the host also needs `drun-sandbox[chat]` installed.
-`install.sh` does this automatically when `pip` is on `PATH`; confirm with
+The [setup wizard](#setup-wizard) does this with one click; confirm with
 `command -v drun` on the host, or see [Standalone CLI](#standalone-cli) to
 install it by hand.
 
@@ -542,7 +542,7 @@ guardrails as any other bridge. Handy paired with
 without a terminal.
 
 Requires the [standalone CLI](#standalone-cli) installed on the same machine as
-the daemon — already done by `install.sh` if `pip` was on `PATH`, otherwise:
+the daemon — one click in the [setup wizard](#setup-wizard), or by hand:
 
 ```bash
 pip install 'drun-sandbox[chat]'

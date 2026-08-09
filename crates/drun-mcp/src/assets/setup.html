@@ -130,6 +130,23 @@
       margin-top: 12px;
     }
 
+    .step {
+      border-top: 1px solid var(--border);
+      margin-top: 12px;
+      padding-top: 12px;
+    }
+
+    .step-head {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .step-label {
+      flex: 1;
+      font-size: 12.5px;
+    }
+
     .btn {
       background: none;
       border: 1px solid var(--border-hi);
@@ -149,19 +166,6 @@
     .btn:disabled {
       opacity: 0.5;
       cursor: default;
-    }
-
-    .btn-primary {
-      background: var(--accent-bg);
-      border-color: var(--accent);
-      color: var(--text);
-    }
-
-    .btn-link {
-      border: none;
-      color: var(--accent);
-      padding: 6px 0;
-      text-decoration: underline;
     }
 
     .command-line {
@@ -267,9 +271,10 @@
       jobOutput: (id) => fetch(`/api/setup/jobs/${id}`).then(r => r.json()),
     };
 
-    // Each entry describes one card. `actions` are buttons shown once their
-    // `when(status)` predicate matches the latest /api/setup/status response;
-    // the first matching action in the list wins per click target.
+    // Every step's Run button stays visible in sequence rather than
+    // swapping in the "next" one as earlier steps complete. A `done` step
+    // swaps its button for `revertJob`/`revertLabel` instead of showing a
+    // separate status label — the button itself says where things stand.
     const CARDS = [
       {
         id: 'daemon',
@@ -280,25 +285,37 @@
           : { text: 'Not detected', cls: 'badge-red' },
         detail: (s) => s.daemon.running
           ? `MCP on port ${s.daemon.mcp_port}${s.daemon.web_port ? `, web UI on port ${s.daemon.web_port}` : ''}.`
-          : 'Not reachable yet. If you just ran the installer, give it a few seconds and refresh.',
-        actions: (s) => {
-          const actions = [{ label: 'Recheck', kind: 'recheck' }];
-          if (s.daemon.running && s.daemon.web_port) {
-            actions.push({ label: 'Open web UI', kind: 'link', href: `http://127.0.0.1:${s.daemon.web_port}` });
-          }
-          return actions;
-        },
+          : 'Not reachable yet. If you just ran the installer, give it a few seconds and reload this page.',
+        links: (s) => (s.daemon.running && s.daemon.web_port)
+          ? [{ label: 'Open web UI', href: `http://127.0.0.1:${s.daemon.web_port}` }]
+          : [],
+      },
+      {
+        id: 'homebrew',
+        title: 'Homebrew',
+        desc: 'Package manager used below to install Ollama and Tailscale.',
+        visible: (s) => s.platform === 'macos',
+        badge: (s) => s.homebrew.installed
+          ? { text: 'Installed', cls: 'badge-green' }
+          : { text: 'Not installed', cls: 'badge-amber' },
+        steps: [
+          { job: 'install_homebrew', label: 'Install Homebrew', done: (s) => s.homebrew.installed },
+        ],
       },
       {
         id: 'ollama',
         title: 'Ollama',
         desc: 'Runs local models for the standalone drun chat CLI.',
-        badge: (s) => s.ollama.installed
-          ? { text: 'Installed', cls: 'badge-green' }
-          : { text: 'Not installed', cls: 'badge-amber' },
-        actions: (s) => s.ollama.installed
-          ? [{ label: 'Pull qwen3.6:latest', kind: 'job', job: 'pull_model' }]
-          : [{ label: 'Install', kind: 'job', job: 'install_ollama', primary: true }],
+        badge: (s) => {
+          if (!s.ollama.installed) return { text: 'Not installed', cls: 'badge-amber' };
+          if (!s.ollama.running) return { text: 'Not running', cls: 'badge-amber' };
+          return { text: 'Running', cls: 'badge-green' };
+        },
+        steps: [
+          { job: 'install_ollama', revertJob: 'uninstall_ollama', revertLabel: 'Uninstall', label: '1. Install Ollama', done: (s) => s.ollama.installed },
+          { job: 'start_ollama', revertJob: 'stop_ollama', revertLabel: 'Stop', label: '2. Start the Ollama server', done: (s) => s.ollama.running },
+          { job: 'pull_model', revertJob: 'remove_model', revertLabel: 'Remove', label: '3. Pull qwen3.6:latest', done: (s) => s.ollama.model_pulled },
+        ],
       },
       {
         id: 'chat_cli',
@@ -307,58 +324,53 @@
         badge: (s) => s.chat_cli.installed
           ? { text: 'Installed', cls: 'badge-green' }
           : { text: 'Not installed', cls: 'badge-amber' },
-        actions: (s) => s.chat_cli.installed
-          ? []
-          : [{ label: 'Install', kind: 'job', job: 'install_chat_cli', primary: true }],
+        steps: [
+          { job: 'install_chat_cli', revertJob: 'uninstall_chat_cli', revertLabel: 'Uninstall', label: 'Install drun-sandbox[chat]', done: (s) => s.chat_cli.installed },
+        ],
       },
       {
         id: 'tailscale',
         title: 'Tailscale (optional)',
-        desc: 'Lets you reach the web UI — and drive sessions from your phone via Chat — from your other devices.',
+        desc: 'Lets you reach the web UI — and drive sessions from your phone via Chat — from your other devices. ' +
+          'Step 2 needs sudo, which this wizard can\'t supply — its button will fail with a password error on ' +
+          'purpose; copy that command and run it once yourself in a terminal, then the rest works normally.',
         badge: (s) => {
           if (!s.tailscale.installed) return { text: 'Not installed', cls: 'badge-amber' };
+          if (!s.tailscale.daemon_running) return { text: 'Daemon not running', cls: 'badge-amber' };
           if (!s.tailscale.authenticated) return { text: 'Needs sign-in', cls: 'badge-amber' };
           return { text: 'Ready', cls: 'badge-green' };
         },
-        actions: (s) => {
-          if (!s.tailscale.installed) {
-            return [{ label: 'Install', kind: 'job', job: 'install_tailscale', primary: true }];
-          }
-          if (!s.tailscale.authenticated) {
-            return [{ label: 'Sign in', kind: 'job', job: 'tailscale_up', primary: true }];
-          }
-          return [{ label: 'Share web UI', kind: 'job', job: 'tailscale_serve', primary: true }];
-        },
+        steps: [
+          { job: 'install_tailscale', revertJob: 'uninstall_tailscale', revertLabel: 'Uninstall', label: '1. Install Tailscale', done: (s) => s.tailscale.installed },
+          { job: 'start_tailscale', revertJob: 'stop_tailscale', revertLabel: 'Stop', label: '2. Start the Tailscale daemon', done: (s) => s.tailscale.daemon_running },
+          { job: 'tailscale_up', revertJob: 'tailscale_logout', revertLabel: 'Sign out', label: '3. Sign in', done: (s) => s.tailscale.authenticated },
+          { job: 'tailscale_serve', revertJob: 'tailscale_unserve', revertLabel: 'Stop sharing', label: '4. Share web UI', done: (s) => s.tailscale.sharing },
+        ],
       },
     ];
 
     let latestStatus = null;
-    const jobState = {};      // jobId -> {command, output, running, exit_code}
-    const cardActiveJob = {}; // cardId -> the jobId last triggered from that card
-    const cardError = {};     // cardId -> a rejection message (409/404 body)
+    const jobState = {}; // jobId -> {command, output, running, exit_code}
+    const jobError = {}; // jobId -> a rejection message (409/404 body)
     const pollTimers = {};
 
     // Rebuilds every card from `latestStatus` plus whatever's in `jobState`/
-    // `cardError` for it. Re-running this on every poll tick (rather than
-    // patching individual DOM nodes) keeps a single source of truth — no risk
-    // of a periodic status refresh wiping an in-progress job's output panel,
-    // since that panel is derived from `jobState`, not left behind in the DOM.
+    // `jobError` — a single source of truth, so a status refresh mid-job
+    // can't wipe its output panel the way patching individual DOM nodes
+    // would risk.
     function render() {
       if (!latestStatus) return;
-      document.getElementById('cards').innerHTML =
-        CARDS.map(card => renderCard(card, latestStatus)).join('');
+      document.getElementById('cards').innerHTML = CARDS
+        .filter(card => !card.visible || card.visible(latestStatus))
+        .map(card => renderCard(card, latestStatus))
+        .join('');
     }
 
     function renderCard(card, status) {
       const badge = card.badge(status);
       const detail = card.detail ? card.detail(status) : '';
-      const actions = card.actions(status);
-      const activeJobId = cardActiveJob[card.id];
-      const job = activeJobId ? jobState[activeJobId] : null;
-      const busy = !!(job && job.running);
-      const error = cardError[card.id] || (job && job.exit_code != null && job.exit_code !== 0
-        ? `Command exited with status ${job.exit_code} — see output above, or copy the command and run it yourself.`
-        : '');
+      const links = card.links ? card.links(status) : [];
+      const steps = card.steps || [];
 
       return `
         <div class="card" id="card-${card.id}">
@@ -367,30 +379,42 @@
             <span class="badge ${badge.cls}">${escHtml(badge.text)}</span>
           </div>
           <div class="card-desc">${escHtml(card.desc)}${detail ? `<br>${escHtml(detail)}` : ''}</div>
-          <div class="card-actions">
-            ${actions.map(a => renderAction(card.id, a, busy)).join('')}
-          </div>
-          ${job ? `
-            <div class="command-line visible" data-command="${escHtml(job.command)}">
-              <code>${escHtml(job.command)}</code>
-              <button class="btn" onclick="copyCommand('${card.id}')">Copy</button>
+          ${links.length ? `
+            <div class="card-actions">
+              ${links.map(l => `<a class="btn" href="${escHtml(l.href)}" target="_blank" rel="noopener">${escHtml(l.label)}</a>`).join('')}
             </div>
-            <div class="job-output visible" id="output-${card.id}">${linkify(job.output || '(no output yet)')}</div>
           ` : ''}
-          <div class="job-error">${escHtml(error)}</div>
+          ${steps.map(step => renderStep(step, status)).join('')}
         </div>
       `;
     }
 
-    function renderAction(cardId, action, busy) {
-      if (action.kind === 'link') {
-        return `<a class="btn" href="${escHtml(action.href)}" target="_blank" rel="noopener">${escHtml(action.label)}</a>`;
-      }
-      if (action.kind === 'recheck') {
-        return `<button class="btn" ${busy ? 'disabled' : ''} onclick="refreshStatus()">${escHtml(action.label)}</button>`;
-      }
-      const cls = action.primary ? 'btn btn-primary' : 'btn';
-      return `<button class="${cls}" ${busy ? 'disabled' : ''} onclick="startJob('${cardId}', '${action.job}')">${escHtml(action.label)}</button>`;
+    function renderStep(step, status) {
+      const reverting = step.revertJob && step.done && step.done(status);
+      const activeJob = reverting ? step.revertJob : step.job;
+      const job = jobState[activeJob];
+      const busy = !!(job && job.running);
+      const buttonLabel = busy ? 'Running…' : (reverting ? step.revertLabel : 'Run');
+      const error = jobError[activeJob] || (job && job.exit_code != null && job.exit_code !== 0
+        ? `Command exited with status ${job.exit_code} — see output above, or copy the command and run it yourself.`
+        : '');
+
+      return `
+        <div class="step">
+          <div class="step-head">
+            <span class="step-label">${escHtml(step.label)}</span>
+            <button class="btn" ${busy ? 'disabled' : ''} onclick="startJob('${activeJob}')">${escHtml(buttonLabel)}</button>
+          </div>
+          ${job ? `
+            <div class="command-line visible" id="command-${activeJob}" data-command="${escHtml(job.command)}">
+              <code>${escHtml(job.command)}</code>
+              <button class="btn" onclick="copyCommand('${activeJob}')">Copy</button>
+            </div>
+            <div class="job-output visible" id="output-${activeJob}">${linkify(job.output || '(no output yet)')}</div>
+          ` : ''}
+          <div class="job-error">${escHtml(error)}</div>
+        </div>
+      `;
     }
 
     async function refreshStatus() {
@@ -402,30 +426,28 @@
       }
     }
 
-    async function startJob(cardId, jobId) {
-      cardError[cardId] = '';
-      cardActiveJob[cardId] = jobId;
+    async function startJob(jobId) {
+      jobError[jobId] = '';
       jobState[jobId] = { command: '', output: '', running: true, exit_code: null };
       render();
 
       const response = await Api.runJob(jobId);
       if (response.status === 409 || response.status === 404) {
-        cardError[cardId] = await response.text();
-        delete cardActiveJob[cardId];
+        jobError[jobId] = await response.text();
         delete jobState[jobId];
         render();
         return;
       }
 
-      pollJob(cardId, jobId);
+      pollJob(jobId);
     }
 
-    function pollJob(cardId, jobId) {
+    function pollJob(jobId) {
       clearInterval(pollTimers[jobId]);
       const tick = async () => {
         jobState[jobId] = await Api.jobOutput(jobId);
         render();
-        const outputEl = document.getElementById(`output-${cardId}`);
+        const outputEl = document.getElementById(`output-${jobId}`);
         if (outputEl) outputEl.scrollTop = outputEl.scrollHeight;
 
         if (!jobState[jobId].running) {
@@ -437,8 +459,8 @@
       pollTimers[jobId] = setInterval(tick, 800);
     }
 
-    function copyCommand(cardId) {
-      const commandLine = document.querySelector(`#card-${cardId} .command-line`);
+    function copyCommand(jobId) {
+      const commandLine = document.getElementById(`command-${jobId}`);
       navigator.clipboard?.writeText(commandLine?.dataset.command || '');
     }
 

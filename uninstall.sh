@@ -26,6 +26,7 @@ remove_daemon() {
       ;;
   esac
   pkill -f "drun-mcp\$" 2>/dev/null || true
+  pkill -f "drun-mcp setup" 2>/dev/null || true
 }
 
 # ── Bridge deregistration ─────────────────────────────────────────────────────
@@ -89,4 +90,4 @@ cleanup_project_settings
 remove_binary
 
 echo "Done."
-echo "Preserved: ~/.drun/config.toml, exports/, snapshots/ — remove manually if not needed."
+echo "Preserved: ~/.drun; remove manually if not needed."

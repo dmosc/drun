@@ -1,17 +1,19 @@
-//! Detects which pieces of the drun stack (Ollama, the `drun chat` CLI,
-//! Tailscale, the daemon itself) are already installed/running, and builds
-//! the shell command that installs each one — used by both the status
-//! endpoint and the job-runner endpoint in `super`.
+//! Detection and shell-command lookup for the setup wizard's components.
 
 use serde::Serialize;
 use std::net::{SocketAddr, TcpStream};
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
+const OLLAMA_PORT: u16 = 11434;
+const OLLAMA_MODEL: &str = "qwen3.6:latest";
+
 #[derive(Serialize)]
 pub(crate) struct SetupStatus {
+    pub(crate) platform: &'static str,
     pub(crate) daemon: DaemonStatus,
-    pub(crate) ollama: BinaryStatus,
+    pub(crate) homebrew: BinaryStatus,
+    pub(crate) ollama: OllamaStatus,
     pub(crate) chat_cli: BinaryStatus,
     pub(crate) tailscale: TailscaleStatus,
 }
@@ -29,18 +31,29 @@ pub(crate) struct BinaryStatus {
 }
 
 #[derive(Serialize)]
+pub(crate) struct OllamaStatus {
+    pub(crate) installed: bool,
+    pub(crate) running: bool,
+    pub(crate) model_pulled: bool,
+}
+
+#[derive(Serialize)]
 pub(crate) struct TailscaleStatus {
     pub(crate) installed: bool,
+    pub(crate) daemon_running: bool,
     pub(crate) authenticated: bool,
+    pub(crate) sharing: bool,
 }
 
 pub(crate) fn current_status() -> SetupStatus {
     let config = drun_core::Config::load();
     SetupStatus {
+        platform: std::env::consts::OS,
         daemon: daemon_status(&config),
-        ollama: BinaryStatus {
-            installed: command_exists("ollama"),
+        homebrew: BinaryStatus {
+            installed: command_exists("brew"),
         },
+        ollama: ollama_status(),
         chat_cli: BinaryStatus {
             installed: chat_cli_installed(),
         },
@@ -57,14 +70,60 @@ fn daemon_status(config: &drun_core::Config) -> DaemonStatus {
     }
 }
 
+fn ollama_status() -> OllamaStatus {
+    let installed = command_exists("ollama");
+    let running = installed && port_open(OLLAMA_PORT);
+    let model_pulled = running && output_of("ollama", &["list"]).contains(OLLAMA_MODEL);
+    OllamaStatus {
+        installed,
+        running,
+        model_pulled,
+    }
+}
+
+fn chat_cli_installed() -> bool {
+    ["pip3", "pip"]
+        .iter()
+        .any(|pip| succeeds(pip, &["show", "drun-sandbox"]))
+}
+
+fn tailscale_status() -> TailscaleStatus {
+    let installed = command_exists("tailscale");
+    if !installed {
+        return TailscaleStatus {
+            installed: false,
+            daemon_running: false,
+            authenticated: false,
+            sharing: false,
+        };
+    }
+    let status =
+        serde_json::from_str::<serde_json::Value>(&output_of("tailscale", &["status", "--json"]))
+            .ok();
+    let daemon_running = status.is_some();
+    let authenticated = status
+        .as_ref()
+        .and_then(|v| v.get("BackendState")?.as_str())
+        .is_some_and(|s| s == "Running");
+    let sharing = daemon_running
+        && !output_of("tailscale", &["serve", "status"])
+            .trim()
+            .is_empty();
+    TailscaleStatus {
+        installed,
+        daemon_running,
+        authenticated,
+        sharing,
+    }
+}
+
 fn port_open(port: u16) -> bool {
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
     TcpStream::connect_timeout(&addr, Duration::from_millis(300)).is_ok()
 }
 
-/// True if `bin --version` runs at all — matches the check `bridge::Bridge`
-/// uses for provider CLIs (`cli_mcp_available`): a nonzero exit still proves
-/// the binary is on `PATH`, only "not found" means it isn't.
+/// True if `bin --version` runs at all — a nonzero exit still proves the
+/// binary is on `PATH`; only "not found" means it isn't.
 pub(crate) fn command_exists(bin: &str) -> bool {
     match Command::new(bin)
         .arg("--version")
@@ -74,111 +133,125 @@ pub(crate) fn command_exists(bin: &str) -> bool {
         .status()
     {
         Ok(_) => true,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
-        Err(_) => true,
+        Err(e) => e.kind() != std::io::ErrorKind::NotFound,
     }
 }
 
-fn chat_cli_installed() -> bool {
-    ["pip3", "pip"].iter().any(|pip| {
-        Command::new(pip)
-            .args(["show", "drun-sandbox"])
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .is_ok_and(|status| status.success())
-    })
+fn succeeds(bin: &str, args: &[&str]) -> bool {
+    Command::new(bin)
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|s| s.success())
 }
 
-fn tailscale_status() -> TailscaleStatus {
-    let installed = command_exists("tailscale");
-    if !installed {
-        return TailscaleStatus {
-            installed: false,
-            authenticated: false,
-        };
-    }
-    let authenticated = Command::new("tailscale")
-        .args(["status", "--json"])
+fn output_of(bin: &str, args: &[&str]) -> String {
+    Command::new(bin)
+        .args(args)
         .stdin(Stdio::null())
         .output()
-        .ok()
-        .and_then(|output| serde_json::from_slice::<serde_json::Value>(&output.stdout).ok())
-        .and_then(|value| {
-            value
-                .get("BackendState")
-                .and_then(|state| state.as_str().map(|s| s == "Running"))
-        })
-        .unwrap_or(false);
-    TailscaleStatus {
-        installed,
-        authenticated,
-    }
+        .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+        .unwrap_or_default()
 }
 
 #[derive(Debug)]
 pub(crate) enum JobLookupError {
     Unknown,
-    /// No automated install path exists on this platform; the message
-    /// points the user at the manual fallback.
     Unavailable(String),
 }
 
+type JobResult = Result<String, JobLookupError>;
+
 /// Resolves a job id (as posted by the wizard UI) to the shell command it
-/// should run right now. Kept as a flat match rather than a struct-per-job
-/// table since there are only a handful of jobs and each needs different
-/// inputs (`web_port` only matters for `tailscale_serve`).
-pub(crate) fn command_for(job_id: &str, web_port: u16) -> Result<String, JobLookupError> {
+/// should run right now. A flat match rather than a struct-per-job table:
+/// there's a fixed, small set of jobs and each maps to one command builder.
+pub(crate) fn command_for(job_id: &str, web_port: u16) -> JobResult {
     match job_id {
-        "install_ollama" => install_ollama_command().ok_or_else(|| {
-            JobLookupError::Unavailable(
-                "No supported installer found (Homebrew not on PATH). Install Ollama manually: https://ollama.com/download".into(),
-            )
-        }),
-        "pull_model" => Ok("ollama pull qwen3.6:latest".to_string()),
-        "install_chat_cli" => install_chat_cli_command().ok_or_else(|| {
-            JobLookupError::Unavailable(
-                "pip not found. Install Python 3.9+ first: https://www.python.org/downloads/"
-                    .into(),
-            )
-        }),
-        "install_tailscale" => install_tailscale_command().ok_or_else(|| {
-            JobLookupError::Unavailable(
-                "No supported installer found (Homebrew not on PATH). Install Tailscale manually: https://tailscale.com/download".into(),
-            )
-        }),
+        "install_homebrew" => Ok(
+            "NONINTERACTIVE=1 /bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
+                .to_string(),
+        ),
+
+        "install_ollama" => brew_or_curl("ollama", "https://ollama.com/install.sh", "https://ollama.com/download"),
+        "uninstall_ollama" => brew_uninstall("ollama"),
+        "start_ollama" => Ok(brew_service("ollama", "start").unwrap_or_else(|| "nohup ollama serve > /dev/null 2>&1 &".to_string())),
+        "stop_ollama" => Ok(brew_service("ollama", "stop").unwrap_or_else(|| "pkill -x ollama".to_string())),
+        "pull_model" => Ok(format!("ollama pull {OLLAMA_MODEL}")),
+        "remove_model" => Ok(format!("ollama rm {OLLAMA_MODEL}")),
+
+        "install_chat_cli" => pip("install --user --upgrade", "'drun-sandbox[chat]'"),
+        "uninstall_chat_cli" => pip("uninstall -y", "drun-sandbox"),
+
+        "install_tailscale" => brew_or_curl("tailscale", "https://tailscale.com/install.sh", "https://tailscale.com/download"),
+        "uninstall_tailscale" => brew_uninstall("tailscale"),
+        "start_tailscale" => Ok(tailscaled(true)),
+        "stop_tailscale" => Ok(tailscaled(false)),
         "tailscale_up" => Ok("tailscale up".to_string()),
-        "tailscale_serve" => Ok(format!(
-            "tailscale serve --bg --https=443 http://127.0.0.1:{web_port}"
-        )),
+        "tailscale_logout" => Ok("tailscale logout".to_string()),
+        "tailscale_serve" => Ok(format!("tailscale serve --bg --https=443 http://127.0.0.1:{web_port}")),
+        "tailscale_unserve" => Ok("tailscale serve --https=443 off".to_string()),
+
         _ => Err(JobLookupError::Unknown),
     }
 }
 
-fn install_ollama_command() -> Option<String> {
+fn brew_or_curl(formula: &str, curl_install_url: &str, manual_url: &str) -> JobResult {
     match std::env::consts::OS {
-        "macos" if command_exists("brew") => Some("brew install ollama".to_string()),
-        "linux" => Some("curl -fsSL https://ollama.com/install.sh | sh".to_string()),
-        _ => None,
+        "macos" if command_exists("brew") => Ok(format!("brew install {formula}")),
+        "linux" => Ok(format!("curl -fsSL {curl_install_url} | sh")),
+        _ => Err(JobLookupError::Unavailable(format!(
+            "No supported installer found (Homebrew not on PATH). Install manually: {manual_url}"
+        ))),
     }
 }
 
-fn install_chat_cli_command() -> Option<String> {
-    if command_exists("pip3") {
-        Some("pip3 install --user --upgrade 'drun-sandbox[chat]'".to_string())
-    } else if command_exists("pip") {
-        Some("pip install --user --upgrade 'drun-sandbox[chat]'".to_string())
+fn brew_uninstall(formula: &str) -> JobResult {
+    if command_exists("brew") {
+        Ok(format!("brew uninstall {formula}"))
     } else {
-        None
+        Err(JobLookupError::Unavailable(format!(
+            "Homebrew not on PATH — remove {formula} the same way you installed it."
+        )))
     }
 }
 
-fn install_tailscale_command() -> Option<String> {
-    match std::env::consts::OS {
-        "macos" if command_exists("brew") => Some("brew install tailscale".to_string()),
-        "linux" => Some("curl -fsSL https://tailscale.com/install.sh | sh".to_string()),
-        _ => None,
+fn brew_service(formula: &str, action: &str) -> Option<String> {
+    command_exists("brew").then(|| format!("brew services {action} {formula}"))
+}
+
+fn pip(action: &str, package: &str) -> JobResult {
+    ["pip3", "pip"]
+        .into_iter()
+        .find(|pip| command_exists(pip))
+        .map(|pip| Ok(format!("{pip} {action} {package}")))
+        .unwrap_or_else(|| {
+            Err(JobLookupError::Unavailable(
+                "pip not found. Install Python 3.9+ first: https://www.python.org/downloads/"
+                    .to_string(),
+            ))
+        })
+}
+
+/// `tailscaled` manages a network interface, so unlike Ollama's server this
+/// always needs root — expect it to fail under the wizard's no-stdin job
+/// runner with a "password is required" error rather than actually run.
+/// Still worth a button: the failure output is the exact command to paste
+/// into a real terminal once.
+fn tailscaled(start: bool) -> String {
+    if std::env::consts::OS == "linux" {
+        let action = if start {
+            "enable --now"
+        } else {
+            "disable --now"
+        };
+        return format!("sudo systemctl {action} tailscaled");
+    }
+    match brew_service("tailscale", if start { "start" } else { "stop" }) {
+        Some(command) => format!("sudo {command}"),
+        None if start => "sudo tailscaled".to_string(),
+        None => "sudo pkill tailscaled".to_string(),
     }
 }
 
@@ -208,17 +281,84 @@ mod tests {
 
     #[test]
     fn command_for_tailscale_serve_embeds_the_given_web_port() {
-        let command = command_for("tailscale_serve", 9999).unwrap();
-        assert!(command.contains("9999"));
+        assert!(
+            command_for("tailscale_serve", 9999)
+                .unwrap()
+                .contains("9999")
+        );
     }
 
     #[test]
-    fn command_for_pull_model_and_tailscale_up_need_no_platform_detection() {
+    fn command_for_jobs_needing_no_platform_detection() {
         assert_eq!(
             command_for("pull_model", 7274).unwrap(),
             "ollama pull qwen3.6:latest"
         );
+        assert_eq!(
+            command_for("remove_model", 7274).unwrap(),
+            "ollama rm qwen3.6:latest"
+        );
         assert_eq!(command_for("tailscale_up", 7274).unwrap(), "tailscale up");
+        assert_eq!(
+            command_for("tailscale_logout", 7274).unwrap(),
+            "tailscale logout"
+        );
+        assert_eq!(
+            command_for("tailscale_unserve", 7274).unwrap(),
+            "tailscale serve --https=443 off"
+        );
+    }
+
+    #[test]
+    fn command_for_install_homebrew_is_always_available() {
+        assert!(command_for("install_homebrew", 7274).is_ok());
+    }
+
+    #[test]
+    fn command_for_start_and_stop_ollama_are_always_available() {
+        assert!(command_for("start_ollama", 7274).is_ok());
+        assert!(command_for("stop_ollama", 7274).is_ok());
+    }
+
+    #[test]
+    fn command_for_start_and_stop_tailscale_always_need_sudo() {
+        assert!(
+            command_for("start_tailscale", 7274)
+                .unwrap()
+                .starts_with("sudo ")
+        );
+        assert!(
+            command_for("stop_tailscale", 7274)
+                .unwrap()
+                .starts_with("sudo ")
+        );
+    }
+
+    #[test]
+    fn command_for_uninstall_jobs_require_homebrew() {
+        let result = command_for("uninstall_ollama", 7274);
+        assert_eq!(result.is_ok(), command_exists("brew"));
+    }
+
+    #[test]
+    fn ollama_status_reports_nothing_running_when_not_installed() {
+        if !command_exists("ollama") {
+            let status = ollama_status();
+            assert!(!status.installed && !status.running && !status.model_pulled);
+        }
+    }
+
+    #[test]
+    fn tailscale_status_reports_nothing_running_when_not_installed() {
+        if !command_exists("tailscale") {
+            let status = tailscale_status();
+            assert!(
+                !status.installed
+                    && !status.daemon_running
+                    && !status.authenticated
+                    && !status.sharing
+            );
+        }
     }
 
     #[test]

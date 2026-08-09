@@ -196,31 +196,6 @@ install_daemon() {
   esac
 }
 
-# ── standalone chat CLI ───────────────────────────────────────────────────────
-
-install_chat_cli() {
-  if command -v drun &>/dev/null; then
-    echo "drun already installed at $(command -v drun), skipping."
-    return
-  fi
-
-  local pip_cmd
-  pip_cmd="$(command -v pip3 || command -v pip || true)"
-  if [[ -z "$pip_cmd" ]]; then
-    echo "pip not found — skipping drun-sandbox[chat] install."
-    echo "  Install Python 3.9+, then: pip install 'drun-sandbox[chat]'"
-    return
-  fi
-
-  echo "Installing drun-sandbox[chat] (powers the web UI's Chat button)..."
-  if "$pip_cmd" install --upgrade --quiet --user 'drun-sandbox[chat]'; then
-    echo "drun-sandbox[chat] installed."
-  else
-    echo "Could not install drun-sandbox[chat] automatically."
-    echo "  Install it yourself with: pip install 'drun-sandbox[chat]'"
-  fi
-}
-
 # ── setup wizard ───────────────────────────────────────────────────────────
 
 launch_setup_wizard() {
@@ -235,7 +210,6 @@ detect_platform
 install_binary
 create_config
 install_daemon
-install_chat_cli
 launch_setup_wizard
 
 echo ""
