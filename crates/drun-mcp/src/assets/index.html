@@ -1732,19 +1732,33 @@
       }
     }
 
+    // A session is busy either because the server reports it mid-turn
+    // (session.running, e.g. a tool call still in flight) or because this
+    // tab just fired a chat request that hasn't settled yet.
+    function isSessionBusy(sessionId) {
+      if (!sessionId) return true;
+      const session = findSession(sessionId);
+      return Boolean(session?.running) || viewState.chattingSessions.has(sessionId);
+    }
+
+    function renderChatInputState() {
+      document.getElementById('chat-send-btn').disabled = isSessionBusy(viewState.selectedSessionId);
+    }
+
     async function sendChatMessage() {
       const sessionId = viewState.selectedSessionId;
       const input = document.getElementById('chat-input');
       const errorEl = document.getElementById('chat-input-error');
       const prompt = input.value.trim();
       errorEl.textContent = '';
-      if (!sessionId || !prompt) return;
+      if (!sessionId || !prompt || isSessionBusy(sessionId)) return;
 
       input.value = '';
       viewState.pendingChatTurns.set(sessionId, prompt);
       viewState.chattingSessions.add(sessionId);
       renderSessionGrid();
       renderChatLog();
+      renderChatInputState();
 
       try {
         await Api.chat(sessionId, prompt);
@@ -1760,7 +1774,10 @@
         viewState.chattingSessions.delete(sessionId);
         viewState.pendingChatTurns.delete(sessionId);
         renderSessionGrid();
-        if (viewState.selectedSessionId === sessionId) renderChatLog();
+        if (viewState.selectedSessionId === sessionId) {
+          renderChatLog();
+          renderChatInputState();
+        }
       }
     }
 
@@ -2469,6 +2486,7 @@
       renderCheckpointSteps();
       renderCheckpointActions();
       renderChatLog();
+      renderChatInputState();
       applyActiveOuterTab();
       applyActiveTab();
 
@@ -2737,6 +2755,7 @@
         renderSessionGrid();
 
         if (viewState.selectedSessionId && findSession(viewState.selectedSessionId)) {
+          renderChatInputState();
           try {
             const [history, chatLog] = await Promise.all([
               Api.checkpointHistory(viewState.selectedSessionId),
@@ -2780,7 +2799,7 @@
       },
       {
         title: 'Try it',
-        body: 'A good first prompt: <code>load my /Users/oscar/Downloads folder and organize the files into subfolders by type</code>.',
+        body: 'A good first prompt: <code>load my ~/Downloads folder and organize the files into subfolders by type</code>.',
       },
       {
         title: 'Inspect the workspace',
@@ -2788,7 +2807,7 @@
       },
       {
         title: 'Bring it back',
-        body: 'Happy with the result? Tell the agent to commit the changes back to your host. Go to https://github.com/dmosc/drun to explore the full depth of features offered.',
+        body: 'Happy with the result? Tell the agent to commit the changes back to your host. Go to <a href="https://github.com/dmosc/drun" target="_blank" style="color: purple;">drun</a> to explore the full depth of features offered.',
       },
     ];
 
