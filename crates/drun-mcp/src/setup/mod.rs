@@ -3,17 +3,13 @@
 //! CLI, and Tailscale.
 
 mod components;
-mod process;
 
 use axum::{
     Router,
-    extract::{Path, State},
     http::{HeaderMap, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
-    routing::get,
+    routing::{get, post},
 };
-use components::JobLookupError;
-use process::JobRegistry;
 
 const EMBEDDED_SETUP_HTML: &str = include_str!("../assets/setup.html");
 const DEFAULT_PORT: u16 = 7275;
@@ -59,30 +55,7 @@ fn build_router() -> Router {
     Router::new()
         .route("/", get(handle_index))
         .route("/api/setup/status", get(handle_status))
-        .route(
-            "/api/setup/jobs/{job_id}",
-            get(handle_job_output).post(handle_run_job),
-        )
-        .with_state(AppState::default())
-}
-
-#[derive(Clone)]
-struct AppState {
-    jobs: JobRegistry,
-    /// A function pointer rather than a hardcoded call to
-    /// `components::command_for`, so tests can substitute a harmless
-    /// synthetic mapping — the real one runs actual `brew`/`ollama`/
-    /// `tailscale` commands.
-    resolve_command: fn(&str, u16) -> Result<String, JobLookupError>,
-}
-
-impl Default for AppState {
-    fn default() -> Self {
-        Self {
-            jobs: JobRegistry::default(),
-            resolve_command: components::command_for,
-        }
-    }
+        .route("/api/setup/open-terminal", post(handle_open_terminal))
 }
 
 async fn handle_index() -> Response {
@@ -96,43 +69,16 @@ async fn handle_index() -> Response {
 }
 
 async fn handle_status() -> Response {
-    json_response(&components::current_status())
-}
-
-async fn handle_run_job(State(app): State<AppState>, Path(job_id): Path<String>) -> Response {
-    let web_port = drun_core::Config::load().web_port.unwrap_or(7274);
-    let command = match (app.resolve_command)(&job_id, web_port) {
-        Ok(command) => command,
-        Err(JobLookupError::Unknown) => {
-            return (StatusCode::NOT_FOUND, format!("unknown job '{job_id}'")).into_response();
-        }
-        Err(JobLookupError::Unavailable(reason)) => {
-            return (StatusCode::CONFLICT, reason).into_response();
-        }
-    };
-    if !app.jobs.start(&job_id, &command) {
-        return (StatusCode::CONFLICT, "job already running").into_response();
-    }
-    StatusCode::ACCEPTED.into_response()
-}
-
-async fn handle_job_output(State(app): State<AppState>, Path(job_id): Path<String>) -> Response {
-    match app.jobs.snapshot(&job_id) {
-        Some(state) => json_response(&state),
-        None => json_response(&process::JobState {
-            command: String::new(),
-            output: String::new(),
-            running: false,
-            exit_code: None,
-        }),
-    }
-}
-
-fn json_response(value: &impl serde::Serialize) -> Response {
     let mut headers = HeaderMap::new();
     headers.insert("content-type", HeaderValue::from_static("application/json"));
-    let body = serde_json::to_string(value).unwrap_or_else(|_| "null".into());
+    let body =
+        serde_json::to_string(&components::current_status()).unwrap_or_else(|_| "null".into());
     (StatusCode::OK, headers, body).into_response()
+}
+
+async fn handle_open_terminal() -> Response {
+    components::open_terminal();
+    StatusCode::NO_CONTENT.into_response()
 }
 
 #[cfg(test)]
@@ -145,23 +91,6 @@ mod tests {
         String::from_utf8(bytes.to_vec()).unwrap()
     }
 
-    fn test_command_for(job_id: &str, _web_port: u16) -> Result<String, JobLookupError> {
-        match job_id {
-            "known_job" => Ok("echo test output".to_string()),
-            "blocked_job" => Err(JobLookupError::Unavailable(
-                "not available here".to_string(),
-            )),
-            _ => Err(JobLookupError::Unknown),
-        }
-    }
-
-    fn test_app_state() -> AppState {
-        AppState {
-            jobs: JobRegistry::default(),
-            resolve_command: test_command_for,
-        }
-    }
-
     #[tokio::test]
     async fn handle_index_serves_the_embedded_html_with_no_store_cache_control() {
         let response = handle_index().await;
@@ -171,7 +100,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn handle_status_reports_json_for_every_component() {
+    async fn handle_status_reports_every_component_and_its_commands() {
         let response = handle_status().await;
         assert_eq!(response.status(), StatusCode::OK);
         let body = body_string(response).await;
@@ -180,56 +109,7 @@ mod tests {
         assert!(body.contains("\"ollama\""));
         assert!(body.contains("\"chat_cli\""));
         assert!(body.contains("\"tailscale\""));
-    }
-
-    #[tokio::test]
-    async fn handle_run_job_returns_404_for_an_unknown_job() {
-        let response =
-            handle_run_job(State(test_app_state()), Path("not_a_real_job".to_string())).await;
-        assert_eq!(response.status(), StatusCode::NOT_FOUND);
-    }
-
-    #[tokio::test]
-    async fn handle_run_job_returns_409_for_a_job_unavailable_on_this_platform() {
-        let response =
-            handle_run_job(State(test_app_state()), Path("blocked_job".to_string())).await;
-        assert_eq!(response.status(), StatusCode::CONFLICT);
-        assert_eq!(body_string(response).await, "not available here");
-    }
-
-    #[tokio::test]
-    async fn handle_run_job_starts_a_known_job_and_output_becomes_pollable() {
-        let app = test_app_state();
-        let response = handle_run_job(State(app.clone()), Path("known_job".to_string())).await;
-        assert_eq!(response.status(), StatusCode::ACCEPTED);
-
-        let output = handle_job_output(State(app), Path("known_job".to_string())).await;
-        assert_eq!(output.status(), StatusCode::OK);
-        assert!(
-            body_string(output)
-                .await
-                .contains("\"command\":\"echo test output\"")
-        );
-    }
-
-    #[tokio::test]
-    async fn handle_run_job_rejects_a_second_start_while_the_first_is_still_running() {
-        let app = test_app_state();
-        let first = handle_run_job(State(app.clone()), Path("known_job".to_string())).await;
-        assert_eq!(first.status(), StatusCode::ACCEPTED);
-
-        let second = handle_run_job(State(app), Path("known_job".to_string())).await;
-        assert_eq!(second.status(), StatusCode::CONFLICT);
-    }
-
-    #[tokio::test]
-    async fn handle_job_output_for_a_job_that_never_ran_reports_idle() {
-        let app = test_app_state();
-        let response = handle_job_output(State(app), Path("known_job".to_string())).await;
-        assert_eq!(response.status(), StatusCode::OK);
-        assert_eq!(
-            body_string(response).await,
-            r#"{"command":"","output":"","running":false,"exit_code":null}"#
-        );
+        assert!(body.contains("\"commands\""));
+        assert!(body.contains("\"install_ollama\""));
     }
 }

@@ -94,13 +94,13 @@ cargo build -p drun-mcp
 DRUN_SETUP_PORT=8275 ./target/debug/drun-mcp setup
 ```
 
-It streams every install command's output through `setup::process::JobRegistry`
-and polls it from the browser — none of its detection or job-running logic
-touches the network or another process on its own, so `cargo test -p drun-mcp`
-never shells out to real `brew`/`ollama`/`tailscale`/`pip` commands (see the
-`resolve_command` seam in `setup/mod.rs`). Exercising a real install path (e.g.
-Tailscale sign-in) still means running it against your own machine's real
-`brew`/`tailscale`/`ollama` — there's no scratch-daemon equivalent for that.
+It never runs an install/uninstall command itself — `setup::components`
+only ever *detects* what's on the machine (`brew --version`, `ollama list`,
+`tailscale status --json`, ...) and returns the shell command text for the
+UI to display; nothing there shells out to actually install, start, or stop
+anything, so `cargo test -p drun-mcp` can call it directly with no risk of
+side effects. The one real command it spawns is a terminal emulator, via the
+wizard's "Open Terminal" button.
 
 ## Test drun init
 

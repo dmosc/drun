@@ -24,13 +24,10 @@
       --text-dim: #7a82aa;
       --text-muted: #444c6e;
       --accent: #7c6af5;
-      --accent-bg: #1a1740;
       --green: #4fd98a;
       --green-bg: #0b2218;
       --amber: #f0982e;
       --amber-bg: #261708;
-      --red: #e0556a;
-      --red-bg: #25090f;
       --mono: 'SF Mono', 'Cascadia Mono', 'Fira Code', Consolas, monospace;
       --radius: 7px;
     }
@@ -63,6 +60,12 @@
       font-size: 13px;
       margin-top: 6px;
       line-height: 1.5;
+    }
+
+    .header-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 14px;
     }
 
     .card {
@@ -100,27 +103,16 @@
       padding: 3px 9px;
       border-radius: 100px;
       white-space: nowrap;
-      background: var(--s2);
-      color: var(--text-dim);
-      border: 1px solid var(--border);
     }
 
     .badge-green {
       background: var(--green-bg);
       color: var(--green);
-      border-color: transparent;
     }
 
     .badge-amber {
       background: var(--amber-bg);
       color: var(--amber);
-      border-color: transparent;
-    }
-
-    .badge-red {
-      background: var(--red-bg);
-      color: var(--red);
-      border-color: transparent;
     }
 
     .card-actions {
@@ -130,21 +122,14 @@
       margin-top: 12px;
     }
 
-    .step {
-      border-top: 1px solid var(--border);
-      margin-top: 12px;
-      padding-top: 12px;
+    .cmd-row {
+      margin-top: 10px;
     }
 
-    .step-head {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-
-    .step-label {
-      flex: 1;
-      font-size: 12.5px;
+    .cmd-label {
+      font-size: 12px;
+      color: var(--text-dim);
+      margin-bottom: 4px;
     }
 
     .btn {
@@ -155,32 +140,22 @@
       font-size: 12px;
       padding: 6px 12px;
       cursor: pointer;
-      transition: color 0.12s, border-color 0.12s, background 0.12s;
+      transition: color 0.12s, border-color 0.12s;
     }
 
-    .btn:hover:not(:disabled) {
+    .btn:hover {
       color: var(--text);
       border-color: var(--accent);
     }
 
-    .btn:disabled {
-      opacity: 0.5;
-      cursor: default;
-    }
-
     .command-line {
-      display: none;
+      display: flex;
       align-items: center;
       gap: 8px;
-      margin-top: 10px;
       background: var(--s2);
       border: 1px solid var(--border);
       border-radius: 4px;
       padding: 8px 10px;
-    }
-
-    .command-line.visible {
-      display: flex;
     }
 
     .command-line code {
@@ -190,41 +165,6 @@
       color: var(--text-dim);
       overflow-x: auto;
       white-space: nowrap;
-    }
-
-    .job-error {
-      color: var(--red);
-      font-size: 12px;
-      margin-top: 10px;
-      line-height: 1.5;
-    }
-
-    .job-error:empty {
-      display: none;
-    }
-
-    .job-output {
-      display: none;
-      font-family: var(--mono);
-      font-size: 11.5px;
-      color: var(--text-dim);
-      background: #000;
-      border: 1px solid var(--border);
-      border-radius: 4px;
-      padding: 10px;
-      margin-top: 10px;
-      max-height: 220px;
-      overflow-y: auto;
-      white-space: pre-wrap;
-      word-break: break-word;
-    }
-
-    .job-output.visible {
-      display: block;
-    }
-
-    .job-output a {
-      color: var(--accent);
     }
 
     footer {
@@ -241,11 +181,14 @@
   <header>
     <h1>drun setup</h1>
     <p>
-      Gets everything drun needs onto this machine — the local model runtime, the
-      standalone chat CLI, and (optionally) remote access from your other devices.
-      Every step also shows the exact command it runs, so you can copy it into your
-      own terminal instead if you'd rather run it by hand.
+      Everything drun needs on this machine — the local model runtime, the standalone
+      chat CLI, and (optionally) remote access. Nothing here runs on its own: copy each
+      command into your own terminal, run it, then Validate to update the pills.
     </p>
+    <div class="header-actions">
+      <button class="btn" onclick="openTerminal()">Open Terminal</button>
+      <button class="btn" onclick="refreshStatus()">Validate dependencies</button>
+    </div>
   </header>
 
   <div id="cards"></div>
@@ -260,32 +203,21 @@
       '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
     }[c]));
 
-    const linkify = (text) => escHtml(text).replace(
-      /(https?:\/\/[^\s<]+)/g,
-      '<a href="$1" target="_blank" rel="noopener">$1</a>',
-    );
-
     const Api = {
       status: () => fetch('/api/setup/status').then(r => r.json()),
-      runJob: (id) => fetch(`/api/setup/jobs/${id}`, { method: 'POST' }),
-      jobOutput: (id) => fetch(`/api/setup/jobs/${id}`).then(r => r.json()),
+      openTerminal: () => fetch('/api/setup/open-terminal', { method: 'POST' }),
     };
 
-    // Every step's Run button stays visible in sequence rather than
-    // swapping in the "next" one as earlier steps complete. A `done` step
-    // swaps its button for `revertJob`/`revertLabel` instead of showing a
-    // separate status label — the button itself says where things stand.
+    // Each card's `ready` predicate is true once every one of its `steps` is
+    // done. Every step is shown as a forward command plus, right under it,
+    // the command that undoes it — both always visible, nothing to execute
+    // or poll, just text to copy.
     const CARDS = [
       {
         id: 'daemon',
         title: 'drun daemon',
-        desc: 'The background service that runs sandboxed sessions and serves the web UI.',
-        badge: (s) => s.daemon.running
-          ? { text: 'Running', cls: 'badge-green' }
-          : { text: 'Not detected', cls: 'badge-red' },
-        detail: (s) => s.daemon.running
-          ? `MCP on port ${s.daemon.mcp_port}${s.daemon.web_port ? `, web UI on port ${s.daemon.web_port}` : ''}.`
-          : 'Not reachable yet. If you just ran the installer, give it a few seconds and reload this page.',
+        desc: 'The background service that runs sandboxed sessions and serves the web UI — set up automatically by install.sh.',
+        ready: (s) => s.daemon.running,
         links: (s) => (s.daemon.running && s.daemon.web_port)
           ? [{ label: 'Open web UI', href: `http://127.0.0.1:${s.daemon.web_port}` }]
           : [],
@@ -295,69 +227,48 @@
         title: 'Homebrew',
         desc: 'Package manager used below to install Ollama and Tailscale.',
         visible: (s) => s.platform === 'macos',
-        badge: (s) => s.homebrew.installed
-          ? { text: 'Installed', cls: 'badge-green' }
-          : { text: 'Not installed', cls: 'badge-amber' },
+        ready: (s) => s.homebrew.installed,
         steps: [
-          { job: 'install_homebrew', label: 'Install Homebrew', done: (s) => s.homebrew.installed },
+          { forwardLabel: 'Install Homebrew', forward: 'install_homebrew' },
         ],
       },
       {
         id: 'ollama',
         title: 'Ollama',
         desc: 'Runs local models for the standalone drun chat CLI.',
-        badge: (s) => {
-          if (!s.ollama.installed) return { text: 'Not installed', cls: 'badge-amber' };
-          if (!s.ollama.running) return { text: 'Not running', cls: 'badge-amber' };
-          return { text: 'Running', cls: 'badge-green' };
-        },
+        ready: (s) => s.ollama.installed && s.ollama.running && s.ollama.model_pulled,
         steps: [
-          { job: 'install_ollama', revertJob: 'uninstall_ollama', revertLabel: 'Uninstall', label: '1. Install Ollama', done: (s) => s.ollama.installed },
-          { job: 'start_ollama', revertJob: 'stop_ollama', revertLabel: 'Stop', label: '2. Start the Ollama server', done: (s) => s.ollama.running },
-          { job: 'pull_model', revertJob: 'remove_model', revertLabel: 'Remove', label: '3. Pull qwen3.6:latest', done: (s) => s.ollama.model_pulled },
+          { forwardLabel: 'Install Ollama', forward: 'install_ollama', reverseLabel: 'Uninstall Ollama', reverse: 'uninstall_ollama' },
+          { forwardLabel: 'Start the Ollama server', forward: 'start_ollama', reverseLabel: 'Stop the Ollama server', reverse: 'stop_ollama' },
+          { forwardLabel: 'Pull qwen3.6:latest', forward: 'pull_model', reverseLabel: 'Remove qwen3.6:latest', reverse: 'remove_model' },
         ],
       },
       {
         id: 'chat_cli',
         title: 'drun chat CLI',
         desc: "Python package (drun-sandbox[chat]) that powers `drun chat` and the web UI's per-session Chat button.",
-        badge: (s) => s.chat_cli.installed
-          ? { text: 'Installed', cls: 'badge-green' }
-          : { text: 'Not installed', cls: 'badge-amber' },
+        ready: (s) => s.chat_cli.installed,
         steps: [
-          { job: 'install_chat_cli', revertJob: 'uninstall_chat_cli', revertLabel: 'Uninstall', label: 'Install drun-sandbox[chat]', done: (s) => s.chat_cli.installed },
+          { forwardLabel: 'Install drun-sandbox[chat]', forward: 'install_chat_cli', reverseLabel: 'Uninstall drun-sandbox[chat]', reverse: 'uninstall_chat_cli' },
         ],
       },
       {
         id: 'tailscale',
         title: 'Tailscale (optional)',
         desc: 'Lets you reach the web UI — and drive sessions from your phone via Chat — from your other devices. ' +
-          'Step 2 needs sudo, which this wizard can\'t supply — its button will fail with a password error on ' +
-          'purpose; copy that command and run it once yourself in a terminal, then the rest works normally.',
-        badge: (s) => {
-          if (!s.tailscale.installed) return { text: 'Not installed', cls: 'badge-amber' };
-          if (!s.tailscale.daemon_running) return { text: 'Daemon not running', cls: 'badge-amber' };
-          if (!s.tailscale.authenticated) return { text: 'Needs sign-in', cls: 'badge-amber' };
-          return { text: 'Ready', cls: 'badge-green' };
-        },
+          'Starting the daemon needs sudo, which you\'ll be prompted for in your own terminal.',
+        ready: (s) => s.tailscale.installed && s.tailscale.daemon_running && s.tailscale.authenticated && s.tailscale.sharing,
         steps: [
-          { job: 'install_tailscale', revertJob: 'uninstall_tailscale', revertLabel: 'Uninstall', label: '1. Install Tailscale', done: (s) => s.tailscale.installed },
-          { job: 'start_tailscale', revertJob: 'stop_tailscale', revertLabel: 'Stop', label: '2. Start the Tailscale daemon', done: (s) => s.tailscale.daemon_running },
-          { job: 'tailscale_up', revertJob: 'tailscale_logout', revertLabel: 'Sign out', label: '3. Sign in', done: (s) => s.tailscale.authenticated },
-          { job: 'tailscale_serve', revertJob: 'tailscale_unserve', revertLabel: 'Stop sharing', label: '4. Share web UI', done: (s) => s.tailscale.sharing },
+          { forwardLabel: 'Install Tailscale', forward: 'install_tailscale', reverseLabel: 'Uninstall Tailscale', reverse: 'uninstall_tailscale' },
+          { forwardLabel: 'Start the Tailscale daemon', forward: 'start_tailscale', reverseLabel: 'Stop the Tailscale daemon', reverse: 'stop_tailscale' },
+          { forwardLabel: 'Sign in', forward: 'tailscale_up', reverseLabel: 'Sign out', reverse: 'tailscale_logout' },
+          { forwardLabel: 'Share web UI', forward: 'tailscale_serve', reverseLabel: 'Stop sharing web UI', reverse: 'tailscale_unserve' },
         ],
       },
     ];
 
     let latestStatus = null;
-    const jobState = {}; // jobId -> {command, output, running, exit_code}
-    const jobError = {}; // jobId -> a rejection message (409/404 body)
-    const pollTimers = {};
 
-    // Rebuilds every card from `latestStatus` plus whatever's in `jobState`/
-    // `jobError` — a single source of truth, so a status refresh mid-job
-    // can't wipe its output panel the way patching individual DOM nodes
-    // would risk.
     function render() {
       if (!latestStatus) return;
       document.getElementById('cards').innerHTML = CARDS
@@ -367,54 +278,54 @@
     }
 
     function renderCard(card, status) {
-      const badge = card.badge(status);
-      const detail = card.detail ? card.detail(status) : '';
+      const ready = card.ready(status);
       const links = card.links ? card.links(status) : [];
       const steps = card.steps || [];
 
       return `
-        <div class="card" id="card-${card.id}">
+        <div class="card">
           <div class="card-head">
             <div class="card-title">${escHtml(card.title)}</div>
-            <span class="badge ${badge.cls}">${escHtml(badge.text)}</span>
+            <span class="badge ${ready ? 'badge-green' : 'badge-amber'}">${ready ? 'Ready' : 'Not ready'}</span>
           </div>
-          <div class="card-desc">${escHtml(card.desc)}${detail ? `<br>${escHtml(detail)}` : ''}</div>
+          <div class="card-desc">${escHtml(card.desc)}</div>
           ${links.length ? `
             <div class="card-actions">
               ${links.map(l => `<a class="btn" href="${escHtml(l.href)}" target="_blank" rel="noopener">${escHtml(l.label)}</a>`).join('')}
             </div>
           ` : ''}
-          ${steps.map(step => renderStep(step, status)).join('')}
+          ${steps.map(step => renderStep(step, status.commands)).join('')}
         </div>
       `;
     }
 
-    function renderStep(step, status) {
-      const reverting = step.revertJob && step.done && step.done(status);
-      const activeJob = reverting ? step.revertJob : step.job;
-      const job = jobState[activeJob];
-      const busy = !!(job && job.running);
-      const buttonLabel = busy ? 'Running…' : (reverting ? step.revertLabel : 'Run');
-      const error = jobError[activeJob] || (job && job.exit_code != null && job.exit_code !== 0
-        ? `Command exited with status ${job.exit_code} — see output above, or copy the command and run it yourself.`
-        : '');
+    function renderStep(step, commands) {
+      const rows = [renderCommandRow(step.forwardLabel, commands[step.forward])];
+      if (step.reverse) {
+        rows.push(renderCommandRow(step.reverseLabel, commands[step.reverse]));
+      }
+      return rows.join('');
+    }
 
+    function renderCommandRow(label, command) {
       return `
-        <div class="step">
-          <div class="step-head">
-            <span class="step-label">${escHtml(step.label)}</span>
-            <button class="btn" ${busy ? 'disabled' : ''} onclick="startJob('${activeJob}')">${escHtml(buttonLabel)}</button>
+        <div class="cmd-row">
+          <div class="cmd-label">${escHtml(label)}</div>
+          <div class="command-line" data-command="${escHtml(command)}">
+            <code>${escHtml(command)}</code>
+            <button class="btn" onclick="copyCommand(this)">Copy</button>
           </div>
-          ${job ? `
-            <div class="command-line visible" id="command-${activeJob}" data-command="${escHtml(job.command)}">
-              <code>${escHtml(job.command)}</code>
-              <button class="btn" onclick="copyCommand('${activeJob}')">Copy</button>
-            </div>
-            <div class="job-output visible" id="output-${activeJob}">${linkify(job.output || '(no output yet)')}</div>
-          ` : ''}
-          <div class="job-error">${escHtml(error)}</div>
         </div>
       `;
+    }
+
+    function copyCommand(button) {
+      const command = button.closest('.command-line')?.dataset.command || '';
+      navigator.clipboard?.writeText(command).catch(e => console.error('Failed to copy:', e));
+    }
+
+    function openTerminal() {
+      Api.openTerminal().catch(e => console.error('Failed to open terminal:', e));
     }
 
     async function refreshStatus() {
@@ -424,44 +335,6 @@
       } catch (e) {
         console.error('Failed to load setup status:', e);
       }
-    }
-
-    async function startJob(jobId) {
-      jobError[jobId] = '';
-      jobState[jobId] = { command: '', output: '', running: true, exit_code: null };
-      render();
-
-      const response = await Api.runJob(jobId);
-      if (response.status === 409 || response.status === 404) {
-        jobError[jobId] = await response.text();
-        delete jobState[jobId];
-        render();
-        return;
-      }
-
-      pollJob(jobId);
-    }
-
-    function pollJob(jobId) {
-      clearInterval(pollTimers[jobId]);
-      const tick = async () => {
-        jobState[jobId] = await Api.jobOutput(jobId);
-        render();
-        const outputEl = document.getElementById(`output-${jobId}`);
-        if (outputEl) outputEl.scrollTop = outputEl.scrollHeight;
-
-        if (!jobState[jobId].running) {
-          clearInterval(pollTimers[jobId]);
-          refreshStatus();
-        }
-      };
-      tick();
-      pollTimers[jobId] = setInterval(tick, 800);
-    }
-
-    function copyCommand(jobId) {
-      const commandLine = document.getElementById(`command-${jobId}`);
-      navigator.clipboard?.writeText(commandLine?.dataset.command || '');
     }
 
     refreshStatus();

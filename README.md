@@ -59,8 +59,8 @@ This installs and configures a few things (skips if not applicable):
 3. `drun-mcp` as a persistent background daemon (`launchd` on macOS, `systemd`
    on Linux) so a single process serves all simultaneous sessions running on the
    host.
-4. The [setup wizard](#setup-wizard), to install everything else — the chat
-   CLI, Ollama, Tailscale — one step at a time.
+4. The [setup wizard](#setup-wizard), to install everything else — the chat CLI,
+   Ollama, Tailscale — one step at a time.
 
 `install.sh` only handles the binary and the daemon — it does not wire up any
 agent. Once it's done, point the binary at whichever bridge you use:
@@ -94,24 +94,25 @@ Once installed, the following endpoints are available:
 #### Setup wizard
 
 `install.sh` finishes by launching `drun-mcp setup` in the background and
-opening `http://127.0.0.1:7275` in your browser. It's a small dashboard to help
-you install additional dependencies needed, one step at a time — each step
-shows the exact command it runs, and once satisfied its button becomes an
-undo (Uninstall/Stop/Sign out/...) instead of hiding, so anything the wizard
-did can be reverted the same way it was applied:
+opening `http://127.0.0.1:7275` in your browser. It never runs anything on your
+machine itself — it's a checklist: every dependency lists the exact command to
+install it and, right below, the command that undoes it. Copy a command into
+your own terminal (the wizard's **Open Terminal** button opens one), run it,
+fill in any password or prompt it asks for, then hit **Validate dependencies**
+to re-check and flip that dependency's pill from "Not ready" to "Ready":
 
-- **drun daemon** — confirms the MCP and web UI ports are actually up.
-- **Homebrew** (macOS only) — the package manager the Ollama/Tailscale steps
+- **drun daemon** — confirms the MCP and web UI ports are actually up; no
+  commands here, `install.sh` already handled it.
+- **Homebrew** (macOS only) — the package manager the Ollama/Tailscale commands
   below install through.
-- **Ollama** — install, start the local server, and pull a default
-  tool-calling model, for the [standalone CLI](#standalone-cli).
+- **Ollama** — install, start the local server, and pull a default tool-calling
+  model, for the [standalone CLI](#standalone-cli).
 - **drun chat CLI** — installs `drun-sandbox[chat]` via `pip`; powers
   [`drun chat`](#standalone-cli) and the web UI's per-session Chat button.
-- **Tailscale** — install, start its background daemon, sign in, and expose
-  the web UI over your tailnet — see
-  [Manage drun remotely](#manage-drun-remotely). Starting the daemon needs
-  `sudo`, which the wizard can't supply; that one step's button is expected
-  to fail with a password prompt, showing the command to run by hand once.
+- **Tailscale** — install, start its background daemon, sign in, and expose the
+  web UI over your tailnet — see [Manage drun remotely](#manage-drun-remotely).
+  Starting the daemon needs `sudo`, which is exactly why this only ever shows
+  you the command instead of running it.
 
 #### Upgrading
 
