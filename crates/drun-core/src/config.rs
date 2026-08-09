@@ -49,6 +49,18 @@ pub struct Config {
     pub package_install_enabled: bool,
     /// Timeout for session_package_install calls in milliseconds.
     pub package_install_timeout_ms: u64,
+    /// See https://docs.litellm.ai/docs/providers for all providers.
+    pub default_model: String,
+    /// API key exported as ANTHROPIC_API_KEY for Anthropic's backend.
+    pub anthropic_api_key: Option<String>,
+    /// API key exported as OPENAI_API_KEY for OpenAI's backend.
+    pub openai_api_key: Option<String>,
+    /// API key exported as OPENROUTER_API_KEY for OpenRouter's backend.
+    pub openrouter_api_key: Option<String>,
+    /// API key exported as DEEPSEEK_API_KEY for DeepSeek's backend.
+    pub deepseek_api_key: Option<String>,
+    /// API key exported as GEMINI_API_KEY for Gemini's backend.
+    pub gemini_api_key: Option<String>,
 }
 
 impl Default for Config {
@@ -83,6 +95,12 @@ impl Default for Config {
             web_port: Some(7274),
             package_install_enabled: false,
             package_install_timeout_ms: 180_000,
+            default_model: "ollama_chat/qwen3.6:latest".to_string(),
+            anthropic_api_key: None,
+            openai_api_key: None,
+            openrouter_api_key: None,
+            deepseek_api_key: None,
+            gemini_api_key: None,
         }
     }
 }

@@ -125,6 +125,18 @@ bash_command_allowlist = []
 
 # TCP port for the embedded trajectory viewer web UI. Set to 0, or remove the field, to disable.
 web_port = 7274
+
+# LiteLLM model ID; see full list: https://docs.litellm.ai/docs/providers.
+# If using a provider model, make sure to set the right API key below.
+default_model = "ollama_chat/qwen3.6:latest"
+
+# API keys for cloud chat models, only read when default_model targets that
+# provider. Leave commented out to stick with local Ollama models.
+# anthropic_api_key = "sk-ant-..."
+# openai_api_key = "sk-..."
+# openrouter_api_key = "sk-or-..."
+# deepseek_api_key = "sk-..."
+# gemini_api_key = "..."
 EOF
 
   echo "Created config at $DRUN_CONFIG."

@@ -515,21 +515,23 @@ impl WebServer {
             return (StatusCode::BAD_REQUEST, "prompt is required").into_response();
         }
 
+        let config = app.handler.config.get();
         let mcp_url = format!("http://127.0.0.1:{}/mcp", crate::Env.mcp_port());
-        match tokio::process::Command::new("drun")
-            .args([
-                "chat",
-                &body.prompt,
-                "--session-id",
-                &session_id,
-                "--mcp-url",
-                &mcp_url,
-                "--reasoning-effort",
-                "high",
-            ])
-            .output()
-            .await
-        {
+        let mut command = tokio::process::Command::new("drun");
+        command.args([
+            "chat",
+            &body.prompt,
+            "--session-id",
+            &session_id,
+            "--mcp-url",
+            &mcp_url,
+            "--reasoning-effort",
+            "high",
+            "--model",
+            &config.default_model,
+        ]);
+        Self::apply_chat_model_env(&mut command, &config);
+        match command.output().await {
             Ok(output) if output.status.success() => Self::json_response(&serde_json::json!({})),
             Ok(output) => (
                 StatusCode::BAD_GATEWAY,
@@ -540,6 +542,26 @@ impl WebServer {
                 (StatusCode::BAD_GATEWAY, Self::CHAT_CLI_MISSING).into_response()
             }
             Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()).into_response(),
+        }
+    }
+
+    /// Export API keys set in the config so that LiteLLM can pick them up when
+    /// routing requests to a provider backend.
+    fn apply_chat_model_env(command: &mut tokio::process::Command, config: &drun_core::Config) {
+        if let Some(key) = &config.anthropic_api_key {
+            command.env("ANTHROPIC_API_KEY", key);
+        }
+        if let Some(key) = &config.openai_api_key {
+            command.env("OPENAI_API_KEY", key);
+        }
+        if let Some(key) = &config.openrouter_api_key {
+            command.env("OPENROUTER_API_KEY", key);
+        }
+        if let Some(key) = &config.deepseek_api_key {
+            command.env("DEEPSEEK_API_KEY", key);
+        }
+        if let Some(key) = &config.gemini_api_key {
+            command.env("GEMINI_API_KEY", key);
         }
     }
 

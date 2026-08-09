@@ -1,6 +1,6 @@
 # drun (deterministic run)
 
-## The management backend for agentic workflows
+## The virtualization backend for agentic workflows
 
 Drun is a platform that allows you to virtualize components of your host into an
 ephemeral runtime to serve as the agent's workspace with git-like primitives
@@ -461,6 +461,12 @@ fields are optional.
 | `bash_command_denylist`      | `[]`                                                                 | Command substrings always rejected by `session_bash` before execution.                                                                                                                                                                                                     |
 | `bash_command_allowlist`     | `[]`                                                                 | Command substrings permitted by `session_bash`. Empty means all commands are allowed (subject to the denylist).                                                                                                                                                            |
 | `web_port`                   | `7274`                                                               | TCP port for the trajectory viewer web UI. Set to `0`, or remove the field from the config file, to disable it.                                                                                                                                                            |
+| `default_model`              | `"ollama_chat/qwen3.6:latest"`                                       | See [LiteLLM's provider list](https://docs.litellm.ai/docs/providers) for full list (e.g. `claude-sonnet-4-6`, `gpt-4o`, `openrouter/anthropic/claude-sonnet-4-6`)                                                                                                         |
+| `anthropic_api_key`          | unset                                                                | API key exported as `ANTHROPIC_API_KEY` for Anthropic's backend.                                                                                                                                                                                                           |
+| `openai_api_key`             | unset                                                                | API key exported as `OPENAI_API_KEY` for OpenAI's backend.                                                                                                                                                                                                                 |
+| `openrouter_api_key`         | unset                                                                | API key exported as `OPENROUTER_API_KEY` for OpenRouter's backend.                                                                                                                                                                                                         |
+| `deepseek_api_key`           | unset                                                                | API key exported as `DEEPSEEK_API_KEY` for DeepSeek's backend.                                                                                                                                                                                                             |
+| `gemini_api_key`             | unset                                                                | API key exported as `GEMINI_API_KEY` for Gemini's backend.                                                                                                                                                                                                                 |
 
 #### Updating configuration via the CLI
 
@@ -551,3 +557,9 @@ pip install 'drun-sandbox[chat]'
 
 The card's status pill shows "Running" while the agent works; refresh the
 session's checkpoint list to see what it did.
+
+By default the agent runs against a local Ollama model. To use a cloud model
+instead (Claude, OpenAI, OpenRouter, DeepSeek, or Gemini), open **Edit config**
+in the web UI and set `default_model` plus the matching provider's API key — see
+[Configuration](#configuration) for the field names. No restart needed; the next
+Chat request picks it up.
