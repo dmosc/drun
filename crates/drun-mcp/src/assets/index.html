@@ -544,6 +544,12 @@
       text-overflow: ellipsis;
     }
 
+    #sync-latest-btn.active {
+      color: var(--accent);
+      border-color: var(--accent);
+      background: var(--accent-bg);
+    }
+
     .checkpoint-modal-list {
       overflow-y: auto;
       max-height: 50vh;
@@ -1295,6 +1301,7 @@
         <div class="outer-tab-body" data-outer-tab="workspace">
           <div class="controls-row">
             <button class="btn" id="checkpoint-picker-btn" onclick="openCheckpointModal()">Checkpoint</button>
+            <button class="btn" id="sync-latest-btn" onclick="onToggleSyncLatestClick()" title="Automatically jump to each new checkpoint as it's created">Sync to latest</button>
             <div class="tabs-spacer"></div>
             <div class="tabs-actions" id="tabs-actions"></div>
           </div>
@@ -1354,6 +1361,10 @@
       // instead of waiting on the round trip.
       pendingChatTurns: new Map(),
       selectedCpId: null,
+      // When true, each refresh jumps the selected checkpoint forward to
+      // the session's new head as soon as one appears, instead of leaving
+      // it on whatever checkpoint the user was last looking at.
+      syncToLatest: false,
       // 'chat' | 'workspace' — which outer tab is showing.
       activeOuterTab: 'chat',
       // 'steps' | 'output' | 'files' — which workspace sub-tab is showing.
@@ -1862,6 +1873,28 @@
         text = `Checkpoint ${cpId} / ${total}`;
       }
       document.getElementById('checkpoint-picker-btn').textContent = text;
+    }
+
+    function renderSyncLatestButton() {
+      document.getElementById('sync-latest-btn').classList.toggle('active', viewState.syncToLatest);
+    }
+
+    function onToggleSyncLatestClick() {
+      viewState.syncToLatest = !viewState.syncToLatest;
+      renderSyncLatestButton();
+      if (viewState.syncToLatest) syncToLatestCheckpointIfNeeded();
+    }
+
+    // Jumps the selected checkpoint forward to the session's current head,
+    // preserving whichever workspace sub-tab (steps/output/files) is active
+    // so only the checkpoint's data underneath it changes.
+    async function syncToLatestCheckpointIfNeeded() {
+      if (!viewState.syncToLatest) return;
+      const session = findSession(viewState.selectedSessionId);
+      const headCpId = session ? currentCpIdForSession(session) : null;
+      if (headCpId != null && headCpId !== viewState.selectedCpId) {
+        await onCheckpointClick(headCpId);
+      }
     }
 
     function renderCheckpointModalList() {
@@ -2381,9 +2414,13 @@
       viewState.lastRenderedChatLog = null;
       // Clicking into a session should always land on its conversation first.
       viewState.activeOuterTab = 'chat';
+      // Sync-to-latest is a per-viewing decision, not a sticky preference —
+      // off by default for a newly opened session.
+      viewState.syncToLatest = false;
 
       renderSessionGrid();
       scrollSelectedCardIntoView();
+      renderSyncLatestButton();
       document.getElementById('workspace-section').classList.add('hidden');
 
       try {
@@ -2620,6 +2657,7 @@
           } catch (_) { }
           renderCheckpointButton();
           renderCheckpointModalList();
+          await syncToLatestCheckpointIfNeeded();
           if (viewState.selectedCpId != null) renderWorkspacePanel();
         } else if (viewState.selectedSessionId) {
           // Selected session no longer exists (destroyed or reaped) — clear the stale detail view.
