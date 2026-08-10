@@ -6,6 +6,7 @@ use rust_mcp_sdk::schema::{CallToolResult, schema_utils::CallToolError};
 use scraper::{Html, Selector};
 use serde_json::json;
 use std::collections::HashSet;
+use std::path::Path;
 use std::time::Duration;
 use url::Url;
 
@@ -62,7 +63,7 @@ impl DrunHandler {
             .map_err(|e| DrunError::internal(e).into_tool_err())?;
 
         let is_html = content_type.to_lowercase().contains("text/html");
-        let (dir, filename) = Self::bundle_paths(&url, is_html);
+        let (dir, filename) = Self::bundle_paths(&url, &content_type, is_html);
         let saved_to = format!("{dir}/{filename}");
         let bytes_len = body_bytes.len();
 
@@ -150,7 +151,7 @@ impl DrunHandler {
         })
     }
 
-    fn bundle_paths(url: &Url, is_html: bool) -> (String, String) {
+    fn bundle_paths(url: &Url, content_type: &str, is_html: bool) -> (String, String) {
         let host = url.host_str().expect("http/https urls always have a host");
         let segment = url
             .path_segments()
@@ -165,11 +166,32 @@ impl DrunHandler {
             None => format!("downloads/{host}"),
         };
         let filename = match segment {
-            Some(s) => s.to_string(),
+            Some(s) => Self::append_extension(s, content_type),
             None if is_html => "index.html".to_string(),
             None => "download".to_string(),
         };
         (dir, filename)
+    }
+
+    fn append_extension(segment: &str, content_type: &str) -> String {
+        let mime = content_type
+            .split(';')
+            .next()
+            .unwrap_or("")
+            .trim()
+            .to_lowercase();
+        let ext = match mime.as_str() {
+            "application/pdf" => "pdf",
+            _ => return segment.to_string(),
+        };
+        let has_ext = Path::new(segment)
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case(ext));
+        if has_ext {
+            segment.to_string()
+        } else {
+            format!("{segment}.{ext}")
+        }
     }
 
     fn discover_asset_urls(html: &str, base: &Url) -> Vec<Url> {
@@ -474,6 +496,43 @@ mod tests {
             br#"{"ok":true}"#
         );
         assert!(files.contains_key("downloads/127.0.0.1/data/manifest.json"));
+    }
+
+    #[tokio::test]
+    async fn session_fetch_appends_a_pdf_extension_when_the_url_path_lacks_one() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let mock_server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/pdf/1803.07199"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_raw(b"%PDF-1.4".as_slice(), "application/pdf"),
+            )
+            .mount(&mock_server)
+            .await;
+
+        let handler = DrunHandler::new(fetch_test_config(&mock_server.uri()));
+        insert_current_session(&handler, "s1");
+        let result = handler
+            .handle_session_fetch(
+                CLIENT,
+                fetch(format!("{}/pdf/1803.07199", mock_server.uri())),
+            )
+            .await
+            .unwrap();
+
+        let json = result_json(&result);
+        assert_eq!(json["saved_to"], "downloads/127.0.0.1/1803/1803.07199.pdf");
+
+        let sessions = handler.sessions.lock().unwrap();
+        let session = sessions.get("s1").unwrap().lock().unwrap();
+        assert!(
+            session
+                .current()
+                .files
+                .contains_key("downloads/127.0.0.1/1803/1803.07199.pdf")
+        );
     }
 
     #[tokio::test]
