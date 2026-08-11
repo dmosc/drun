@@ -4,7 +4,7 @@ use crate::handler::DrunHandler;
 use crate::state::SessionState;
 use crate::tools::{
     DeleteFromHost, SessionDeleteFiles, SessionExport, SessionExtractText, SessionMount,
-    SessionReadFile, SessionWriteFiles,
+    SessionReadFile, SessionReadFiles, SessionWriteFiles,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use drun_core::TextParserUtilities;
@@ -45,10 +45,7 @@ impl DrunHandler {
             } else if t.offset.is_none() && t.limit.is_none() {
                 ResponseBuilder::file_content(&t.path, all_bytes.as_slice())
             } else {
-                let (content, encoding) = match std::str::from_utf8(slice) {
-                    Ok(s) => (s.to_string(), "text"),
-                    Err(_) => (BASE64.encode(slice), "base64"),
-                };
+                let (content, encoding) = Self::encode_content(slice);
                 ResponseBuilder::text(
                     serde_json::json!({
                         "offset": start,
@@ -64,6 +61,40 @@ impl DrunHandler {
             session.record_step(None, "session_read_file", &t.description);
             Ok(response)
         })
+    }
+
+    pub(super) fn handle_session_read_files(
+        &self,
+        connection_id: &str,
+        t: SessionReadFiles,
+    ) -> Result<CallToolResult, CallToolError> {
+        self.with_current_session_mut(connection_id, |_session_id, session| {
+            let mut results = Vec::with_capacity(t.paths.len());
+            for path in &t.paths {
+                let bytes = session
+                    .current()
+                    .files
+                    .get(path)
+                    .ok_or_else(|| DrunError::file_not_found(path).into_tool_err())?;
+                let (content, encoding) = Self::encode_content(bytes);
+                results.push(serde_json::json!({
+                    "path": path,
+                    "content": content,
+                    "encoding": encoding,
+                }));
+            }
+            session.record_step(None, "session_read_files", &t.description);
+            Ok(ResponseBuilder::json(&results))
+        })
+    }
+
+    /// UTF-8 text as-is, anything else base64-encoded — the fallback shared by
+    /// every non-image file read.
+    fn encode_content(bytes: &[u8]) -> (String, &'static str) {
+        match std::str::from_utf8(bytes) {
+            Ok(s) => (s.to_string(), "text"),
+            Err(_) => (BASE64.encode(bytes), "base64"),
+        }
     }
 
     pub(super) fn handle_session_write_files(
@@ -374,6 +405,93 @@ mod tests {
                     offset: None,
                     limit: None,
                     pattern: None,
+                    description: "test".to_string(),
+                },
+            )
+            .unwrap_err();
+        assert!(err.to_string().contains("file_not_found"));
+    }
+
+    #[test]
+    fn session_read_files_returns_each_files_content_in_the_given_order() {
+        let handler = DrunHandler::new(Config::default());
+        insert_current_session(&handler, "s1");
+        {
+            let sessions = handler.sessions.lock().unwrap();
+            sessions
+                .get("s1")
+                .unwrap()
+                .lock()
+                .unwrap()
+                .write_files(
+                    vec![
+                        ("a.txt".to_string(), b"hi".to_vec()),
+                        ("b.txt".to_string(), b"bye".to_vec()),
+                    ],
+                    "session_write_files",
+                    None,
+                )
+                .unwrap();
+        }
+
+        let result = handler
+            .handle_session_read_files(
+                CLIENT,
+                SessionReadFiles {
+                    paths: vec!["a.txt".to_string(), "b.txt".to_string()],
+                    description: "test".to_string(),
+                },
+            )
+            .unwrap();
+        let json = result_json(&result);
+        assert_eq!(json[0]["path"], "a.txt");
+        assert_eq!(json[0]["content"], "hi");
+        assert_eq!(json[0]["encoding"], "text");
+        assert_eq!(json[1]["path"], "b.txt");
+        assert_eq!(json[1]["content"], "bye");
+    }
+
+    #[test]
+    fn session_read_files_base64_encodes_non_utf8_content() {
+        let handler = DrunHandler::new(Config::default());
+        insert_current_session(&handler, "s1");
+        {
+            let sessions = handler.sessions.lock().unwrap();
+            sessions
+                .get("s1")
+                .unwrap()
+                .lock()
+                .unwrap()
+                .write_files(
+                    vec![("bin.dat".to_string(), vec![0xff, 0xfe, 0xfd])],
+                    "session_write_files",
+                    None,
+                )
+                .unwrap();
+        }
+
+        let result = handler
+            .handle_session_read_files(
+                CLIENT,
+                SessionReadFiles {
+                    paths: vec!["bin.dat".to_string()],
+                    description: "test".to_string(),
+                },
+            )
+            .unwrap();
+        let json = result_json(&result);
+        assert_eq!(json[0]["encoding"], "base64");
+    }
+
+    #[test]
+    fn session_read_files_returns_file_not_found_for_a_missing_path() {
+        let handler = DrunHandler::new(Config::default());
+        insert_current_session(&handler, "s1");
+        let err = handler
+            .handle_session_read_files(
+                CLIENT,
+                SessionReadFiles {
+                    paths: vec!["missing.txt".to_string()],
                     description: "test".to_string(),
                 },
             )

@@ -71,13 +71,12 @@ Grouped by purpose — each tool's schema documents its exact parameters.
 - `session_bash` — run shell commands in the sandboxed workspace (also covers
   listing/searching files — e.g. `ls`, `grep`, `find`). Returns state, not
   output — see "Reading command output" above.
-- `session_read_file` / `session_write_files` / `session_delete_files` — read
-  a file, or write/delete a batch of files, by session-relative path.
-  `session_write_files` and `session_delete_files` each take a list and apply
-  it as one checkpoint — creating or removing several files is one call, not
-  one call per file. For large files, don't page through blind with
-  offset/limit to find something — set `pattern` to a case-sensitive regex
-  (use `(?i)` for case-insensitive) and `session_read_file` returns only the
+- `session_read_files` / `session_write_files` / `session_delete_files` — read,
+  write, or delete a batch of files by session-relative path, each as one
+  call and one checkpoint instead of one per file. Use `session_read_file`
+  (singular) instead for a single large file: page through it with
+  offset/limit, or set `pattern` to a case-sensitive regex (use `(?i)` for
+  case-insensitive) to search instead of paging blind — it returns only the
   matching lines, each with its `line_number` and `byte_offset`, searched
   within the offset/limit byte range (the whole file if omitted). Use a
   match's `byte_offset` in a follow-up offset/limit read to pull the
