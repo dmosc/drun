@@ -58,6 +58,14 @@ class FakeResponse:
         self.choices = [choice]
 
 
+def finish_message(content: str) -> FakeMessage:
+    """A message that ends the run, standing in for a real model calling
+    ChatAgent's synthetic `finish_trajectory` tool."""
+    tool_call = FakeToolCall(
+        "finish-1", "finish_trajectory", json.dumps({"content": content}))
+    return FakeMessage(None, tool_calls=[tool_call])
+
+
 def stub_acompletion(responses: Iterable[FakeResponse]):
     remaining = iter(responses)
 
@@ -73,7 +81,7 @@ async def test_run_uses_the_bridges_default_system_prompt(monkeypatch):
 
     async def _acompletion(**kwargs: object) -> FakeResponse:
         captured_messages.extend(kwargs["messages"])
-        return FakeResponse(FakeChoice(FakeMessage("done")))
+        return FakeResponse(FakeChoice(finish_message("done")))
 
     monkeypatch.setattr(litellm, "acompletion", _acompletion)
 
@@ -91,7 +99,7 @@ async def test_run_omits_reasoning_effort_by_default(monkeypatch):
 
     async def _acompletion(**kwargs: object) -> FakeResponse:
         captured_kwargs.update(kwargs)
-        return FakeResponse(FakeChoice(FakeMessage("done")))
+        return FakeResponse(FakeChoice(finish_message("done")))
 
     monkeypatch.setattr(litellm, "acompletion", _acompletion)
 
@@ -107,7 +115,7 @@ async def test_run_passes_reasoning_effort_when_given(monkeypatch):
 
     async def _acompletion(**kwargs: object) -> FakeResponse:
         captured_kwargs.update(kwargs)
-        return FakeResponse(FakeChoice(FakeMessage("done")))
+        return FakeResponse(FakeChoice(finish_message("done")))
 
     monkeypatch.setattr(litellm, "acompletion", _acompletion)
 
@@ -123,7 +131,7 @@ async def test_run_prefers_an_explicit_system_prompt_override(monkeypatch):
 
     async def _acompletion(**kwargs: object) -> FakeResponse:
         captured_messages.extend(kwargs["messages"])
-        return FakeResponse(FakeChoice(FakeMessage("done")))
+        return FakeResponse(FakeChoice(finish_message("done")))
 
     monkeypatch.setattr(litellm, "acompletion", _acompletion)
 
@@ -146,7 +154,7 @@ async def test_run_executes_a_tool_call_then_returns_the_final_answer(monkeypatc
             [
                 FakeResponse(FakeChoice(FakeMessage(
                     None, tool_calls=[tool_call]))),
-                FakeResponse(FakeChoice(FakeMessage(
+                FakeResponse(FakeChoice(finish_message(
                     "the output was hello world"))),
             ]
         ),
@@ -195,7 +203,7 @@ async def test_run_recovers_from_a_failing_tool_call_and_continues(monkeypatch):
         captured_messages[:] = kwargs["messages"]  # type: ignore[arg-type]
         if not captured_messages or captured_messages[-1]["role"] != "tool":
             return FakeResponse(FakeChoice(FakeMessage(None, tool_calls=[tool_call])))
-        return FakeResponse(FakeChoice(FakeMessage("recovered")))
+        return FakeResponse(FakeChoice(finish_message("recovered")))
 
     monkeypatch.setattr(litellm, "acompletion", _acompletion)
 
@@ -217,7 +225,8 @@ async def test_run_survives_invalid_tool_call_arguments(monkeypatch):
             [
                 FakeResponse(FakeChoice(FakeMessage(
                     None, tool_calls=[tool_call]))),
-                FakeResponse(FakeChoice(FakeMessage("handled the bad call"))),
+                FakeResponse(FakeChoice(
+                    finish_message("handled the bad call"))),
             ]
         ),
     )
@@ -253,7 +262,7 @@ async def test_failing_tool_calls_are_reported_once_without_retrying(monkeypatch
             [
                 FakeResponse(FakeChoice(FakeMessage(
                     None, tool_calls=[tool_call]))),
-                FakeResponse(FakeChoice(FakeMessage("saw the error"))),
+                FakeResponse(FakeChoice(finish_message("saw the error"))),
             ]
         ),
     )
@@ -277,7 +286,7 @@ async def test_run_retries_a_flaky_llm_completion_before_succeeding(monkeypatch)
         attempts += 1
         if attempts < 2:
             raise RuntimeError("connection reset")
-        return FakeResponse(FakeChoice(FakeMessage("done")))
+        return FakeResponse(FakeChoice(finish_message("done")))
 
     monkeypatch.setattr(litellm, "acompletion", _flaky_acompletion)
 

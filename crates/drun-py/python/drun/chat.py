@@ -18,6 +18,24 @@ from .retry import RetryPolicy
 if TYPE_CHECKING:
     from .drun_internal import DrunSession
 
+_FINISH_TOOL_NAME = "finish_trajectory"
+_FINISH_TOOL: dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": _FINISH_TOOL_NAME,
+        "description": (
+            "Call this once, when and only when the task is fully complete, "
+            "with your final response. A plain-text reply does not end the "
+            "run — you'll be prompted again until you call this."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {"content": {"type": "string", "description": "The final response."}},
+            "required": ["content"],
+        },
+    },
+}
+
 
 class Bridge(Protocol):
     """Lists tool schemas, executes tool calls, and supplies a default system
@@ -36,20 +54,7 @@ class Bridge(Protocol):
 
 
 class ChatAgent:
-    """Runs a tool-calling loop between an LLM (via litellm) and a `Bridge`.
-
-    Two distinct failure modes, two distinct responses:
-    - A tool call fails (bad arguments, bridge error, daemon error) — reported
-      to the model as that call's result, never retried. The model, not the
-      loop, decides whether to retry with different arguments, try another
-      tool, or give up; blindly repeating the exact same call can't fix a
-      semantic error and could re-run a non-idempotent side effect.
-    - The LLM request itself fails (rate limit, timeout, dropped connection)
-      — retried transparently (`llm_retries`, exponential backoff), since
-      it's the same idempotent request and such failures are usually
-      transient infrastructure blips.
-    Either way, one failure doesn't end the run.
-    """
+    """Runs a tool-calling loop between an LLM (via litellm) and a `Bridge`."""
 
     def __init__(
         self,
@@ -74,22 +79,27 @@ class ChatAgent:
 
     async def run(self, prompt: str) -> str:
         litellm = self._import_litellm()
-        tools = await self._bridge.tools()
+        tools = [*await self._bridge.tools(), _FINISH_TOOL]
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": self._system or self._bridge.default_system_prompt},
             {"role": "user", "content": prompt},
         ]
 
         for _ in range(self._max_iterations):
-            message, finish_reason = await self._completion_retry.run(
+            message = await self._completion_retry.run(
                 lambda: self._complete(litellm, messages, tools)
             )
             messages.append(self._message_to_dict(message))
 
-            if not message.tool_calls:
-                return self._final_answer(message, finish_reason)
+            finish_call = next(
+                (tc for tc in message.tool_calls or []
+                 if tc.function.name == _FINISH_TOOL_NAME),
+                None,
+            )
+            if finish_call is not None:
+                return self._finish_content(finish_call)
 
-            for tool_call in message.tool_calls:
+            for tool_call in message.tool_calls or []:
                 messages.append(await self._execute_tool_call(tool_call))
 
         return "(max iterations reached)"
@@ -130,7 +140,7 @@ class ChatAgent:
 
     async def _complete(
         self, litellm: Any, messages: list[dict[str, Any]], tools: list[dict[str, Any]]
-    ) -> tuple[Any, str]:
+    ) -> Any:
         reasoning_kwargs = (
             {"reasoning_effort": self._reasoning_effort}
             if self._reasoning_effort is not None
@@ -144,8 +154,7 @@ class ChatAgent:
             _skip_mcp_handler=True,
             **reasoning_kwargs,
         )
-        choice = response.choices[0]
-        return choice.message, choice.finish_reason
+        return response.choices[0].message
 
     @staticmethod
     def _message_to_dict(message: Any) -> dict[str, Any]:
@@ -166,19 +175,16 @@ class ChatAgent:
         return message_dict
 
     @staticmethod
-    def _final_answer(message: Any, finish_reason: str) -> str:
-        # Thinking models (Qwen3, DeepSeek-R1) may put reasoning in
-        # reasoning_content and leave content empty.
-        answer = message.content or getattr(
-            message, "reasoning_content", None) or ""
-        if not answer:
-            print(
-                f"[drun] model returned empty content (finish_reason={finish_reason!r}). "
-                "Try a non-thinking model such as ollama_chat/qwen3.6:latest.",
-                file=sys.stderr,
-            )
-        print(answer)
-        return answer
+    def _finish_content(tool_call: Any) -> str:
+        print(f"[{_FINISH_TOOL_NAME}] {tool_call.function.arguments}",
+              file=sys.stderr)
+        try:
+            content = json.loads(
+                tool_call.function.arguments).get("content", "")
+        except json.JSONDecodeError:
+            content = tool_call.function.arguments
+        print(content)
+        return content
 
 
 class LocalSessionBridge:
