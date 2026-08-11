@@ -90,7 +90,7 @@ pub struct SessionPackageInstall {
 
 #[mcp_tool(
     name = "session_rollback",
-    description = "Move the active session's head to a prior checkpoint. This is destructive: the next session_bash, session_write_file, session_delete_file, or session_merge call that succeeds permanently discards every checkpoint after the rollback point — there is no branch kept around. A call that fails (denied command, timeout, over a limit) leaves history untouched. If you want to keep the checkpoints you are rolling back past, call session_fork first (it creates a new, independent session at this point) before rolling back. Provide checkpoint_id or checkpoint_label; label takes precedence if both are given.",
+    description = "Move the active session's head to a prior checkpoint. This is destructive: the next session_bash, session_write_files, session_delete_files, or session_merge call that succeeds permanently discards every checkpoint after the rollback point — there is no branch kept around. A call that fails (denied command, timeout, over a limit) leaves history untouched. If you want to keep the checkpoints you are rolling back past, call session_fork first (it creates a new, independent session at this point) before rolling back. Provide checkpoint_id or checkpoint_label; label takes precedence if both are given.",
     idempotent_hint = false,
     destructive_hint = true,
     read_only_hint = false
@@ -258,36 +258,44 @@ pub struct GetSessionState {
     pub description: String,
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct FileWrite {
+    /// Session-relative file path (e.g. src/main.py).
+    pub path: String,
+    pub content: String,
+    pub is_base64: Option<bool>,
+}
+
 #[mcp_tool(
-    name = "session_write_file",
-    description = "Create or overwrite a file in the active session by its session-relative \
-                   path (e.g. src/main.py). Creates a new checkpoint. Set is_base64 to true to \
-                   write binary files — content will be decoded from standard base64 before \
-                   writing.",
+    name = "session_write_files",
+    description = "Create or overwrite one or more files in the active session by their \
+                   session-relative paths (e.g. src/main.py), as a single checkpoint. Prefer \
+                   one call with many entries over many calls with one entry each — creating \
+                   N files costs one round trip instead of N. Set is_base64 on an entry to \
+                   write binary content, decoded from standard base64 before writing.",
     idempotent_hint = false,
     destructive_hint = false,
     read_only_hint = false
 )]
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct SessionWriteFile {
-    /// Session-relative file path (e.g. src/main.py).
-    pub path: String,
-    pub content: String,
-    pub is_base64: Option<bool>,
+pub struct SessionWriteFiles {
+    pub entries: Vec<FileWrite>,
     pub description: String,
 }
 
 #[mcp_tool(
-    name = "session_delete_file",
-    description = "Delete a file from the active session's workspace. Creates a new checkpoint.",
+    name = "session_delete_files",
+    description = "Delete one or more files from the active session's workspace as a single \
+                   checkpoint. Prefer one call with many paths over many calls with one path \
+                   each.",
     idempotent_hint = false,
     destructive_hint = true,
     read_only_hint = false
 )]
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct SessionDeleteFile {
-    /// Session-relative file path (e.g. src/main.py).
-    pub path: String,
+pub struct SessionDeleteFiles {
+    /// Session-relative file paths to delete.
+    pub paths: Vec<String>,
     pub description: String,
 }
 
@@ -344,7 +352,7 @@ pub struct DeleteFromHost {
                    specific files; omit to merge all files from the source. Accepts \
                    checkpoint_id or checkpoint_label on the source; label takes precedence. \
                    Defaults to the source session's current checkpoint. Like session_bash and \
-                   session_write_file, this discards any checkpoints ahead of the current head \
+                   session_write_files, this discards any checkpoints ahead of the current head \
                    left by a prior session_rollback.",
     idempotent_hint = false,
     destructive_hint = false,
@@ -658,8 +666,8 @@ tool_box!(
         SessionPackageInstall,
         SessionRollback,
         SessionReadFile,
-        SessionWriteFile,
-        SessionDeleteFile,
+        SessionWriteFiles,
+        SessionDeleteFiles,
         SessionMount,
         SessionExtractText,
         SessionDiff,

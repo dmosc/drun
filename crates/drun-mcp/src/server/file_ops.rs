@@ -3,8 +3,8 @@ use crate::errors::DrunError;
 use crate::handler::DrunHandler;
 use crate::state::SessionState;
 use crate::tools::{
-    DeleteFromHost, SessionDeleteFile, SessionExport, SessionExtractText, SessionMount,
-    SessionReadFile, SessionWriteFile,
+    DeleteFromHost, SessionDeleteFiles, SessionExport, SessionExtractText, SessionMount,
+    SessionReadFile, SessionWriteFiles,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use drun_core::TextParserUtilities;
@@ -66,26 +66,26 @@ impl DrunHandler {
         })
     }
 
-    pub(super) fn handle_session_write_file(
+    pub(super) fn handle_session_write_files(
         &self,
         connection_id: &str,
-        t: SessionWriteFile,
+        t: SessionWriteFiles,
     ) -> Result<CallToolResult, CallToolError> {
         self.with_current_session_mut(connection_id, |session_id, session| {
-            let bytes = if t.is_base64.unwrap_or(false) {
-                BASE64.decode(&t.content).map_err(|e| {
-                    DrunError::internal(format!("base64 decode error: {e}")).into_tool_err()
-                })?
-            } else {
-                t.content.into_bytes()
-            };
+            let mut entries = Vec::with_capacity(t.entries.len());
+            for entry in t.entries {
+                let bytes = if entry.is_base64.unwrap_or(false) {
+                    BASE64.decode(&entry.content).map_err(|e| {
+                        DrunError::internal(format!("base64 decode error: {e}")).into_tool_err()
+                    })?
+                } else {
+                    entry.content.into_bytes()
+                };
+                entries.push((entry.path, bytes));
+            }
             let previous_files = session.current().files.clone();
             session
-                .write_files(
-                    vec![(t.path.to_string(), bytes)],
-                    "session_write_file",
-                    Some(&t.description),
-                )
+                .write_files(entries, "session_write_files", Some(&t.description))
                 .map_err(|e| DrunError::from_exec(e).into_tool_err())?;
             Ok(ResponseBuilder::json(&SessionState::compute(
                 session_id,
@@ -95,15 +95,15 @@ impl DrunHandler {
         })
     }
 
-    pub(super) fn handle_session_delete_file(
+    pub(super) fn handle_session_delete_files(
         &self,
         connection_id: &str,
-        t: SessionDeleteFile,
+        t: SessionDeleteFiles,
     ) -> Result<CallToolResult, CallToolError> {
         self.with_current_session_mut(connection_id, |session_id, session| {
             let previous_files = session.current().files.clone();
             session
-                .delete_file(&t.path, Some(&t.description))
+                .delete_files(t.paths, Some(&t.description))
                 .map_err(|e| DrunError::from_exec(e).into_tool_err())?;
             Ok(ResponseBuilder::json(&SessionState::compute(
                 session_id,
@@ -216,6 +216,7 @@ impl DrunHandler {
 mod tests {
     use super::*;
     use crate::server::test_support::*;
+    use crate::tools::FileWrite;
     use drun_core::Config;
 
     #[test]
@@ -522,18 +523,20 @@ mod tests {
     }
 
     #[test]
-    fn session_write_file_decodes_base64_content() {
+    fn session_write_files_decodes_base64_content() {
         let handler = DrunHandler::new(Config::default());
         insert_current_session(&handler, "s1");
         let encoded = BASE64.encode(b"hello");
 
         handler
-            .handle_session_write_file(
+            .handle_session_write_files(
                 CLIENT,
-                SessionWriteFile {
-                    path: "a.txt".to_string(),
-                    content: encoded,
-                    is_base64: Some(true),
+                SessionWriteFiles {
+                    entries: vec![FileWrite {
+                        path: "a.txt".to_string(),
+                        content: encoded,
+                        is_base64: Some(true),
+                    }],
                     description: "test".to_string(),
                 },
             )
@@ -545,16 +548,55 @@ mod tests {
     }
 
     #[test]
-    fn session_write_file_rejects_invalid_base64() {
+    fn session_write_files_writes_every_entry_in_a_single_checkpoint() {
+        let handler = DrunHandler::new(Config::default());
+        insert_current_session(&handler, "s1");
+        let before = {
+            let sessions = handler.sessions.lock().unwrap();
+            sessions.get("s1").unwrap().lock().unwrap().current().id
+        };
+
+        handler
+            .handle_session_write_files(
+                CLIENT,
+                SessionWriteFiles {
+                    entries: vec![
+                        FileWrite {
+                            path: "a.txt".to_string(),
+                            content: "hi".to_string(),
+                            is_base64: None,
+                        },
+                        FileWrite {
+                            path: "b.txt".to_string(),
+                            content: "bye".to_string(),
+                            is_base64: None,
+                        },
+                    ],
+                    description: "test".to_string(),
+                },
+            )
+            .unwrap();
+
+        let sessions = handler.sessions.lock().unwrap();
+        let session = sessions.get("s1").unwrap().lock().unwrap();
+        assert_eq!(session.current().id, before + 1);
+        assert_eq!(session.current().files["a.txt"].as_slice(), b"hi");
+        assert_eq!(session.current().files["b.txt"].as_slice(), b"bye");
+    }
+
+    #[test]
+    fn session_write_files_rejects_invalid_base64() {
         let handler = DrunHandler::new(Config::default());
         insert_current_session(&handler, "s1");
         let err = handler
-            .handle_session_write_file(
+            .handle_session_write_files(
                 CLIENT,
-                SessionWriteFile {
-                    path: "a.txt".to_string(),
-                    content: "not valid base64!!".to_string(),
-                    is_base64: Some(true),
+                SessionWriteFiles {
+                    entries: vec![FileWrite {
+                        path: "a.txt".to_string(),
+                        content: "not valid base64!!".to_string(),
+                        is_base64: Some(true),
+                    }],
                     description: "test".to_string(),
                 },
             )
@@ -563,16 +605,18 @@ mod tests {
     }
 
     #[test]
-    fn session_write_file_returns_invalid_workspace_path_for_a_path_escaping_the_workspace() {
+    fn session_write_files_returns_invalid_workspace_path_for_a_path_escaping_the_workspace() {
         let handler = DrunHandler::new(Config::default());
         insert_current_session(&handler, "s1");
         let err = handler
-            .handle_session_write_file(
+            .handle_session_write_files(
                 CLIENT,
-                SessionWriteFile {
-                    path: "../escape.txt".to_string(),
-                    content: "hi".to_string(),
-                    is_base64: Some(false),
+                SessionWriteFiles {
+                    entries: vec![FileWrite {
+                        path: "../escape.txt".to_string(),
+                        content: "hi".to_string(),
+                        is_base64: Some(false),
+                    }],
                     description: "test".to_string(),
                 },
             )
@@ -581,7 +625,7 @@ mod tests {
     }
 
     #[test]
-    fn session_write_file_returns_workspace_size_exceeded_over_the_configured_limit() {
+    fn session_write_files_returns_workspace_size_exceeded_over_the_configured_limit() {
         let config = Config {
             max_workspace_mb: Some(0),
             ..Config::default()
@@ -589,12 +633,14 @@ mod tests {
         let handler = DrunHandler::new(config);
         insert_current_session(&handler, "s1");
         let err = handler
-            .handle_session_write_file(
+            .handle_session_write_files(
                 CLIENT,
-                SessionWriteFile {
-                    path: "a.txt".to_string(),
-                    content: "hi".to_string(),
-                    is_base64: Some(false),
+                SessionWriteFiles {
+                    entries: vec![FileWrite {
+                        path: "a.txt".to_string(),
+                        content: "hi".to_string(),
+                        is_base64: Some(false),
+                    }],
                     description: "test".to_string(),
                 },
             )
@@ -603,7 +649,7 @@ mod tests {
     }
 
     #[test]
-    fn session_delete_file_removes_the_file_and_creates_a_checkpoint() {
+    fn session_delete_files_removes_every_path_in_a_single_checkpoint() {
         let handler = DrunHandler::new(Config::default());
         insert_current_session(&handler, "s1");
         {
@@ -611,18 +657,21 @@ mod tests {
             let mut session = sessions.get("s1").unwrap().lock().unwrap();
             session
                 .write_files(
-                    vec![("a.txt".to_string(), b"hi".to_vec())],
-                    "session_write_file",
+                    vec![
+                        ("a.txt".to_string(), b"hi".to_vec()),
+                        ("b.txt".to_string(), b"bye".to_vec()),
+                    ],
+                    "session_write_files",
                     None,
                 )
                 .unwrap();
         }
 
         let result = handler
-            .handle_session_delete_file(
+            .handle_session_delete_files(
                 CLIENT,
-                SessionDeleteFile {
-                    path: "a.txt".to_string(),
+                SessionDeleteFiles {
+                    paths: vec!["a.txt".to_string(), "b.txt".to_string()],
                     description: "test".to_string(),
                 },
             )
@@ -631,14 +680,14 @@ mod tests {
     }
 
     #[test]
-    fn session_delete_file_returns_file_not_found_for_a_missing_path() {
+    fn session_delete_files_returns_file_not_found_for_a_missing_path() {
         let handler = DrunHandler::new(Config::default());
         insert_current_session(&handler, "s1");
         let err = handler
-            .handle_session_delete_file(
+            .handle_session_delete_files(
                 CLIENT,
-                SessionDeleteFile {
-                    path: "missing.txt".to_string(),
+                SessionDeleteFiles {
+                    paths: vec!["missing.txt".to_string()],
                     description: "test".to_string(),
                 },
             )

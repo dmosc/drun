@@ -119,7 +119,7 @@ explicitly.
 ## Path traversal prevention
 
 Workspace file keys containing `..` components are rejected at write time in
-`session_write_file` and `session_fetch`'s `save_to` parameter. Export paths are
+`session_write_files` and `session_fetch`'s `save_to` parameter. Export paths are
 re-validated after joining to confirm they remain within the configured output
 directory. An agent cannot write a workspace key that escapes to an arbitrary
 host path.

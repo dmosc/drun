@@ -168,7 +168,7 @@ allowlists, and resource limits) in one call.
 ## `session_busy`: concurrent execution on the same session
 
 Two simultaneous tool calls that mutate the same session (e.g. two
-`session_bash` calls, or `session_bash` and `session_write_file` at once) return
+`session_bash` calls, or `session_bash` and `session_write_files` at once) return
 `session_busy` immediately — a session executes one mutating call at a time.
 
 **Fix:** Wait for the current call to complete, or create a separate session (or
@@ -187,7 +187,7 @@ two-stage process:
 
 1. Once a session has been idle longer than `session_idle_timeout_secs`, calls
    that would do new work (`session_bash`, `session_package_install`,
-   `session_write_file`, `session_mount`, `session_rollback`, `session_merge`,
+   `session_write_files`, `session_mount`, `session_rollback`, `session_merge`,
    label/squash/drop, etc.) start returning `session_idle` instead of running.
 2. Read and recovery calls like `get_session_state`, `session_history`,
    `session_read_file`, `session_diff`, `session_export`, `session_snapshot`

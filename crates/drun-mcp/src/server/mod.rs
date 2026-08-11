@@ -67,8 +67,8 @@ impl ServerHandler for DrunHandler {
             }
             DrunTools::SessionRollback(t) => self.handle_session_rollback(&connection_id, t),
             DrunTools::SessionReadFile(t) => self.handle_session_read_file(&connection_id, t),
-            DrunTools::SessionWriteFile(t) => self.handle_session_write_file(&connection_id, t),
-            DrunTools::SessionDeleteFile(t) => self.handle_session_delete_file(&connection_id, t),
+            DrunTools::SessionWriteFiles(t) => self.handle_session_write_files(&connection_id, t),
+            DrunTools::SessionDeleteFiles(t) => self.handle_session_delete_files(&connection_id, t),
             DrunTools::SessionMount(t) => self.handle_session_mount(&connection_id, t),
             DrunTools::SessionExtractText(t) => self.handle_session_extract_text(&connection_id, t),
             DrunTools::SessionDiff(t) => self.handle_session_diff(&connection_id, t),

@@ -8,7 +8,7 @@ is a working example you can run immediately.
 access**, on either platform. Examples that need external data fetch it on the
 host (via `urllib`, before the session is created, or via the MCP-only
 `session_fetch` tool) and push it into the session with
-`write_file`/`session_write_file` or `--mount`. `session_package_install` is a
+`write_file`/`session_write_files` or `--mount`. `session_package_install` is a
 separate, disabled-by-default tool for installing `pip`/`npm` packages
 mid-session — see the main README's Configuration section.
 
@@ -255,7 +255,7 @@ four Fibonacci algorithms.
 | Lifecycle  | `create_session`, `session_switch`, `session_list`, `session_close`, `session_tree`                                               |
 | Execution  | `session_bash`, `session_get_env`                                                                                                 |
 | Navigation | `session_rollback`, `session_fork`, `session_merge`, `session_history`, `get_session_state`                                       |
-| Files      | `session_read_file`, `session_write_file`, `session_delete_file`, `session_mount`, `session_diff`                                 |
+| Files      | `session_read_file`, `session_write_files`, `session_delete_files`, `session_mount`, `session_diff`                               |
 | Host I/O   | `session_export`, `session_fetch`, `get_config`                                                                                   |
 | Snapshots  | `session_snapshot`, `session_restore`, `list_snapshots`                                                                           |
 | Labels     | `session_label`, `session_checkpoint_label`, `session_checkpoint_squash`, `session_checkpoint_drop`, `checkpoint_read_stdstreams` |

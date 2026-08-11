@@ -71,14 +71,17 @@ Grouped by purpose — each tool's schema documents its exact parameters.
 - `session_bash` — run shell commands in the sandboxed workspace (also covers
   listing/searching files — e.g. `ls`, `grep`, `find`). Returns state, not
   output — see "Reading command output" above.
-- `session_read_file` / `session_write_file` / `session_delete_file` — read,
-  write, and delete files in the session by session-relative path. For large
-  files, don't page through blind with offset/limit to find something — set
-  `pattern` to a case-sensitive regex (use `(?i)` for case-insensitive) and
-  `session_read_file` returns only the matching lines, each with its
-  `line_number` and `byte_offset`, searched within the offset/limit byte range
-  (the whole file if omitted). Use a match's `byte_offset` in a follow-up
-  offset/limit read to pull the surrounding context.
+- `session_read_file` / `session_write_files` / `session_delete_files` — read
+  a file, or write/delete a batch of files, by session-relative path.
+  `session_write_files` and `session_delete_files` each take a list and apply
+  it as one checkpoint — creating or removing several files is one call, not
+  one call per file. For large files, don't page through blind with
+  offset/limit to find something — set `pattern` to a case-sensitive regex
+  (use `(?i)` for case-insensitive) and `session_read_file` returns only the
+  matching lines, each with its `line_number` and `byte_offset`, searched
+  within the offset/limit byte range (the whole file if omitted). Use a
+  match's `byte_offset` in a follow-up offset/limit read to pull the
+  surrounding context.
 - `session_mount` — load a host file or directory into the session. The
   session doesn't remember where a file came from beyond that call — it's a
   one-time copy into the workspace, not a live link back to host.
@@ -150,7 +153,7 @@ tracks enough about the other to safely do both at once. The usual sequence
 to make the host reflect what happened in the session:
 
 1. `session_mount` the host path into the session.
-2. Mutate the session's files (session_write_file, session_delete_file,
+2. Mutate the session's files (session_write_files, session_delete_files,
    session_bash, etc.) — add, remove, modify as needed.
 3. `session_export` the target paths to the host. This only creates or
    overwrites; a file you deleted from the session is still sitting on the

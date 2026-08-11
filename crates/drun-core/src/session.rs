@@ -262,19 +262,21 @@ impl Session {
         Ok(save_path)
     }
 
-    pub fn delete_file(
+    pub fn delete_files(
         &mut self,
-        path: &str,
+        paths: Vec<String>,
         description: Option<&str>,
     ) -> anyhow::Result<&Checkpoint> {
         let mut files = self.checkpoints[self.checkpoint_idx].files.clone();
-        if files.remove(path).is_none() {
-            return Err(RunnerError::file_not_found_in_current(path).into());
+        for path in &paths {
+            if files.remove(path).is_none() {
+                return Err(RunnerError::file_not_found_in_current(path).into());
+            }
         }
         self.push_checkpoint(
             files,
             CommandOutcome::default(),
-            "session_delete_file",
+            "session_delete_files",
             description,
         )
     }
@@ -948,7 +950,9 @@ mod tests {
             .unwrap();
         assert_eq!(session.current().command, None);
         assert_eq!(session.current().exit_code, None);
-        session.delete_file("a.txt", None).unwrap();
+        session
+            .delete_files(vec!["a.txt".to_string()], None)
+            .unwrap();
         assert_eq!(session.current().command, None);
         assert_eq!(session.current().exit_code, None);
     }
